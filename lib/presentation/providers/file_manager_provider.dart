@@ -42,20 +42,22 @@ class FileManagerProvider extends ChangeNotifier {
     });
 
     try {
-      final rawResponse = await FileService().listFiles(
+      final response = await FileService().listFiles(
             uri: _currentPath,
             pageSize: 50,
           );
 
-      final List<dynamic> filesData = rawResponse['files'] ?? [];
-      final pagination = rawResponse['pagination'] ?? {};
+      // ApiService._parseResponse 已经返回了 data 字段的内容
+      // response 是包含 files, parent, pagination 等字段的对象
+      final List<dynamic> filesData = response['files'] as List<dynamic>? ?? [];
+      final pagination = response['pagination'] as Map<String, dynamic>? ?? {};
 
       setState(() {
         _files = filesData
             .map((f) => FileModel.fromJson(f as Map<String, dynamic>))
             .toList();
         _hasMore = pagination['next_token'] != null;
-        _contextHint = rawResponse['contextHint'] as String?;
+        _contextHint = response['context_hint'] as String?;
       });
     } catch (e) {
       setState(() {
@@ -148,10 +150,18 @@ class FileManagerProvider extends ChangeNotifier {
   /// 创建文件夹
   Future<void> createFolder(String name) async {
     try {
+      // 构建 uri，将新文件夹名添加到当前路径
+      String uri;
+      if (_currentPath == '/' || _currentPath.isEmpty) {
+        uri = '/$name';
+      } else {
+        uri = '$_currentPath/$name';
+      }
+
       await FileService().createFile(
-            uri: _currentPath,
-            type: 1, // 文件夹
-            name: name,
+            uri: uri,
+            type: 'folder',
+            errOnConflict: 'true',
           );
       await loadFiles();
     } catch (e) {

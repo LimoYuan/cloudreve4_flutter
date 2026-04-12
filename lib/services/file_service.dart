@@ -2,17 +2,36 @@ import 'api_service.dart';
 
 /// 文件服务
 class FileService {
+  /// 将文件系统路径转换为 cloudreve URI 格式
+  /// 例如: "/" -> "cloudreve://my"
+  /// "/subfolder" -> "cloudreve://my/subfolder"
+  /// "/a/b" -> "cloudreve://my/a/b"
+  /// "cloudreve://my/subfolder" -> "cloudreve://my/subfolder" (已包含前缀则直接返回)
+  String _toCloudreveUri(String path) {
+    // 如果已经是 cloudreve:// 开头的URI，直接返回
+    if (path.startsWith('cloudreve://')) {
+      return path;
+    }
+
+    if (path == '/' || path.isEmpty) {
+      return 'cloudreve://my';
+    }
+    // 移除开头的 /
+    final cleanPath = path.startsWith('/') ? path.substring(1) : path;
+    return 'cloudreve://my/$cleanPath';
+  }
+
   /// 列出文件
   Future<Map<String, dynamic>> listFiles({
     required String uri,
-    int? page,
+    int page = 0,
     int? pageSize,
     String? orderBy,
     String? orderDirection,
     String? nextPageToken,
   }) async {
     final params = <String, dynamic>{
-      'uri': uri,
+      'uri': _toCloudreveUri(uri),
       'page': page,
       'page_size': pageSize,
       'order_by': orderBy,
@@ -29,14 +48,14 @@ class FileService {
   /// 创建文件/文件夹
   Future<Map<String, dynamic>> createFile({
     required String uri,
-    required int type, // 0:文件, 1:文件夹
-    String? name,
-    Map<String, String>? metadata,
+    required String type, // "file":文件, "folder":文件夹
+    String? errOnConflict,
+    Map<String, dynamic>? metadata,
   }) async {
     final data = <String, dynamic>{
-      'uri': uri,
+      'uri': _toCloudreveUri(uri),
       'type': type,
-      if (name != null) 'name': name,
+      if (errOnConflict != null) 'err_on_conflict': errOnConflict,
       if (metadata != null) 'metadata': metadata,
     };
 
@@ -53,7 +72,7 @@ class FileService {
     bool skipSoftDelete = false,
   }) async {
     final data = <String, dynamic>{
-      'uris': uris,
+      'uris': uris.map((uri) => _toCloudreveUri(uri)).toList(),
       if (unlink) 'unlink': true,
       if (skipSoftDelete) 'skip_soft_delete': true,
     };
@@ -68,8 +87,8 @@ class FileService {
     bool copy = false,
   }) async {
     final data = <String, dynamic>{
-      'uris': uris,
-      'dst': dst,
+      'uris': uris.map((uri) => _toCloudreveUri(uri)).toList(),
+      'dst': _toCloudreveUri(dst),
       'copy': copy,
     };
 
@@ -82,7 +101,7 @@ class FileService {
     required String newName,
   }) async {
     final data = <String, dynamic>{
-      'uri': uri,
+      'uri': _toCloudreveUri(uri),
       'name': newName,
     };
 

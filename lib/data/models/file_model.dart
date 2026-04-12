@@ -7,12 +7,11 @@ class FileModel {
   final DateTime updatedAt;
   final int size;
   final String path;
-  final Map<String, String>? metadata;
-  final bool? shared;
+  final Map<String, dynamic>? metadata;
+  final String? permission;
+  final String? primaryEntity;
   final String? capability;
   final bool? owned;
-  final FolderSummaryModel? folderSummary;
-  final ExtendedInfoModel? extendedInfo;
 
   FileModel({
     required this.type,
@@ -23,11 +22,10 @@ class FileModel {
     required this.size,
     required this.path,
     this.metadata,
-    this.shared,
+    this.permission,
+    this.primaryEntity,
     this.capability,
     this.owned,
-    this.folderSummary,
-    this.extendedInfo,
   });
 
   factory FileModel.fromJson(Map<String, dynamic> json) {
@@ -39,16 +37,11 @@ class FileModel {
       updatedAt: DateTime.parse(json['updated_at'] as String),
       size: json['size'] as int,
       path: json['path'] as String,
-      metadata: json['metadata'] as Map<String, String>?,
-      shared: json['shared'] as bool?,
+      metadata: json['metadata'] as Map<String, dynamic>?,
+      permission: json['permission'] as String?,
+      primaryEntity: json['primary_entity'] as String?,
       capability: json['capability'] as String?,
       owned: json['owned'] as bool?,
-      folderSummary: json['folder_summary'] != null
-          ? FolderSummaryModel.fromJson(json['folder_summary'] as Map<String, dynamic>)
-          : null,
-      extendedInfo: json['extended_info'] != null
-          ? ExtendedInfoModel.fromJson(json['extended_info'] as Map<String, dynamic>)
-          : null,
     );
   }
 
@@ -62,17 +55,28 @@ class FileModel {
       'size': size,
       'path': path,
       'metadata': metadata,
-      'shared': shared,
+      'permission': permission,
+      'primary_entity': primaryEntity,
       'capability': capability,
       'owned': owned,
-      'folder_summary': folderSummary?.toJson(),
-      'extended_info': extendedInfo?.toJson(),
     };
   }
 
   bool get isFile => type == 0;
 
   bool get isFolder => type == 1;
+
+  /// 获取相对于 cloudreve://my 的路径
+  /// 例如: cloudreve://my/Games -> /Games
+  /// cloudreve://my/sub/folder -> /sub/folder
+  String get relativePath {
+    if (!path.startsWith('cloudreve://my')) {
+      // 如果不是 cloudreve://my 开头，返回空
+      return '/';
+    }
+    final relative = path.replaceFirst('cloudreve://my', '');
+    return relative.isEmpty ? '/' : '/$relative';
+  }
 }
 
 /// 文件夹摘要模型
@@ -274,7 +278,7 @@ class DirectLinkModel {
   factory DirectLinkModel.fromJson(Map<String, dynamic> json) {
     return DirectLinkModel(
       id: json['id'] as String,
-    createdAt: DateTime.parse(json['created_at'] as String),
+      createdAt: DateTime.parse(json['created_at'] as String),
       url: json['url'] as String,
       downloaded: json['downloaded'] as int,
     );

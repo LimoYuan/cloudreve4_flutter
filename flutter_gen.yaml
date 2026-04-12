@@ -1,0 +1,3 @@
+# 用于 easy_localization 生成翻译文件的配置
+
+output_dir: lib/core/i18n

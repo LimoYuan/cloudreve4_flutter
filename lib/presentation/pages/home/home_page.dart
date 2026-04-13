@@ -8,6 +8,7 @@ import '../../providers/upload_manager_provider.dart';
 import '../../widgets/file_list_item.dart';
 import '../../widgets/file_grid_item.dart';
 import '../../widgets/upload_progress_dialog.dart';
+import '../../../router/app_router.dart';
 
 /// 主页
 class HomePage extends StatefulWidget {
@@ -65,8 +66,7 @@ class _HomePageState extends State<HomePage> {
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () async {
-              final authProvider = Provider.of<AuthProvider>(context, listen: false);
-              await authProvider.logout();
+              await _handleLogout(context);
             },
             tooltip: '退出登录',
           ),
@@ -175,7 +175,8 @@ class _HomePageState extends State<HomePage> {
             leading: const Icon(Icons.logout),
             title: const Text('退出登录'),
             onTap: () async {
-              await authProvider.logout();
+              Navigator.of(context).pop();
+              await _handleLogout(context);
             },
           ),
         ],
@@ -621,6 +622,49 @@ class _HomePageState extends State<HomePage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('选择文件失败: $e')),
       );
+    }
+  }
+
+  /// 处理退出登录
+  Future<void> _handleLogout(BuildContext context) async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+
+    // 显示确认对话框
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('退出登录'),
+        content: const Text('确定要退出登录吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('退出'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      // 获取Provider引用（在async操作前）
+      final fileManager = Provider.of<FileManagerProvider>(context, listen: false);
+
+      // 执行登出
+      await authProvider.logout();
+
+      // 清空文件列表
+      fileManager.clearFiles();
+
+      // 跳转到登录页
+      if (context.mounted) {
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          RouteNames.login,
+          (route) => false,
+        );
+      }
     }
   }
 }

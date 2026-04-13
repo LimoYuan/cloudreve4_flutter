@@ -189,4 +189,14 @@ class FileManagerProvider extends ChangeNotifier {
       setErrorMessage(e.toString());
     }
   }
+
+  /// 清空文件列表
+  void clearFiles() {
+    setState(() {
+      _files = [];
+      _selectedFiles = [];
+      _currentPath = '/';
+      _errorMessage = null;
+    });
+  }
 }

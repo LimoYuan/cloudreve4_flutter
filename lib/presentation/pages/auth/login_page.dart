@@ -25,6 +25,21 @@ class _LoginPageState extends State<LoginPage> {
   String? _errorMessage;
 
   @override
+  void initState() {
+    super.initState();
+    // 加载记住我的信息
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      if (authProvider.rememberedEmail != null) {
+        _emailController.text = authProvider.rememberedEmail!;
+        // 密码通常不自动填充，但可以根据需求实现
+        _rememberMe = true;
+        setState(() {});
+      }
+    });
+  }
+
+  @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
@@ -48,6 +63,7 @@ class _LoginPageState extends State<LoginPage> {
       final success = await authProvider.passwordLogin(
         email: _emailController.text.trim(),
         password: _passwordController.text,
+        rememberMe: _rememberMe,
       );
 
       if (success && mounted) {

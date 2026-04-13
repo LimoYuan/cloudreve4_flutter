@@ -33,7 +33,7 @@ class AuthService {
     final data = <String, dynamic>{
       'email': email,
       'password': password,
-      if (captcha != null) 'captcha': captcha,
+      ...captcha != null ? {'captcha': captcha} : {},
     };
 
     final response = await ApiService.instance
@@ -88,6 +88,9 @@ class AuthService {
       // 登出失败也要清除本地数据
       await _clearAuthData();
       rethrow;
+    } finally {
+      // 无论成功失败，都清除本地认证数据（不包括邮箱密码）
+      await _clearAuthData();
     }
   }
 
@@ -121,6 +124,20 @@ class AuthService {
 
   /// 清除认证数据
   Future<void> _clearAuthData() async {
+    final storage = StorageService.instance;
+
+    await storage.removeAccessToken();
+    await storage.removeRefreshToken();
+    await storage.removeUserId();
+    // 不清除邮箱和密码，用于记住我功能
+    // await storage.removeUserEmail();
+
+    // 清除API的Token
+    ApiService.instance.clearToken();
+  }
+
+  /// 完全清除所有认证数据（包括记住我信息）
+  Future<void> clearAllAuthData() async {
     final storage = StorageService.instance;
 
     await storage.removeAccessToken();

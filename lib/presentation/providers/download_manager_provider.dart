@@ -21,6 +21,11 @@ class DownloadManagerProvider extends ChangeNotifier {
   /// 下载中的任务数
   int get downloadingCount => getTasksByStatus(DownloadStatus.downloading).length;
 
+  /// 初始化下载服务
+  Future<void> initialize() async {
+    await _downloadService.initialize();
+  }
+
   /// 添加下载任务
   Future<DownloadTaskModel?> addDownloadTask({
     required String fileName,
@@ -40,6 +45,9 @@ class DownloadManagerProvider extends ChangeNotifier {
     if (existingTask != null) {
       return null;
     }
+
+    // 确保下载服务已初始化
+    await initialize();
 
     // 获取保存路径
     if (savePath == null) {
@@ -69,11 +77,12 @@ class DownloadManagerProvider extends ChangeNotifier {
 
   /// 批量添加下载任务
   Future<void> addBatchDownloadTasks(List<Map<String, dynamic>> files) async {
+    await initialize();
     final dir = await _downloadService.getDownloadDirectory();
 
     for (final file in files) {
       final fileName = file['name'] as String;
-      final fileUri = file['path'] as String; // 或其他字段
+      final fileUri = file['path'] as String;
       final fileSize = file['size'] as int? ?? 0;
 
       await addDownloadTask(
@@ -116,8 +125,6 @@ class DownloadManagerProvider extends ChangeNotifier {
           errorMessage: errorMessage,
         );
         notifyListeners();
-
-        // TODO: 可以在这里显示引导用户到设置的对话框
       }
     });
   }

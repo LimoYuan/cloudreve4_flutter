@@ -7,6 +7,14 @@
     <!-- 读写权限 -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
+    <!-- 后台下载权限 -->
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <!-- ✅ Android 14+ 必须添加这一行，否则无法开启 dataDownload 类型服务 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_DOWNLOAD" />
+
+    <!-- ✅ 如果你还需要在后台弹出通知显示进度，必须添加此权限 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:label="cloudreve4_flutter"
@@ -34,6 +42,18 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <!-- Don't delete the meta-data below.
+             This is used by (flutter_downloader) to initialize
+             background download service -->
+        <service
+            android:name="vn.hunghd.flutterdownloader.DownloadService"
+            android:authorities="${applicationId}.flutter_downloader.provider"
+            android:exported="false"
+            android:foregroundServiceType="dataSync">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+            </intent-filter>
+        </service>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

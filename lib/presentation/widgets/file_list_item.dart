@@ -62,18 +62,14 @@ class FileListItem extends StatelessWidget {
                 ),
               const SizedBox(width: 8),
               if (onDownload != null || onOpenInBrowser != null)
-                IconButton(
-                  icon: const Icon(Icons.more_vert),
-                  onPressed: () {
-                    _showMenu(context);
-                  },
-                  tooltip: '更多选项',
-                  visualDensity: VisualDensity.compact,
+                _MenuButton(
+                  onDownload: onDownload,
+                  onOpenInBrowser: onOpenInBrowser,
                 ),
             ],
           ),
         ),
-      )
+      ),
     );
   }
 
@@ -95,49 +91,63 @@ class FileListItem extends StatelessWidget {
       size: 32,
     );
   }
+}
 
-  void _showMenu(BuildContext context) {
-    final RenderBox button = context.findRenderObject() as RenderBox;
-    final Offset offset = button.localToGlobal(Offset.zero);
+/// 菜单按钮
+class _MenuButton extends StatelessWidget {
+  final VoidCallback? onDownload;
+  final VoidCallback? onOpenInBrowser;
 
-    showMenu(
-      context: context,
-      position: RelativeRect.fromLTRB(
-        offset.dx,
-        offset.dy + button.size.height,
-        offset.dx + button.size.width,
-        offset.dy + button.size.height + 200,
+  const _MenuButton({
+    required this.onDownload,
+    required this.onOpenInBrowser,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return MenuAnchor(
+      alignmentOffset: const Offset(-160, 0),
+      style: MenuStyle(
+        shape: WidgetStateProperty.all(
+          RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        elevation: WidgetStateProperty.all(8),
+        backgroundColor: WidgetStateProperty.all(Colors.white),
       ),
-      items: [
+      builder: (context, controller, child) {
+        return IconButton(
+          icon: const Icon(Icons.more_vert),
+          onPressed: () {
+            if (controller.isOpen) {
+              controller.close();
+            } else {
+              controller.open();
+            }
+          },
+          tooltip: '更多选项',
+          visualDensity: VisualDensity.compact,
+        );
+      },
+      menuChildren: [
         if (onDownload != null)
-          PopupMenuItem(
-            value: 'download',
-            child: Row(
-              children: const [
-                Icon(Icons.download_outlined, size: 18),
-                SizedBox(width: 12),
-                Text('下载'),
-              ],
-            ),
+          MenuItemButton(
+            leadingIcon: const Icon(Icons.download_outlined, size: 20),
+            child: const Text('下载'),
+            onPressed: () {
+              onDownload?.call();
+            },
           ),
         if (onOpenInBrowser != null)
-          PopupMenuItem(
-            value: 'openInBrowser',
-            child: Row(
-              children: const [
-                Icon(Icons.open_in_browser, size: 18),
-                SizedBox(width: 12),
-                Text('在浏览器中打开'),
-              ],
-            ),
+          MenuItemButton(
+            leadingIcon: const Icon(Icons.open_in_browser, size: 20),
+            child: const Text('在浏览器中打开'),
+            onPressed: () {
+              onOpenInBrowser?.call();
+            },
           ),
       ],
-    ).then((value) {
-      if (value == 'download') {
-        onDownload?.call();
-      } else if (value == 'openInBrowser') {
-        onOpenInBrowser?.call();
-      }
-    });
+    );
   }
 }

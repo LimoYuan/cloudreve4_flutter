@@ -9,6 +9,7 @@ class FileGridItem extends StatelessWidget {
   final bool isSelected;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
+  final VoidCallback? onDownload;
 
   const FileGridItem({
     super.key,
@@ -16,6 +17,7 @@ class FileGridItem extends StatelessWidget {
     this.isSelected = false,
     this.onTap,
     this.onLongPress,
+    this.onDownload,
   });
 
   @override
@@ -73,26 +75,43 @@ class FileGridItem extends StatelessWidget {
                 padding: const EdgeInsets.all(8),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      file.name,
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    if (!file.isFolder)
-                      Text(
-                        _formatFileSize(file.size),
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.grey.shade600,
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          file.name,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                        if (!file.isFolder)
+                          Text(
+                            _formatFileSize(file.size),
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey.shade600,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                      ],
+                    ),
+                    // 下载按钮
+                    if (!file.isFolder && onDownload != null)
+                      IconButton(
+                        icon: const Icon(Icons.download, size: 20),
+                        onPressed: onDownload,
+                        visualDensity: VisualDensity.compact,
+                        tooltip: '下载',
+                        style: IconButton.styleFrom(
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                        ),
                       ),
                   ],
                 ),

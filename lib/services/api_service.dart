@@ -255,6 +255,7 @@ class ApiService {
     dynamic data,
     Map<String, dynamic>? queryParameters,
     bool noAuth = false,
+    Map<String, dynamic>? headers,
   }) async {
     debugPrint('API POST Request: $path');
     debugPrint('Request Data: $data');
@@ -265,6 +266,7 @@ class ApiService {
       queryParameters: queryParameters,
       options: Options(
         extra: {'noAuth': noAuth},
+        headers: headers,
       ),
     );
 

@@ -107,4 +107,57 @@ class FileService {
 
     await ApiService.instance.post<void>('/file/rename', data: data);
   }
+
+  /// 获取下载链接
+  Future<Map<String, dynamic>> getDownloadUrls({
+    required List<String> uris,
+    bool download = true,
+    bool? redirect,
+    String? entity,
+    bool? usePrimarySiteUrl,
+    bool? skipError,
+    bool? archive,
+    bool? noCache,
+    String? contextHint,
+  }) async {
+    final data = <String, dynamic>{
+      'uris': uris.map((uri) => _toCloudreveUri(uri)).toList(),
+      'download': download,
+      if (redirect != null) 'redirect': redirect,
+      if (entity != null) 'entity': entity,
+      if (usePrimarySiteUrl != null) 'use_primary_site_url': usePrimarySiteUrl,
+      if (skipError != null) 'skip_error': skipError,
+      if (archive != null) 'archive': archive,
+      if (noCache != null) 'no_cache': noCache,
+    };
+
+    final headers = <String, dynamic>{};
+    if (contextHint != null) {
+      headers['X-Cr-Context-Hint'] = contextHint;
+    }
+
+    final response = await ApiService.instance.post<Map<String, dynamic>>(
+      '/file/url',
+      data: data,
+      headers: headers,
+    );
+
+    return response;
+  }
+
+  /// 创建直接链接（分享链接）
+  Future<List<Map<String, dynamic>>> createDirectLinks({
+    required List<String> uris,
+  }) async {
+    final data = <String, dynamic>{
+      'uris': uris.map((uri) => _toCloudreveUri(uri)).toList(),
+    };
+
+    final response = await ApiService.instance.put<List<Map<String, dynamic>>>(
+      '/file/source',
+      data: data,
+    );
+
+    return response;
+  }
 }

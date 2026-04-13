@@ -1,13 +1,18 @@
 import 'dart:io';
+import 'package:cloudreve4_flutter/data/models/file_model.dart';
+import 'package:cloudreve4_flutter/services/file_service.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/file_manager_provider.dart';
 import '../../providers/upload_manager_provider.dart';
+import '../../providers/download_manager_provider.dart';
 import '../../widgets/file_list_item.dart';
 import '../../widgets/file_grid_item.dart';
 import '../../widgets/upload_progress_dialog.dart';
+import '../../widgets/download_progress_dialog.dart';
 import '../../../router/app_router.dart';
 
 /// 主页
@@ -57,6 +62,13 @@ class _HomePageState extends State<HomePage> {
             tooltip: '上传',
           ),
           IconButton(
+            icon: const Icon(Icons.download),
+            onPressed: () {
+              showDownloadDialog(context);
+            },
+            tooltip: '下载',
+          ),
+          IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () {
               // TODO: 实现设置功能
@@ -87,6 +99,24 @@ class _HomePageState extends State<HomePage> {
                     child: Container(
                       constraints: const BoxConstraints(maxHeight: 400),
                       child: const UploadProgressDialog(),
+                    ),
+                  ),
+                );
+              }
+              return const SizedBox.shrink();
+            },
+          ),
+          Consumer<DownloadManagerProvider>(
+            builder: (context, downloadManager, child) {
+              if (downloadManager.showDownloadDialog) {
+                return Positioned(
+                  left: 16,
+                  right: 16,
+                  bottom: 16,
+                  child: Material(
+                    child: Container(
+                      constraints: const BoxConstraints(maxHeight: 400),
+                      child: const DownloadProgressDialog(),
                     ),
                   ),
                 );
@@ -281,6 +311,9 @@ class _HomePageState extends State<HomePage> {
                 onLongPress: () {
                   fileManager.toggleSelection(file.id);
                 },
+                onDownload: () {
+                  _downloadFile(context, fileManager, file);
+                },
               );
             },
           ),
@@ -321,6 +354,9 @@ class _HomePageState extends State<HomePage> {
                 },
                 onLongPress: () {
                   fileManager.toggleSelection(file.id);
+                },
+                onDownload: () {
+                  _downloadFile(context, fileManager, file);
                 },
               );
             },
@@ -663,6 +699,65 @@ class _HomePageState extends State<HomePage> {
         Navigator.of(context).pushNamedAndRemoveUntil(
           RouteNames.login,
           (route) => false,
+        );
+      }
+    }
+  }
+
+  /// 下载文件
+  Future<void> _downloadFile(BuildContext context, FileManagerProvider fileManager, FileModel file) async {
+    final downloadManager = Provider.of<DownloadManagerProvider>(context, listen: false);
+
+    final task = await downloadManager.addDownloadTask(
+      fileName: file.name,
+      fileUri: file.relativePath,
+      fileSize: file.size,
+    );
+
+    if (task != null) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('文件已在下载列表中')),
+        );
+      }
+      return;
+    }
+
+    // 显示下载对话框
+    if (context.mounted) {
+      downloadManager.setShowDownloadDialog(true);
+    }
+  }
+
+  /// 在浏览器中打开文件
+  Future<void> _openInBrowser(BuildContext context, FileModel file) async {
+    try {
+      final fileService = FileService();
+      final response = await fileService.getDownloadUrls(
+        uris: [file.relativePath],
+        download: true,
+      );
+
+      final urls = response['urls'] as List<dynamic>? ?? [];
+      if (urls.isNotEmpty) {
+        final urlData = urls[0] as Map<String, dynamic>;
+        final url = urlData['url'] as String;
+
+        final uri = Uri.parse(url);
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        } else {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('无法打开链接')),
+            );
+          }
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('获取下载链接失败: $e')),
         );
       }
     }

@@ -8,6 +8,7 @@ class FileListItem extends StatelessWidget {
   final bool isSelected;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
+  final VoidCallback? onDownload;
 
   const FileListItem({
     super.key,
@@ -15,6 +16,7 @@ class FileListItem extends StatelessWidget {
     this.isSelected = false,
     this.onTap,
     this.onLongPress,
+    this.onDownload,
   });
 
   @override
@@ -47,14 +49,26 @@ class FileListItem extends StatelessWidget {
                         color: Colors.grey.shade600,
                       ),
                     ),
-          trailing: file.metadata?.isNotEmpty == true
-                  ? Icon(
-                      Icons.info_outline,
-                      color: Colors.grey.shade400,
-                    )
-                  : null,
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (file.metadata?.isNotEmpty == true)
+                Icon(
+                  Icons.info_outline,
+                  color: Colors.grey.shade400,
+                  size: 20,
+                ),
+              const SizedBox(width: 8),
+              IconButton(
+                icon: const Icon(Icons.download_outlined),
+                onPressed: onDownload,
+                tooltip: '下载',
+                visualDensity: VisualDensity.compact,
+              ),
+            ],
+          ),
         ),
-      ),
+      )
     );
   }
 

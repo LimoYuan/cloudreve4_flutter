@@ -9,6 +9,7 @@ class FileListItem extends StatelessWidget {
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final VoidCallback? onDownload;
+  final VoidCallback? onOpenInBrowser;
 
   const FileListItem({
     super.key,
@@ -17,6 +18,7 @@ class FileListItem extends StatelessWidget {
     this.onTap,
     this.onLongPress,
     this.onDownload,
+    this.onOpenInBrowser,
   });
 
   @override
@@ -59,12 +61,15 @@ class FileListItem extends StatelessWidget {
                   size: 20,
                 ),
               const SizedBox(width: 8),
-              IconButton(
-                icon: const Icon(Icons.download_outlined),
-                onPressed: onDownload,
-                tooltip: '下载',
-                visualDensity: VisualDensity.compact,
-              ),
+              if (onDownload != null || onOpenInBrowser != null)
+                IconButton(
+                  icon: const Icon(Icons.more_vert),
+                  onPressed: () {
+                    _showMenu(context);
+                  },
+                  tooltip: '更多选项',
+                  visualDensity: VisualDensity.compact,
+                ),
             ],
           ),
         ),
@@ -89,5 +94,50 @@ class FileListItem extends StatelessWidget {
       color: iconColor,
       size: 32,
     );
+  }
+
+  void _showMenu(BuildContext context) {
+    final RenderBox button = context.findRenderObject() as RenderBox;
+    final Offset offset = button.localToGlobal(Offset.zero);
+
+    showMenu(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        offset.dx,
+        offset.dy + button.size.height,
+        offset.dx + button.size.width,
+        offset.dy + button.size.height + 200,
+      ),
+      items: [
+        if (onDownload != null)
+          PopupMenuItem(
+            value: 'download',
+            child: Row(
+              children: const [
+                Icon(Icons.download_outlined, size: 18),
+                SizedBox(width: 12),
+                Text('下载'),
+              ],
+            ),
+          ),
+        if (onOpenInBrowser != null)
+          PopupMenuItem(
+            value: 'openInBrowser',
+            child: Row(
+              children: const [
+                Icon(Icons.open_in_browser, size: 18),
+                SizedBox(width: 12),
+                Text('在浏览器中打开'),
+              ],
+            ),
+          ),
+      ],
+    ).then((value) {
+      if (value == 'download') {
+        onDownload?.call();
+      } else if (value == 'openInBrowser') {
+        onOpenInBrowser?.call();
+      }
+    });
   }
 }

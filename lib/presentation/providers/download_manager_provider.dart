@@ -8,7 +8,6 @@ import '../../services/download_service.dart';
 class DownloadManagerProvider extends ChangeNotifier {
   final DownloadService _downloadService = DownloadService();
   final Map<String, DownloadTaskModel> _tasks = {};
-  bool _showDownloadDialog = false;
 
   /// 获取所有下载任务
   List<DownloadTaskModel> get tasks => _tasks.values.toList()
@@ -21,13 +20,6 @@ class DownloadManagerProvider extends ChangeNotifier {
 
   /// 下载中的任务数
   int get downloadingCount => getTasksByStatus(DownloadStatus.downloading).length;
-
-  /// 是否显示下载对话框
-  bool get showDownloadDialog => _showDownloadDialog;
-  void setShowDownloadDialog(bool show) {
-    _showDownloadDialog = show;
-    notifyListeners();
-  }
 
   /// 添加下载任务
   Future<DownloadTaskModel?> addDownloadTask({

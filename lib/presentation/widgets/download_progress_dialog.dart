@@ -129,11 +129,6 @@ class DownloadProgressDialog extends StatelessWidget {
           IconButton(
             icon: const Icon(Icons.close),
             onPressed: () {
-              final downloadManager = Provider.of<DownloadManagerProvider>(
-                context,
-                listen: false,
-              );
-              downloadManager.setShowDownloadDialog(false);
               Navigator.of(context).pop();
             },
             tooltip: '关闭',
@@ -178,11 +173,6 @@ class DownloadProgressDialog extends StatelessWidget {
               const Spacer(),
               FilledButton(
                 onPressed: () {
-                  final downloadManager = Provider.of<DownloadManagerProvider>(
-                    context,
-                    listen: false,
-                  );
-                  downloadManager.setShowDownloadDialog(false);
                   Navigator.of(context).pop();
                 },
                 child: const Text('关闭'),
@@ -197,12 +187,6 @@ class DownloadProgressDialog extends StatelessWidget {
 
 /// 显示下载对话框
 void showDownloadDialog(BuildContext context) {
-  final downloadManager = Provider.of<DownloadManagerProvider>(
-    context,
-    listen: false,
-  );
-  downloadManager.setShowDownloadDialog(true);
-
   showDialog(
     context: context,
     builder: (context) => const DownloadProgressDialog(),

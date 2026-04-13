@@ -106,24 +106,6 @@ class _HomePageState extends State<HomePage> {
               return const SizedBox.shrink();
             },
           ),
-          Consumer<DownloadManagerProvider>(
-            builder: (context, downloadManager, child) {
-              if (downloadManager.showDownloadDialog) {
-                return Positioned(
-                  left: 16,
-                  right: 16,
-                  bottom: 16,
-                  child: Material(
-                    child: Container(
-                      constraints: const BoxConstraints(maxHeight: 400),
-                      child: const DownloadProgressDialog(),
-                    ),
-                  ),
-                );
-              }
-              return const SizedBox.shrink();
-            },
-          ),
         ],
       ),
       floatingActionButton: Consumer<FileManagerProvider>(
@@ -314,6 +296,11 @@ class _HomePageState extends State<HomePage> {
                 onDownload: () {
                   _downloadFile(context, fileManager, file);
                 },
+                onOpenInBrowser: !file.isFolder
+                    ? () {
+                        _openInBrowser(context, file);
+                      }
+                    : null,
               );
             },
           ),
@@ -358,6 +345,11 @@ class _HomePageState extends State<HomePage> {
                 onDownload: () {
                   _downloadFile(context, fileManager, file);
                 },
+                onOpenInBrowser: !file.isFolder
+                    ? () {
+                        _openInBrowser(context, file);
+                      }
+                    : null,
               );
             },
           ),
@@ -725,7 +717,7 @@ class _HomePageState extends State<HomePage> {
 
     // 显示下载对话框
     if (context.mounted) {
-      downloadManager.setShowDownloadDialog(true);
+      showDownloadDialog(context);
     }
   }
 

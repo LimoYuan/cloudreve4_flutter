@@ -10,6 +10,7 @@ class FileGridItem extends StatelessWidget {
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final VoidCallback? onDownload;
+  final VoidCallback? onOpenInBrowser;
 
   const FileGridItem({
     super.key,
@@ -18,6 +19,7 @@ class FileGridItem extends StatelessWidget {
     this.onTap,
     this.onLongPress,
     this.onDownload,
+    this.onOpenInBrowser,
   });
 
   @override
@@ -46,7 +48,7 @@ class FileGridItem extends StatelessWidget {
         margin: const EdgeInsets.all(4),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
+          children: [
             // 图标区域
             Expanded(
               flex: 3,
@@ -99,27 +101,27 @@ class FileGridItem extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
+                        // 操作按钮
+                        if (!file.isFolder && (onDownload != null || onOpenInBrowser != null))
+                          IconButton(
+                            icon: const Icon(Icons.more_horiz, size: 20),
+                            onPressed: () => _showMenu(context),
+                            visualDensity: VisualDensity.compact,
+                            tooltip: '更多选项',
+                            style: IconButton.styleFrom(
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                            ),
+                          ),
                       ],
                     ),
-                    // 下载按钮
-                    if (!file.isFolder && onDownload != null)
-                      IconButton(
-                        icon: const Icon(Icons.download, size: 20),
-                        onPressed: onDownload,
-                        visualDensity: VisualDensity.compact,
-                        tooltip: '下载',
-                        style: IconButton.styleFrom(
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-                        ),
-                      ),
                   ],
                 ),
               ),
-            ),
-          ],
+            )
+           ],
         ),
-      ),
+      )
     );
   }
 
@@ -156,5 +158,50 @@ class FileGridItem extends StatelessWidget {
 
   String _formatFileSize(int bytes) {
     return DateUtils.formatFileSize(bytes);
+  }
+
+  void _showMenu(BuildContext context) {
+    final RenderBox button = context.findRenderObject() as RenderBox;
+    final Offset offset = button.localToGlobal(Offset.zero);
+
+    showMenu(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        offset.dx,
+        offset.dy + button.size.height,
+        offset.dx + button.size.width,
+        offset.dy + button.size.height + 200,
+      ),
+      items: [
+        if (onDownload != null)
+          PopupMenuItem(
+            value: 'download',
+            child: Row(
+              children: const [
+                Icon(Icons.download, size: 18),
+                SizedBox(width: 12),
+                Text('下载'),
+              ],
+            ),
+          ),
+        if (onOpenInBrowser != null)
+          PopupMenuItem(
+            value: 'openInBrowser',
+            child: Row(
+              children: const [
+                Icon(Icons.open_in_browser, size: 18),
+                SizedBox(width: 12),
+                Text('在浏览器中打开'),
+              ],
+            ),
+          ),
+      ],
+    ).then((value) {
+      if (value == 'download') {
+        onDownload?.call();
+      } else if (value == 'openInBrowser') {
+        onOpenInBrowser?.call();
+      }
+    });
   }
 }

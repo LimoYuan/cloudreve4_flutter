@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'storage_service.dart';
 
 /// 上传任务
 class UploadTask {
@@ -38,7 +39,12 @@ class UploadService extends ChangeNotifier {
         headers: {
           'Content-Type': 'application/json',
         },
-      ));
+      )) {
+    // 添加请求拦截器，自动添加 token
+    _dio.interceptors.add(_requestInterceptor());
+    // 添加错误拦截器，处理 401
+    _dio.interceptors.add(_errorInterceptor());
+  }
 
   static UploadService? _instance;
   static UploadService get instance {
@@ -50,6 +56,109 @@ class UploadService extends ChangeNotifier {
   final Map<String, UploadTask> _tasks = {};
   final Map<String, CancelToken> _cancelTokens = {};
   static const String _baseUrl = 'https://demo.cloudreve.org/api/v4';
+
+  bool _isRefreshing = false;
+  final List<Completer<void>> _refreshSubscribers = [];
+
+  /// 请求拦截器 - 自动添加 token
+  Interceptor _requestInterceptor() {
+    return InterceptorsWrapper(
+      onRequest: (options, handler) async {
+        // 添加Token
+        final token = await StorageService.instance.accessToken;
+        if (token != null && token.isNotEmpty) {
+          options.headers['Authorization'] = 'Bearer $token';
+        }
+        return handler.next(options);
+      },
+    );
+  }
+
+  /// Error 拦截器 - 处理 401
+  Interceptor _errorInterceptor() {
+    return InterceptorsWrapper(
+      onError: (error, handler) async {
+        // 处理 401 未授权错误
+        if (error.response?.statusCode == 401) {
+          // 检查是否需要跳过 token 检查（如刷新 token 请求本身）
+          final path = error.requestOptions.path;
+          if (path.contains('/session/token/refresh')) {
+            return handler.next(error);
+          }
+
+          // 如果正在刷新 token，等待刷新完成
+          if (_isRefreshing) {
+            final completer = Completer<void>();
+            _refreshSubscribers.add(completer);
+            await completer.future;
+
+            // 移除旧 header，让拦截器重新添加新 token
+            error.requestOptions.headers.remove('Authorization');
+
+            // 重试请求
+            return handler.resolve(await _dio.fetch(error.requestOptions));
+          }
+
+          // 开始刷新 token
+          _isRefreshing = true;
+
+          try {
+            // 获取新的 token
+            final refreshToken = await StorageService.instance.refreshToken;
+            if (refreshToken == null || refreshToken.isEmpty) {
+              _isRefreshing = false;
+              return handler.next(error);
+            }
+
+            // 创建新的 Dio 实例来刷新 token
+            final refreshDio = Dio(BaseOptions(
+              baseUrl: _baseUrl,
+              headers: {'Content-Type': 'application/json'},
+            ));
+
+            final response = await refreshDio.post<Map<String, dynamic>>(
+              '/session/token/refresh',
+              data: {'refresh_token': refreshToken},
+            );
+
+            // 保存新 token
+            final data = response.data as Map<String, dynamic>;
+            await StorageService.instance.setAccessToken(data['access_token'] as String);
+            await StorageService.instance.setRefreshToken(data['refresh_token'] as String);
+
+            _isRefreshing = false;
+
+            // 通知等待的请求
+            for (final subscriber in _refreshSubscribers) {
+              if (!subscriber.isCompleted) {
+                subscriber.complete();
+              }
+            }
+            _refreshSubscribers.clear();
+
+            // 重试当前请求
+            error.requestOptions.headers.remove('Authorization');
+            return handler.resolve(await _dio.fetch(error.requestOptions));
+          } catch (e) {
+            debugPrint('UploadService: Refresh token failed: $e');
+            _isRefreshing = false;
+
+            // 通知等待的请求失败
+            for (final subscriber in _refreshSubscribers) {
+              if (!subscriber.isCompleted) {
+                subscriber.completeError(e);
+              }
+            }
+            _refreshSubscribers.clear();
+
+            return handler.next(error);
+          }
+        }
+
+        return handler.next(error);
+      },
+    );
+  }
 
   /// 上传文件
   Future<void> uploadFile({

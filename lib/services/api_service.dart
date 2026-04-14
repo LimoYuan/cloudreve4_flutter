@@ -43,6 +43,7 @@ class ApiService {
   late Dio _dio;
   static ApiService? _instance;
   bool _isRefreshing = false;
+  final List<Completer<void>> _refreshSubscribers = [];
 
   ApiService._() {
     _dio = Dio(BaseOptions(
@@ -138,7 +139,7 @@ class ApiService {
     );
   }
 
-  /// 处理401错误，尝试刷新token
+  /// 处理401错误，，尝试刷新token
   Future<Response?> _handle401Error(
     DioException error,
     ErrorInterceptorHandler handler,
@@ -150,9 +151,19 @@ class ApiService {
       return null;
     }
 
-    // 如果正在刷新token，将请求加入队列
+    // 如果正在刷新token，等待刷新完成后再重试
     if (_isRefreshing) {
-      return await _retryAfterRefresh();
+      final completer = Completer<void>();
+      _refreshSubscribers.add(completer);
+
+      // 等待刷新完成
+      await completer.future;
+
+      // 刷新完成后，移除旧的 Authorization header，让拦截器重新添加新 token
+      error.requestOptions.headers.remove('Authorization');
+
+      // 重试请求（拦截器会自动添加新 token）
+      return await _dio.fetch(error.requestOptions);
     }
 
     // 开始刷新token
@@ -163,6 +174,7 @@ class ApiService {
       final refreshToken = await StorageService.instance.refreshToken;
       if (refreshToken == null || refreshToken.isEmpty) {
         // 没有refresh token，无法刷新
+        _isRefreshing = false;
         return null;
       }
 
@@ -185,52 +197,38 @@ class ApiService {
       final data = response.data as Map<String, dynamic>;
       final tokenModel = TokenModel.fromJson(data);
 
-      // 保存新的token
+      // 保存新的token到 StorageService
       await StorageService.instance.setAccessToken(tokenModel.accessToken);
       await StorageService.instance.setRefreshToken(tokenModel.refreshToken);
 
-      // 设置新token到Dio
-      _dio.options.headers['Authorization'] = 'Bearer ${tokenModel.accessToken}';
-
-      // 重试原始请求
-      final options = error.requestOptions;
-      options.headers['Authorization'] = 'Bearer ${tokenModel.accessToken}';
-
       _isRefreshing = false;
 
-      // 重试当前请求
-      final retryResponse = await _dio.fetch(options);
-      return retryResponse;
+      // 通知所有等待的请求可以重试了
+      for (final subscriber in _refreshSubscribers) {
+        if (!subscriber.isCompleted) {
+          subscriber.complete();
+        }
+      }
+      _refreshSubscribers.clear();
+
+      // 重试当前请求：移除旧 header，让拦截器重新添加新 token
+      error.requestOptions.headers.remove('Authorization');
+      return await _dio.fetch(error.requestOptions);
     } catch (e) {
       debugPrint('Refresh token failed: $e');
       _isRefreshing = false;
 
+      // 刷新失败，通知所有等待的请求
+      for (final subscriber in _refreshSubscribers) {
+        if (!subscriber.isCompleted) {
+          subscriber.completeError(e);
+        }
+      }
+      _refreshSubscribers.clear();
+
       // 返回null，让原始错误继续传播
       return null;
     }
-  }
-
-  /// 等待token刷新后重试请求
-  Future<Response?> _retryAfterRefresh() async {
-    // 等待刷新完成（简单轮询）
-    int count = 0;
-    const maxCount = 50; // 最多等待5秒
-    while (_isRefreshing && count < maxCount) {
-      await Future.delayed(const Duration(milliseconds: 100));
-    }
-
-    // 刷新完成或超时，返回null让原始错误继续传播
-    return null;
-  }
-
-  /// 设置Token
-  void setToken(String token) {
-    _dio.options.headers['Authorization'] = 'Bearer $token';
-  }
-
-  /// 清除Token
-  void clearToken() {
-    _dio.options.headers.remove('Authorization');
   }
 
   /// GET请求

@@ -117,9 +117,6 @@ class AuthService {
     // 保存用户信息
     await storage.setUserId(response.user.id);
     await storage.setUserEmail(response.user.email ?? '');
-
-    // 设置API的Token
-    ApiService.instance.setToken(response.token.accessToken);
   }
 
   /// 清除认证数据
@@ -131,9 +128,6 @@ class AuthService {
     await storage.removeUserId();
     // 不清除邮箱和密码，用于记住我功能
     // await storage.removeUserEmail();
-
-    // 清除API的Token
-    ApiService.instance.clearToken();
   }
 
   /// 完全清除所有认证数据（包括记住我信息）
@@ -144,9 +138,6 @@ class AuthService {
     await storage.removeRefreshToken();
     await storage.removeUserId();
     await storage.removeUserEmail();
-
-    // 清除API的Token
-    ApiService.instance.clearToken();
   }
 
   /// 检查登录状态

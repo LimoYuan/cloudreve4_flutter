@@ -135,22 +135,35 @@ class DownloadManagerProvider extends ChangeNotifier {
     }
 
     // 根据 flutter_downloader 的状态映射到我们的状态
+    // status=0: undefined
+    // status=1: enqueued (等待中)
+    // status=2: running (正在下载)
+    // status=3: complete (完成)
+    // status=4: failed (失败)
+    // status=5: canceled (取消)
+    // status=6: paused (暂停)
     DownloadStatus downloadStatus;
     switch (status) {
-      case 1: // DownloadTaskStatus.running
+      case 0: // undefined
+        downloadStatus = DownloadStatus.waiting;
+        break;
+      case 1: // enqueued
+        downloadStatus = DownloadStatus.waiting;
+        break;
+      case 2: // running
         downloadStatus = DownloadStatus.downloading;
         break;
-      case 2: // DownloadTaskStatus.paused
-        downloadStatus = DownloadStatus.paused;
-        break;
-      case 3: // DownloadTaskStatus.complete
+      case 3: // complete
         downloadStatus = DownloadStatus.completed;
         break;
-      case 4: // DownloadTaskStatus.canceled
+      case 4: // failed
+        downloadStatus = DownloadStatus.failed;
+        break;
+      case 5: // canceled
         downloadStatus = DownloadStatus.cancelled;
         break;
-      case 5: // DownloadTaskStatus.failed
-        downloadStatus = DownloadStatus.failed;
+      case 6: // paused
+        downloadStatus = DownloadStatus.paused;
         break;
       default:
         debugPrint('未知状态: $status');

@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
+import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_downloader/flutter_downloader.dart';
 import 'package:path_provider/path_provider.dart';
@@ -7,9 +9,26 @@ import 'package:permission_handler/permission_handler.dart';
 import '../data/models/download_task_model.dart';
 import 'file_service.dart';
 
-/// 下载服务
+/// 下载服务 - 单例模式
 @pragma('vm:entry-point')
 class DownloadService {
+  // 单例实例
+  static final DownloadService _instance = DownloadService._internal();
+  factory DownloadService() => _instance;
+
+  DownloadService._internal() {
+    _port = ReceivePort();
+    _port.listen((dynamic data) {
+      debugPrint('DownloadService ReceivePort 收到数据: $data');
+      final id = data[0] as String;
+      final status = data[1] as int;
+      final progress = data[2] as int;
+      _callbackHandler?.call(id, status, progress);
+    });
+  }
+
+  late final ReceivePort _port;
+
   // 用于存储从 flutter_downloader task ID 到我们内部 task ID 的映射
   final Map<String, String> _flutterTaskIdToInternalId = {};
   final Map<String, String> _internalIdToFlutterTaskId = {};
@@ -92,6 +111,10 @@ class DownloadService {
       return;
     }
 
+    // 注册 ReceivePort 到 IsolateNameServer，让后台 isolate 可以找到它
+    IsolateNameServer.registerPortWithName(_port.sendPort, 'download_service_port');
+    debugPrint('已注册 ReceivePort 到 IsolateNameServer');
+
     await FlutterDownloader.initialize(
       debug: kDebugMode,
     );
@@ -107,7 +130,16 @@ class DownloadService {
   @pragma('vm:entry-point')
   static void _staticCallback(String id, int status, int progress) {
     debugPrint('flutter_downloader 静态回调: id=$id, status=$status, progress=$progress');
-    _callbackHandler?.call(id, status, progress);
+    // 使用 IsolateNameServer 发送数据到主 isolate
+    final sendPort = IsolateNameServer.lookupPortByName('download_service_port');
+    if (sendPort != null) {
+      debugPrint('找到 SendPort，发送数据到主 isolate');
+      sendPort.send([id, status, progress]);
+    } else {
+      debugPrint('未找到 SendPort，无法发送数据到主 isolate');
+      // 尝试使用静态回调处理器
+      _callbackHandler?.call(id, status, progress);
+    }
   }
 
   /// 开始下载

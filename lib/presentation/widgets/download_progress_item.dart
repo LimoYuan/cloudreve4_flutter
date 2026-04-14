@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../data/models/download_task_model.dart';
 import '../../services/download_service.dart';
+import '../providers/download_manager_provider.dart';
 
 /// 下载任务列表项
 class DownloadProgressItem extends StatelessWidget {
@@ -23,10 +25,14 @@ class DownloadProgressItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDownloading = task.status == DownloadStatus.downloading;
-    final isCompleted = task.status == DownloadStatus.completed;
-    final isPaused = task.status == DownloadStatus.paused;
-    final isFailed = task.status == DownloadStatus.failed;
+    // 从 DownloadManagerProvider 获取最新的任务状态
+    final downloadManager = Provider.of<DownloadManagerProvider>(context, listen: true);
+    final latestTask = downloadManager.getTask(task.id) ?? task;
+
+    final isDownloading = latestTask.status == DownloadStatus.downloading;
+    final isCompleted = latestTask.status == DownloadStatus.completed;
+    final isPaused = latestTask.status == DownloadStatus.paused;
+    final isFailed = latestTask.status == DownloadStatus.failed;
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -53,10 +59,10 @@ class DownloadProgressItem extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        task.statusText,
+                        latestTask.statusText,
                         style: TextStyle(
                           fontSize: 12,
-                          color: _getStatusColor(task.status),
+                          color: _getStatusColor(latestTask.status),
                         ),
                       ),
                     ],
@@ -65,7 +71,7 @@ class DownloadProgressItem extends StatelessWidget {
                 // 操作按钮
                 Row(
                   mainAxisSize: MainAxisSize.min,
-                  children: _buildActionButtons(),
+                  children: _buildActionButtons(latestTask),
                 ),
               ],
             ),
@@ -77,7 +83,7 @@ class DownloadProgressItem extends StatelessWidget {
                 children: [
                   Expanded(
                     child: LinearProgressIndicator(
-                      value: isPaused ? null : task.progress,
+                      value: isPaused ? null : latestTask.progress,
                       backgroundColor: Colors.grey.shade200,
                       valueColor: AlwaysStoppedAnimation<Color>(
                         Theme.of(context).colorScheme.primary,
@@ -88,7 +94,7 @@ class DownloadProgressItem extends StatelessWidget {
                   Text(
                     isPaused
                         ? '已暂停'
-                        : task.progressText,
+                        : latestTask.progressText,
                     style: const TextStyle(fontSize: 12),
                   ),
                 ],
@@ -97,15 +103,15 @@ class DownloadProgressItem extends StatelessWidget {
               Row(
                 children: [
                   Text(
-                    '${DownloadService.getReadableFileSize(task.downloadedBytes)} / '
-                    '${DownloadService.getReadableFileSize(task.fileSize)}',
+                    '${DownloadService.getReadableFileSize(latestTask.downloadedBytes)} / '
+                    '${DownloadService.getReadableFileSize(latestTask.fileSize)}',
                     style: const TextStyle(fontSize: 12),
                   ),
                 ],
               ),
-            ] else if (isFailed && task.errorMessage != null) ...[
+            ] else if (isFailed && latestTask.errorMessage != null) ...[
               Text(
-                task.errorMessage!,
+                latestTask.errorMessage!,
                 style: TextStyle(
                   fontSize: 12,
                   color: Colors.red.shade700,
@@ -115,7 +121,7 @@ class DownloadProgressItem extends StatelessWidget {
               ),
             ] else if (isCompleted) ...[
               Text(
-                '完成时间: ${_formatDateTime(task.completedAt!)}',
+                '完成时间: ${_formatDateTime(latestTask.completedAt!)}',
                 style: const TextStyle(fontSize: 12),
               ),
             ],
@@ -125,7 +131,7 @@ class DownloadProgressItem extends StatelessWidget {
     );
   }
 
-  List<Widget> _buildActionButtons() {
+    List<Widget> _buildActionButtons(DownloadTaskModel task) {
     switch (task.status) {
       case DownloadStatus.downloading:
         return [

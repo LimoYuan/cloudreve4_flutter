@@ -67,6 +67,7 @@ dependencies:
   path_provider: ^2.1.1
   permission_handler: ^11.1.0
   url_launcher: ^6.2.1
+  open_file: ^3.5.11
 
   # 代码高亮
   flutter_highlight: ^0.7.0

@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:open_file/open_file.dart';
 import 'package:provider/provider.dart';
 import '../../data/models/download_task_model.dart';
 import '../../services/download_service.dart';
@@ -71,7 +74,7 @@ class DownloadProgressItem extends StatelessWidget {
                 // 操作按钮
                 Row(
                   mainAxisSize: MainAxisSize.min,
-                  children: _buildActionButtons(latestTask),
+                  children: _buildActionButtons(context, latestTask),
                 ),
               ],
             ),
@@ -131,7 +134,10 @@ class DownloadProgressItem extends StatelessWidget {
     );
   }
 
-    List<Widget> _buildActionButtons(DownloadTaskModel task) {
+    List<Widget> _buildActionButtons(
+      BuildContext context, 
+      DownloadTaskModel task
+    ) {
     switch (task.status) {
       case DownloadStatus.downloading:
         return [
@@ -171,9 +177,7 @@ class DownloadProgressItem extends StatelessWidget {
         return [
           IconButton(
             icon: const Icon(Icons.open_in_new, size: 20),
-            onPressed: () {
-              // TODO: 打开文件
-            },
+            onPressed: () => _openDownloadedFile(context, task),
             tooltip: '打开',
           ),
           IconButton(
@@ -184,6 +188,43 @@ class DownloadProgressItem extends StatelessWidget {
         ];
       default:
         return [];
+    }
+  }
+
+  /// 打开已下载的文件
+  Future<void> _openDownloadedFile(
+    BuildContext context,
+    DownloadTaskModel task,
+  ) async {
+    // 检查文件是否存在
+    final file = File(task.savePath);
+    if (!await file.exists()) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('文件不存在：${task.fileName}')),
+        );
+      }
+      return;
+    }
+
+    try {
+      OpenResult openResult = await OpenFile.open(task.savePath);
+        debugPrint('下载对话框打开文件结果：${openResult.type}');
+      if (openResult.type == ResultType.done) {
+        debugPrint('成功打开文件：${task.fileName}');
+      } else {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('无法打开文件：${task.fileName} 错误信息: ${openResult.message}')),
+          );
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('打开文件失败：$e')),
+        );
+      }
     }
   }
 

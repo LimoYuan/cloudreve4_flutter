@@ -29,8 +29,18 @@ class _HomePageState extends State<HomePage> {
     super.initState();
     Future.delayed(const Duration(milliseconds: 100), () {
       if (mounted) {
-        final fileManager = Provider.of<FileManagerProvider>(context, listen: false);
+        final fileManager = Provider.of<FileManagerProvider>(
+          context,
+          listen: false,
+        );
         fileManager.loadFiles();
+
+        // 初始化下载管理器，加载持久化的任务
+        final downloadManager = Provider.of<DownloadManagerProvider>(
+          context,
+          listen: false,
+        );
+        downloadManager.initialize();
       }
     });
   }
@@ -122,7 +132,10 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildDrawer(BuildContext context) {
-    final fileManager = Provider.of<FileManagerProvider>(context, listen: false);
+    final fileManager = Provider.of<FileManagerProvider>(
+      context,
+      listen: false,
+    );
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
 
     return Drawer(
@@ -137,9 +150,9 @@ class _HomePageState extends State<HomePage> {
                     ? authProvider.user!.nickname[0].toUpperCase()
                     : 'U',
                 style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
           ),
@@ -200,9 +213,7 @@ class _HomePageState extends State<HomePage> {
     return Consumer<FileManagerProvider>(
       builder: (context, fileManager, child) {
         if (fileManager.isLoading) {
-          return const Center(
-            child: CircularProgressIndicator(),
-          );
+          return const Center(child: CircularProgressIndicator());
         }
 
         if (fileManager.errorMessage != null) {
@@ -242,7 +253,10 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildEmptyFolder(BuildContext context, FileManagerProvider fileManager) {
+  Widget _buildEmptyFolder(
+    BuildContext context,
+    FileManagerProvider fileManager,
+  ) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -250,13 +264,10 @@ class _HomePageState extends State<HomePage> {
           Icon(Icons.folder, size: 64, color: Colors.grey.shade400),
           const SizedBox(height: 16),
           Text(
-            fileManager.currentPath == '/'
-                ? '文件夹为空'
-                : '暂无文件',
+            fileManager.currentPath == '/' ? '文件夹为空' : '暂无文件',
             style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
           ),
-          if (fileManager.currentPath == '/')
-            const SizedBox(height: 8),
+          if (fileManager.currentPath == '/') const SizedBox(height: 8),
           if (fileManager.currentPath == '/')
             Text(
               '点击 + 按钮创建新文件夹',
@@ -358,7 +369,10 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildBreadcrumb(BuildContext context, FileManagerProvider fileManager) {
+  Widget _buildBreadcrumb(
+    BuildContext context,
+    FileManagerProvider fileManager,
+  ) {
     final pathParts = fileManager.currentPath.split('/');
     pathParts.removeWhere((part) => part.isEmpty);
 
@@ -392,33 +406,35 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
 
-            for (int i = 0; i < pathParts.length; i++)
-              ...[
-                Icon(Icons.chevron_right, size: 16, color: Colors.grey.shade400),
-                InkWell(
-                  onTap: () {
-                    final path = '/${pathParts.sublist(0, i + 1).join('/')}';
-                    fileManager.enterFolder(path);
-                  },
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    child: Text(
-                      pathParts[i],
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.primary,
-                        fontWeight: FontWeight.w500,
-                      ),
+            for (int i = 0; i < pathParts.length; i++) ...[
+              Icon(Icons.chevron_right, size: 16, color: Colors.grey.shade400),
+              InkWell(
+                onTap: () {
+                  final path = '/${pathParts.sublist(0, i + 1).join('/')}';
+                  fileManager.enterFolder(path);
+                },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Text(
+                    pathParts[i],
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.primary,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ),
-              ],
+              ),
+            ],
           ],
         ),
       ),
     );
   }
 
-  Widget _buildSelectionToolbar(BuildContext context, FileManagerProvider fileManager) {
+  Widget _buildSelectionToolbar(
+    BuildContext context,
+    FileManagerProvider fileManager,
+  ) {
     final selectionCount = fileManager.selectedFiles.length;
 
     return Container(
@@ -426,7 +442,7 @@ class _HomePageState extends State<HomePage> {
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
         boxShadow: [
-         BoxShadow(
+          BoxShadow(
             color: Colors.black.withValues(alpha: 0.1),
             blurRadius: 4,
             offset: const Offset(0, 2),
@@ -468,7 +484,10 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  void _showCreateDialog(BuildContext context, FileManagerProvider fileManager) {
+  void _showCreateDialog(
+    BuildContext context,
+    FileManagerProvider fileManager,
+  ) {
     final controller = TextEditingController();
 
     showDialog(
@@ -502,7 +521,10 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  void _showRenameDialog(BuildContext context, FileManagerProvider fileManager) {
+  void _showRenameDialog(
+    BuildContext context,
+    FileManagerProvider fileManager,
+  ) {
     if (fileManager.selectedFiles.length != 1) return;
 
     final fileId = fileManager.selectedFiles.first;
@@ -540,7 +562,10 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  void _showDeleteConfirmation(BuildContext context, FileManagerProvider fileManager) {
+  void _showDeleteConfirmation(
+    BuildContext context,
+    FileManagerProvider fileManager,
+  ) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -556,9 +581,7 @@ class _HomePageState extends State<HomePage> {
               Navigator.of(context).pop();
               await fileManager.deleteSelectedFiles();
             },
-            style: FilledButton.styleFrom(
-              backgroundColor: Colors.red,
-            ),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
             child: const Text('删除'),
           ),
         ],
@@ -619,9 +642,9 @@ class _HomePageState extends State<HomePage> {
       if (!context.mounted) return;
 
       if (result == null || result.files.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('未选择文件')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('未选择文件')));
         return;
       }
 
@@ -635,21 +658,27 @@ class _HomePageState extends State<HomePage> {
 
       if (files.isEmpty) {
         if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('无法获取文件路径')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('无法获取文件路径')));
         return;
       }
 
-      final uploadManager = Provider.of<UploadManagerProvider>(context, listen: false);
-      final fileManager = Provider.of<FileManagerProvider>(context, listen: false);
+      final uploadManager = Provider.of<UploadManagerProvider>(
+        context,
+        listen: false,
+      );
+      final fileManager = Provider.of<FileManagerProvider>(
+        context,
+        listen: false,
+      );
 
       await uploadManager.startUpload(files, fileManager.currentPath);
     } catch (e) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('选择文件失败: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('选择文件失败: $e')));
     }
   }
 
@@ -678,7 +707,10 @@ class _HomePageState extends State<HomePage> {
 
     if (confirmed == true) {
       // 获取Provider引用（在async操作前）
-      final fileManager = Provider.of<FileManagerProvider>(context, listen: false);
+      final fileManager = Provider.of<FileManagerProvider>(
+        context,
+        listen: false,
+      );
 
       // 执行登出
       await authProvider.logout();
@@ -688,17 +720,23 @@ class _HomePageState extends State<HomePage> {
 
       // 跳转到登录页
       if (context.mounted) {
-        Navigator.of(context).pushNamedAndRemoveUntil(
-          RouteNames.login,
-          (route) => false,
-        );
+        Navigator.of(
+          context,
+        ).pushNamedAndRemoveUntil(RouteNames.login, (route) => false);
       }
     }
   }
 
   /// 下载文件
-  Future<void> _downloadFile(BuildContext context, FileManagerProvider fileManager, FileModel file) async {
-    final downloadManager = Provider.of<DownloadManagerProvider>(context, listen: false);
+  Future<void> _downloadFile(
+    BuildContext context,
+    FileManagerProvider fileManager,
+    FileModel file,
+  ) async {
+    final downloadManager = Provider.of<DownloadManagerProvider>(
+      context,
+      listen: false,
+    );
 
     final task = await downloadManager.addDownloadTask(
       fileName: file.name,
@@ -708,9 +746,9 @@ class _HomePageState extends State<HomePage> {
 
     if (task != null) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('文件已在下载列表中')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('文件已在下载列表中')));
       }
       return;
     }
@@ -737,20 +775,21 @@ class _HomePageState extends State<HomePage> {
 
         final uri = Uri.parse(url);
         if (await canLaunchUrl(uri)) {
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
+          await launchUrl(uri, mode: LaunchMode.platformDefault);
         } else {
           if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('无法打开链接')),
-            );
+            debugPrint('无法打开链接: $uri');
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text('无法打开链接: $uri')));
           }
         }
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('获取下载链接失败: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('获取下载链接失败: $e')));
       }
     }
   }

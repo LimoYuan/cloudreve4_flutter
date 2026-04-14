@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import '../../core/constants/storage_keys.dart';
 import '../../data/models/download_task_model.dart';
 import '../../services/download_service.dart';
+import '../../services/storage_service.dart';
 
 /// 下载管理Provider
 class DownloadManagerProvider extends ChangeNotifier {
@@ -27,6 +30,9 @@ class DownloadManagerProvider extends ChangeNotifier {
     if (_isInitialized) return;
 
     await _downloadService.initialize(callbackHandler: _handleDownloadCallback);
+
+    // 从本地存储加载已保存的下载任务
+    await _loadTasks();
 
     _isInitialized = true;
     debugPrint('DownloadManagerProvider 初始化完成');
@@ -74,6 +80,7 @@ class DownloadManagerProvider extends ChangeNotifier {
     );
 
     _tasks[id] = task;
+    await _saveTasks();
     notifyListeners();
 
     // 开始下载
@@ -114,7 +121,7 @@ class DownloadManagerProvider extends ChangeNotifier {
   }
 
   /// 处理 flutter_downloader 的回调
-  void _handleDownloadCallback(String flutterTaskId, int status, int progress) {
+  void _handleDownloadCallback(String flutterTaskId, int status, int progress) async {
     debugPrint('DownloadManagerProvider._handleDownloadCallback 被调用: flutterTaskId=$flutterTaskId, status=$status, progress=$progress');
     debugPrint('当前任务数量: ${_tasks.length}');
 
@@ -188,6 +195,7 @@ class DownloadManagerProvider extends ChangeNotifier {
     }
 
     debugPrint('任务已更新: ${_tasks[internalId]!.status}');
+    await _saveTasks();
     notifyListeners();
   }
 
@@ -207,6 +215,7 @@ class DownloadManagerProvider extends ChangeNotifier {
     if (task != null) {
       if (task.status == DownloadStatus.downloading) {
         _tasks[taskId] = task.copyWith(status: DownloadStatus.paused);
+        await _saveTasks();
         notifyListeners();
       }
     }
@@ -219,12 +228,14 @@ class DownloadManagerProvider extends ChangeNotifier {
     final task = _tasks[taskId];
     if (task != null) {
       _tasks[taskId] = task.copyWith(status: DownloadStatus.cancelled);
+      await _saveTasks();
       notifyListeners();
 
       // 延迟移除任务
       Future.delayed(const Duration(seconds: 2), () {
         _tasks.remove(taskId);
         _downloadService.disposeTask(taskId);
+        _saveTasks();
         notifyListeners();
       });
     }
@@ -242,6 +253,7 @@ class DownloadManagerProvider extends ChangeNotifier {
       // 移除任务
       _tasks.remove(taskId);
       _downloadService.disposeTask(taskId);
+      await _saveTasks();
       notifyListeners();
     }
   }
@@ -260,6 +272,7 @@ class DownloadManagerProvider extends ChangeNotifier {
         errorMessage: null,
         completedAt: null,
       );
+      await _saveTasks();
       notifyListeners();
 
       // 重新开始下载
@@ -276,18 +289,97 @@ class DownloadManagerProvider extends ChangeNotifier {
   }
 
   /// 清空所有失败的任务
-  void clearFailedTasks() {
+  Future<void> clearFailedTasks() async {
     final failedTasks = getTasksByStatus(DownloadStatus.failed);
     for (final task in failedTasks) {
       _tasks.remove(task.id);
       _downloadService.disposeTask(task.id);
     }
+    await _saveTasks();
     notifyListeners();
   }
 
   /// 获取任务
   DownloadTaskModel? getTask(String taskId) {
     return _tasks[taskId];
+  }
+
+  /// 从本地存储加载下载任务
+  Future<void> _loadTasks() async {
+    try {
+      final tasksJson = await StorageService.instance.getString(StorageKeys.downloadTasks);
+      if (tasksJson == null || tasksJson.isEmpty) {
+        debugPrint('没有保存的下载任务');
+        return;
+      }
+
+      final tasksList = jsonDecode(tasksJson) as List<dynamic>;
+      final loadedTasks = <DownloadTaskModel>[];
+
+      final now = DateTime.now();
+      for (final taskJson in tasksList) {
+        try {
+          final task = DownloadTaskModel.fromJson(taskJson as Map<String, dynamic>);
+          // 过滤掉已取消的任务
+          if (task.status == DownloadStatus.cancelled) {
+            continue;
+          }
+
+          // 如果任务已完成，只保留最近7天内的记录
+          if (task.status == DownloadStatus.completed) {
+            if (task.completedAt == null) {
+              continue;
+            }
+            final daysSinceCompletion = now.difference(task.completedAt!).inDays;
+            if (daysSinceCompletion > 7) {
+              debugPrint('跳过超过7天的已完成任务: ${task.fileName}');
+              continue;
+            }
+          }
+
+          loadedTasks.add(task);
+        } catch (e) {
+          debugPrint('解析下载任务失败: $e');
+        }
+      }
+
+      // 将加载的任务添加到当前任务列表
+      for (final task in loadedTasks) {
+        _tasks[task.id] = task;
+      }
+
+      debugPrint('从存储加载了 ${loadedTasks.length} 个下载任务');
+
+      // 通知 UI 更新
+      if (loadedTasks.isNotEmpty) {
+        notifyListeners();
+      }
+
+      // 检查未完成的任务并恢复下载
+      for (final task in loadedTasks) {
+        if (task.status == DownloadStatus.downloading ||
+            task.status == DownloadStatus.waiting) {
+          debugPrint('恢复下载任务: ${task.fileName}');
+          await _downloadService.startDownload(task);
+        }
+      }
+    } catch (e) {
+      debugPrint('加载下载任务失败: $e');
+    }
+  }
+
+  /// 保存下载任务到本地存储
+  Future<void> _saveTasks() async {
+    try {
+      final tasksList = _tasks.values
+          .map((task) => task.toJson())
+          .toList();
+      final tasksJson = jsonEncode(tasksList);
+      await StorageService.instance.setString(StorageKeys.downloadTasks, tasksJson);
+      debugPrint('已保存 ${_tasks.length} 个下载任务到存储');
+    } catch (e) {
+      debugPrint('保存下载任务失败: $e');
+    }
   }
 
   @override

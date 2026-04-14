@@ -8,6 +8,7 @@ import '../../services/download_service.dart';
 class DownloadManagerProvider extends ChangeNotifier {
   final DownloadService _downloadService = DownloadService();
   final Map<String, DownloadTaskModel> _tasks = {};
+  bool _isInitialized = false;
 
   /// 获取所有下载任务
   List<DownloadTaskModel> get tasks => _tasks.values.toList()
@@ -23,7 +24,12 @@ class DownloadManagerProvider extends ChangeNotifier {
 
   /// 初始化下载服务
   Future<void> initialize() async {
-    await _downloadService.initialize();
+    if (_isInitialized) return;
+
+    await _downloadService.initialize(callbackHandler: _handleDownloadCallback);
+
+    _isInitialized = true;
+    debugPrint('DownloadManagerProvider 初始化完成');
   }
 
   /// 添加下载任务
@@ -64,13 +70,26 @@ class DownloadManagerProvider extends ChangeNotifier {
       fileUri: fileUri,
       fileSize: fileSize,
       savePath: savePath,
+      status: DownloadStatus.waiting,
     );
 
     _tasks[id] = task;
     notifyListeners();
 
     // 开始下载
-    _startDownload(task);
+    debugPrint('准备开始下载任务: ${task.id}, 文件: ${task.fileName}, 下载状态: ${task.status}');
+    final flutterTaskId = await _downloadService.startDownload(task);
+    debugPrint('startDownload 返回: flutterTaskId=$flutterTaskId');
+
+    if (flutterTaskId == null) {
+      // 下载失败，更新任务状态
+      _tasks[id] = task.copyWith(
+        status: DownloadStatus.failed,
+        errorMessage: '无法创建下载任务',
+      );
+      notifyListeners();
+      return null;
+    }
 
     return task;
   }
@@ -94,52 +113,82 @@ class DownloadManagerProvider extends ChangeNotifier {
     }
   }
 
-  /// 开始下载
-  void _startDownload(DownloadTaskModel task) {
-    // 监听进度
-    StreamSubscription<DownloadTaskModel>? subscription;
-    subscription = _downloadService
-        .getProgressStream(task.id)
-        .listen((updatedTask) {
-      _tasks[task.id] = updatedTask;
-      notifyListeners();
+  /// 处理 flutter_downloader 的回调
+  void _handleDownloadCallback(String flutterTaskId, int status, int progress) {
+    debugPrint('DownloadManagerProvider._handleDownloadCallback 被调用: flutterTaskId=$flutterTaskId, status=$status, progress=$progress');
+    debugPrint('当前任务数量: ${_tasks.length}');
 
-      // 如果下载完成或失败，关闭流
-      if (updatedTask.status == DownloadStatus.completed ||
-          updatedTask.status == DownloadStatus.failed ||
-          updatedTask.status == DownloadStatus.cancelled) {
-        subscription?.cancel();
-        _downloadService.disposeTask(task.id);
-      }
-    });
+    // 查找对应的内部任务 ID
+    final internalId = _downloadService.getInternalTaskId(flutterTaskId);
+    debugPrint('对应的内部任务 ID: $internalId');
 
-    // 启动下载
-    _downloadService.startDownload(task).catchError((e) {
-      debugPrint('下载错误: $e');
+    if (internalId == null) {
+      debugPrint('未找到对应的任务: flutterTaskId=$flutterTaskId');
+      return;
+    }
 
-      // 如果是权限错误，将任务状态设置为失败并显示错误信息
-      final errorMessage = e.toString();
-      if (errorMessage.contains('存储权限被永久拒绝')) {
-        _tasks[task.id] = task.copyWith(
-          status: DownloadStatus.failed,
-          errorMessage: errorMessage,
-        );
-        notifyListeners();
-      }
-    });
+    // 获取当前任务
+    final task = _tasks[internalId];
+    if (task == null) {
+      debugPrint('任务不存在: internalId=$internalId');
+      return;
+    }
+
+    // 根据 flutter_downloader 的状态映射到我们的状态
+    DownloadStatus downloadStatus;
+    switch (status) {
+      case 1: // DownloadTaskStatus.running
+        downloadStatus = DownloadStatus.downloading;
+        break;
+      case 2: // DownloadTaskStatus.paused
+        downloadStatus = DownloadStatus.paused;
+        break;
+      case 3: // DownloadTaskStatus.complete
+        downloadStatus = DownloadStatus.completed;
+        break;
+      case 4: // DownloadTaskStatus.canceled
+        downloadStatus = DownloadStatus.cancelled;
+        break;
+      case 5: // DownloadTaskStatus.failed
+        downloadStatus = DownloadStatus.failed;
+        break;
+      default:
+        debugPrint('未知状态: $status');
+        return;
+    }
+
+    debugPrint('更新任务: internalId=$internalId, status=$downloadStatus, progress=$progress');
+
+    // 更新任务
+    final updatedTask = task.copyWith(
+      status: downloadStatus,
+      downloadedBytes: (task.fileSize * progress / 100).toInt(),
+    );
+
+    // 如果下载完成，设置完成时间
+    if (downloadStatus == DownloadStatus.completed) {
+      _tasks[internalId] = updatedTask.copyWith(
+        completedAt: DateTime.now(),
+      );
+    } else {
+      _tasks[internalId] = updatedTask;
+    }
+
+    debugPrint('任务已更新: ${_tasks[internalId]!.status}');
+    notifyListeners();
   }
 
   /// 恢复下载
-  void resumeDownload(String taskId) {
+  Future<void> resumeDownload(String taskId) async {
     final task = _tasks[taskId];
     if (task != null) {
-      _startDownload(task);
+      await _downloadService.resumeDownload(taskId);
     }
   }
 
   /// 暂停下载
-  void pauseDownload(String taskId) {
-    _downloadService.pauseDownload(taskId);
+  Future<void> pauseDownload(String taskId) async {
+    await _downloadService.pauseDownload(taskId);
 
     final task = _tasks[taskId];
     if (task != null) {
@@ -151,8 +200,8 @@ class DownloadManagerProvider extends ChangeNotifier {
   }
 
   /// 取消下载
-  void cancelDownload(String taskId) {
-    _downloadService.cancelDownload(taskId);
+  Future<void> cancelDownload(String taskId) async {
+    await _downloadService.cancelDownload(taskId);
 
     final task = _tasks[taskId];
     if (task != null) {
@@ -201,7 +250,7 @@ class DownloadManagerProvider extends ChangeNotifier {
       notifyListeners();
 
       // 重新开始下载
-      _startDownload(_tasks[taskId]!);
+      await _downloadService.startDownload(_tasks[taskId]!);
     }
   }
 

@@ -8,10 +8,23 @@ import '../data/models/download_task_model.dart';
 import 'file_service.dart';
 
 /// 下载服务
+@pragma('vm:entry-point')
 class DownloadService {
+  // 用于存储从 flutter_downloader task ID 到我们内部 task ID 的映射
+  final Map<String, String> _flutterTaskIdToInternalId = {};
+  final Map<String, String> _internalIdToFlutterTaskId = {};
+
+  // 回调处理器 - 必须是静态方法
+  static Function(String flutterTaskId, int status, int progress)? _callbackHandler;
+
   final FileService _fileService = FileService();
   final Map<String, StreamController<DownloadTaskModel>> _progressControllers = {};
   bool _isInitialized = false;
+
+  /// 设置回调处理器
+  static void setCallbackHandler(Function(String flutterTaskId, int status, int progress) handler) {
+    _callbackHandler = handler;
+  }
 
   /// 获取下载任务进度流
   Stream<DownloadTaskModel> getProgressStream(String taskId) {
@@ -25,7 +38,7 @@ class DownloadService {
   Future<Directory> getDownloadDirectory() async {
     if (defaultTargetPlatform == TargetPlatform.android) {
       // 在开始下载前，建议同时检查这两个权限
-      // 没有 POST_NOTIFICATIONS 权限：用户看不到进度条，系统会认为该服务在静默耗电，从而限制其后台活跃
+      // 没有 POST_NOTIFICATIONS 权限：用户看不到进度条，系统会认为该服务在静默耗电，从而限制后台活跃
       if (await Permission.notification.isDenied) {
         await Permission.notification.request();
       }
@@ -67,32 +80,43 @@ class DownloadService {
   }
 
   /// 初始化下载器
-  Future<void> initialize() async {
-    if (_isInitialized) return;
+  Future<void> initialize({Function(String flutterTaskId, int status, int progress)? callbackHandler}) async {
+    // 如果提供了回调处理器，设置它（即使已经初始化过）
+    if (callbackHandler != null) {
+      setCallbackHandler(callbackHandler);
+      debugPrint('回调处理器已更新');
+    }
+
+    if (_isInitialized) {
+      debugPrint('DownloadService 已经初始化');
+      return;
+    }
 
     await FlutterDownloader.initialize(
       debug: kDebugMode,
     );
 
-    // 监听下载进度
-    FlutterDownloader.registerCallback((id, status, progress) {
-      debugPrint('Download callback: id=$id, status=$status, progress=$progress');
-      _handleDownloadCallback(id, status, progress);
-    });
+    // 监听下载进度 - 使用静态回调方法
+    FlutterDownloader.registerCallback(_staticCallback);
 
     _isInitialized = true;
+    debugPrint('DownloadService 初始化完成');
+  }
+
+  /// 静态回调方法 - flutter_downloader 要求必须是静态或顶层函数
+  @pragma('vm:entry-point')
+  static void _staticCallback(String id, int status, int progress) {
+    debugPrint('flutter_downloader 静态回调: id=$id, status=$status, progress=$progress');
+    _callbackHandler?.call(id, status, progress);
   }
 
   /// 开始下载
-  Future<void> startDownload(DownloadTaskModel task) async {
+  Future<String?> startDownload(DownloadTaskModel task) async {
     try {
       // 确保已初始化
       if (!_isInitialized) {
         await initialize();
       }
-
-      // 更新状态为下载中
-      _updateTask(task.copyWith(status: DownloadStatus.downloading));
 
       // 如果没有下载URL，先获取
       String url = task.downloadUrl ?? '';
@@ -124,7 +148,7 @@ class DownloadService {
       }
 
       // 使用 flutter_downloader 开始下载
-      await FlutterDownloader.enqueue(
+      final flutterTaskId = await FlutterDownloader.enqueue(
         url: url,
         savedDir: dir.path,
         fileName: file.path.split('/').last,
@@ -132,47 +156,65 @@ class DownloadService {
         openFileFromNotification: true,
       );
 
+      // 检查任务 ID 是否有效
+      if (flutterTaskId == null || flutterTaskId.isEmpty) {
+        throw Exception('创建下载任务失败');
+      }
+
+      // 保存 ID 映射关系
+      _flutterTaskIdToInternalId[flutterTaskId] = task.id;
+      _internalIdToFlutterTaskId[task.id] = flutterTaskId;
+
+      debugPrint('下载任务已添加: flutterTaskId=$flutterTaskId, internalId=${task.id}');
+
+      return flutterTaskId;
+
     } catch (e) {
-      _updateTask(task.copyWith(
-        status: DownloadStatus.failed,
-        errorMessage: e.toString(),
-      ));
       debugPrint('下载失败: $e');
+      rethrow;
     }
   }
 
-  /// 处理下载回调
-  void _handleDownloadCallback(String id, int status, int progress) {
-    // 这里需要找到对应的任务
-    // 注意：flutter_downloader 使用它自己的 task ID
-    // 我们需要建立映射关系
-    debugPrint('下载进度: $progress%, 状态: $status');
-
-    // 这里简化处理，实际应用中需要维护 taskId 的映射关系
-    // 由于 flutter_downloader 的 ID 与我们的 task ID 不同，
-    // 这里暂时无法精确更新进度，需要重构任务管理逻辑
+  /// 根据 flutter_downloader ID 获取内部任务 ID
+  String? getInternalTaskId(String flutterTaskId) {
+    return _flutterTaskIdToInternalId[flutterTaskId];
   }
 
   /// 暂停下载
   Future<void> pauseDownload(String taskId) async {
-    await FlutterDownloader.pause(taskId: taskId);
+    final flutterTaskId = _internalIdToFlutterTaskId[taskId];
+    if (flutterTaskId != null) {
+      await FlutterDownloader.pause(taskId: flutterTaskId);
+    }
   }
 
   /// 恢复下载
-  Future<void> resumeDownload(DownloadTaskModel task) async {
+  Future<void> resumeDownload(String taskId) async {
     if (!_isInitialized) {
       await initialize();
     }
-    await FlutterDownloader.resume(taskId: task.id);
+    final flutterTaskId = _internalIdToFlutterTaskId[taskId];
+    if (flutterTaskId != null) {
+      await FlutterDownloader.resume(taskId: flutterTaskId);
+    }
   }
 
   /// 取消下载
   Future<void> cancelDownload(String taskId) async {
-    await FlutterDownloader.cancel(taskId: taskId);
+    final flutterTaskId = _internalIdToFlutterTaskId[taskId];
+    if (flutterTaskId != null) {
+      await FlutterDownloader.cancel(taskId: flutterTaskId);
+    }
   }
 
   /// 删除下载任务
   void disposeTask(String taskId) {
+    final flutterTaskId = _internalIdToFlutterTaskId[taskId];
+    if (flutterTaskId != null) {
+      _flutterTaskIdToInternalId.remove(flutterTaskId);
+    }
+    _internalIdToFlutterTaskId.remove(taskId);
+
     // 关闭进度流
     final controller = _progressControllers[taskId];
     if (controller != null) {
@@ -193,14 +235,6 @@ class DownloadService {
     }
   }
 
-  /// 更新任务状态并通知监听器
-  void _updateTask(DownloadTaskModel task) {
-    final controller = _progressControllers[task.id];
-    if (controller != null && !controller.isClosed) {
-      controller.add(task);
-    }
-  }
-
   /// 获取可读的文件大小
   static String getReadableFileSize(int bytes) {
     if (bytes < 1024) {
@@ -216,6 +250,9 @@ class DownloadService {
 
   /// 清理所有资源
   void dispose() {
+    _flutterTaskIdToInternalId.clear();
+    _internalIdToFlutterTaskId.clear();
+
     // 关闭所有流
     for (final controller in _progressControllers.values) {
       if (!controller.isClosed) {

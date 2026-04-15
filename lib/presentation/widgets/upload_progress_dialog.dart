@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../data/models/upload_task_model.dart';
 import '../../services/upload_service.dart';
-import '../providers/upload_manager_provider.dart';
+import 'upload_progress_item.dart';
 
 /// 上传进度对话框
 class UploadProgressDialog extends StatelessWidget {
@@ -9,232 +10,204 @@ class UploadProgressDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 400, maxHeight: 500),
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildHeader(context),
-            const SizedBox(height: 24),
-            Expanded(child: _buildProgressList(context)),
-            const SizedBox(height: 24),
-            _buildActions(context),
-          ],
-        ),
-      ),
-    );
-  }
+    return Consumer<UploadService>(
+      builder: (context, uploadService, child) {
+        final tasks = uploadService.allTasks;
 
-  Widget _buildHeader(BuildContext context) {
-    return Consumer<UploadManagerProvider>(
-      builder: (context, uploadManager, child) {
-        final tasks = uploadManager.allTasks;
-        final uploadedBytes = tasks.fold<int>(0, (sum, t) => sum + t.uploadedBytes);
-        final totalBytes = tasks.fold<int>(0, (sum, t) => sum + t.fileSize);
-
-        return Row(
-          children: [
-            Icon(Icons.cloud_upload, color: Theme.of(context).colorScheme.primary),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '上传文件',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    _formatBytes(uploadedBytes, totalBytes),
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Colors.grey.shade600,
-                        ),
-                  ),
-                ],
-              ),
+        return Dialog(
+          insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 180),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: 300,
+              // 当没有任务时，最小高度约为2个任务的大小（约160px）
+              minHeight: tasks.isEmpty ? 160 : 0,
             ),
-          ],
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 标题栏
+                _buildHeader(context, uploadService, tasks),
+
+                // 任务列表
+                Flexible(
+                  child: tasks.isEmpty
+                      ? _buildEmptyState(context)
+                      : _buildTaskList(context, uploadService, tasks),
+                ),
+
+                // 底部操作栏
+                _buildFooter(context, uploadService, tasks),
+              ],
+            ),
+          ),
         );
       },
     );
   }
 
-  Widget _buildProgressList(BuildContext context) {
-    return Consumer<UploadManagerProvider>(
-      builder: (context, uploadManager, child) {
-        return uploadManager.allTasks.isEmpty
-            ? const Center(child: Text('准备上传...'))
-            : ListView.builder(
-                shrinkWrap: true,
-                itemCount: uploadManager.allTasks.length,
-                itemBuilder: (context, index) {
-                  final task = uploadManager.allTasks[index];
-                  return _buildTaskItem(context, task, uploadManager);
-                },
-              );
-      },
-    );
-  }
-
-  Widget _buildTaskItem(BuildContext context, UploadTask task, UploadManagerProvider uploadManager) {
-    final fileName = task.fileName;
-    final isError = task.error != null;
-    final isCompleted = task.completed;
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Row(
+  Widget _buildEmptyState(BuildContext context) {
+    return const Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          _buildFileIcon(task, isError, isCompleted),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  fileName,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 4),
-                if (isError)
-                  Text(
-                    task.error!,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Colors.red,
-                    ),
-                  )
-                else
-                  Text(
-                    '${_formatBytes(task.uploadedBytes, task.fileSize)} - ${task.percentage.toStringAsFixed(1)}%',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: isCompleted ? Colors.green.shade600 : Colors.grey.shade600,
-                    ),
-                  ),
-                const SizedBox(height: 8),
-                LinearProgressIndicator(
-                  value: task.progress / 100,
-                  backgroundColor: isError
-                      ? Colors.red.withValues(alpha: 0.1)
-                      : isCompleted
-                          ? Colors.green.withValues(alpha: 0.2)
-                          : Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
-                  valueColor: AlwaysStoppedAnimation<Color>(
-                    isError
-                        ? Colors.red
-                        : isCompleted
-                            ? Colors.green
-                            : Theme.of(context).colorScheme.primary,
-                  ),
-                  minHeight: 4,
-                ),
-              ],
+          Icon(
+            Icons.cloud_upload,
+            size: 48,
+            color: Colors.grey,
+          ),
+          SizedBox(height: 16),
+          Text(
+            '暂无上传任务',
+            style: TextStyle(
+              color: Colors.grey,
+              fontSize: 14,
             ),
           ),
-          if (!isCompleted && !isError)
-            IconButton(
-              icon: const Icon(Icons.close, size: 20),
-              onPressed: () {
-                uploadManager.cancelUpload(task.id);
-              },
-              tooltip: '取消',
-            ),
         ],
       ),
     );
   }
 
-  Widget _buildFileIcon(UploadTask task, bool isError, bool isCompleted) {
-    IconData icon;
-    Color color;
-
-    if (isError) {
-      icon = Icons.error_outline;
-      color = Colors.red;
-    } else if (isCompleted) {
-      icon = Icons.check_circle_outline;
-      color = Colors.green;
-    } else {
-      icon = Icons.cloud_upload_outlined;
-      color = Colors.grey.shade600;
-    }
-
-    return Icon(icon, color: color, size: 24);
-  }
-
-  Widget _buildActions(BuildContext context) {
-    return Consumer<UploadManagerProvider>(
-      builder: (context, uploadManager, child) {
-        final hasError = uploadManager.allTasks.any((t) => t.error != null);
-        final isUploading = uploadManager.activeTasks.isNotEmpty;
-        final hasCompleted = uploadManager.allTasks.any((t) => t.completed || t.cancelled);
-
-        return Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            if (hasCompleted)
-              TextButton(
-                onPressed: () {
-                  uploadManager.clearCompletedTasks();
-                },
-                child: const Text('清除已完成'),
-              ),
-            if (hasError)
-              TextButton(
-                onPressed: () {
-                  // TODO: 实现重试功能
-                },
-                child: const Text('重试'),
-              ),
-            if (hasCompleted || hasError) const SizedBox(width: 8),
-            if (isUploading)
-              OutlinedButton(
-                onPressed: () {
-                  // 可以在这里实现全部取消
-                },
-                child: const Text('全部取消'),
-              )
-            else
-              FilledButton(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                },
-                child: const Text('关闭'),
-              ),
-          ],
+  Widget _buildTaskList(
+    BuildContext context,
+    UploadService uploadService,
+    List<UploadTaskModel> tasks,
+  ) {
+    return ListView.separated(
+      shrinkWrap: true,
+      itemCount: tasks.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      itemBuilder: (context, index) {
+        final task = tasks[index];
+        return UploadProgressItem(
+          key: ValueKey(task.id),
+          task: task,
+          onPause: () => uploadService.cancelUpload(task.id),
+          onResume: () => uploadService.retryUpload(task.id),
+          onCancel: () => uploadService.cancelUpload(task.id),
+          onDelete: () async {
+            uploadService.removeTask(task.id);
+          },
+          onRetry: () => uploadService.retryUpload(task.id),
         );
       },
     );
   }
 
-  String _formatBytes(int uploaded, int total) {
-    final uploadedStr = _formatSize(uploaded);
-    final totalStr = _formatSize(total);
-    return '$uploadedStr / $totalStr';
+  Widget _buildHeader(
+    BuildContext context,
+    UploadService uploadService,
+    List<UploadTaskModel> tasks,
+  ) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: Colors.grey.shade200),
+        ),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.cloud_upload, color: Colors.blue),
+          const SizedBox(width: 12),
+          const Text(
+            '上传任务',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const Spacer(),
+          Consumer<UploadService>(
+            builder: (context, uploadService, child) {
+              final uploadingCount = uploadService.activeTasks.length;
+              if (uploadingCount > 0) {
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade100,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '上传中: $uploadingCount',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Colors.blue,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                );
+              }
+              return const SizedBox.shrink();
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.close),
+            onPressed: () {
+              Navigator.of(context).pop();
+            },
+            tooltip: '关闭',
+          ),
+        ],
+      ),
+    );
   }
 
-  String _formatSize(int bytes) {
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) {
-      return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    }
-    if (bytes < 1024 * 1024 * 1024) {
-      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
-    }
-    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+  Widget _buildFooter(
+    BuildContext context,
+    UploadService uploadService,
+    List<UploadTaskModel> tasks,
+  ) {
+    final hasCompleted = tasks.any((t) => t.status == UploadStatus.completed);
+    final hasFailed = tasks.any((t) => t.status == UploadStatus.failed);
+    final hasCancelled = tasks.any((t) => t.status == UploadStatus.cancelled);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      decoration: BoxDecoration(
+        border: Border(
+          top: BorderSide(color: Colors.grey.shade200),
+        ),
+      ),
+      child: Row(
+        children: [
+          if (hasCompleted || hasCancelled)
+            TextButton.icon(
+              icon: const Icon(Icons.delete_sweep, size: 18),
+              label: const Text('清除已完成'),
+              onPressed: () async {
+                uploadService.clearCompletedTasks();
+              },
+            ),
+          if (hasFailed)
+            TextButton.icon(
+              icon: const Icon(Icons.clear_all, size: 18),
+              label: const Text('清除失败'),
+              onPressed: () {
+                uploadService.clearFailedTasks();
+              },
+            ),
+          const Spacer(),
+          FilledButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+            },
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
+    );
   }
+}
+
+/// 显示上传对话框
+void showUploadDialog(BuildContext context) {
+  showDialog(
+    context: context,
+    builder: (context) => const UploadProgressDialog(),
+    barrierDismissible: false,
+  );
 }

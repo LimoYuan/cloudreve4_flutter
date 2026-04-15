@@ -3,11 +3,7 @@ import '../../data/models/file_model.dart';
 import '../../services/file_service.dart';
 
 /// 文件视图类型
-enum FileViewType {
-  list,
-  grid,
-  gallery,
-}
+enum FileViewType { list, grid, gallery }
 
 /// 文件管理Provider
 class FileManagerProvider extends ChangeNotifier {
@@ -43,15 +39,15 @@ class FileManagerProvider extends ChangeNotifier {
 
     try {
       final response = await FileService().listFiles(
-            uri: _currentPath,
-            pageSize: 50,
-          );
+        uri: _currentPath,
+        pageSize: 50,
+      );
 
       // ApiService._parseResponse 已经返回了 data 字段的内容
       // response 是包含 files, parent, pagination 等字段的对象
       final List<dynamic> filesData = response['files'] as List<dynamic>? ?? [];
       final pagination = response['pagination'] as Map<String, dynamic>? ?? {};
-
+      debugPrint("获取files列表: $filesData");
       setState(() {
         _files = filesData
             .map((f) => FileModel.fromJson(f as Map<String, dynamic>))
@@ -159,10 +155,10 @@ class FileManagerProvider extends ChangeNotifier {
       }
 
       await FileService().createFile(
-            uri: uri,
-            type: 'folder',
-            errOnConflict: 'true',
-          );
+        uri: uri,
+        type: 'folder',
+        errOnConflict: 'true',
+      );
       await loadFiles();
     } catch (e) {
       setErrorMessage(e.toString());

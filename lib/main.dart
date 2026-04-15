@@ -7,6 +7,7 @@ import 'presentation/providers/auth_provider.dart';
 import 'presentation/providers/file_manager_provider.dart';
 import 'presentation/providers/upload_manager_provider.dart';
 import 'presentation/providers/download_manager_provider.dart';
+import 'services/upload_service.dart';
 import 'router/app_router.dart';
 
 void main() async {
@@ -40,8 +41,9 @@ class CloudreveApp extends StatelessWidget {
           providers: [
             ChangeNotifierProvider(create: (_) => AuthProvider()),
             ChangeNotifierProvider(create: (_) => FileManagerProvider()),
-            ChangeNotifierProvider(create: (_) => UploadManagerProvider()),
-            ChangeNotifierProvider(create: (_) => DownloadManagerProvider()),
+            ChangeNotifierProvider(create: (_) => UploadService()),
+            ChangeNotifierProvider(create: (_) => UploadManagerProvider()..initialize()),
+            ChangeNotifierProvider(create: (_) => DownloadManagerProvider()..initialize()),
           ],
           child: const AppView(),
         );

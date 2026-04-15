@@ -72,7 +72,7 @@ class _HomePageState extends State<HomePage> {
             tooltip: '上传',
           ),
           IconButton(
-            icon: const Icon(Icons.download),
+            icon: const Icon(Icons.cloud_download),
             onPressed: () {
               showDownloadDialog(context);
             },
@@ -233,7 +233,7 @@ class _HomePageState extends State<HomePage> {
                   onPressed: () {
                     fileManager.loadFiles();
                   },
-                  child: const Text('重试'),
+                  child: const Text('重试请求'),
                 ),
               ],
             ),
@@ -590,46 +590,118 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _showUploadDialog(BuildContext context) {
+    // 显示上传进度对话框
     showModalBottomSheet(
       context: context,
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(24),
+      builder: (context) => SizedBox(
+        height: MediaQuery.of(context).size.height * 0.8,
         child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            ListTile(
-              leading: const Icon(Icons.photo_library),
-              title: const Text('选择图片'),
-              onTap: () {
-                _pickFiles(context, FileType.image);
-              },
+            // 标题栏
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(color: Colors.grey.shade200),
+                ),
+              ),
+              child: Row(
+                children: [
+                  const Text(
+                    '选择要上传的文件',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                    },
+                  ),
+                ],
+              ),
             ),
-            ListTile(
-              leading: const Icon(Icons.video_library),
-              title: const Text('选择视频'),
-              onTap: () {
-                _pickFiles(context, FileType.video);
-              },
+
+            // 文件选择按钮
+            Expanded(
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.cloud_upload, size: 64, color: Colors.blue),
+                    const SizedBox(height: 16),
+                    FilledButton.icon(
+                      icon: const Icon(Icons.photo_library),
+                      label: const Text('选择图片'),
+                      onPressed: () {
+                        _pickFiles(context, FileType.image);
+                      },
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size(200, 50),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    FilledButton.icon(
+                      icon: const Icon(Icons.video_library),
+                      label: const Text('选择视频'),
+                      onPressed: () {
+                        _pickFiles(context, FileType.video);
+                      },
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size(200, 50),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    FilledButton.icon(
+                      icon: const Icon(Icons.attach_file),
+                      label: const Text('选择所有文件'),
+                      onPressed: () {
+                        _pickFiles(context, FileType.any);
+                      },
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size(200, 50),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
-            ListTile(
-              leading: const Icon(Icons.attach_file),
-              title: const Text('选择文件'),
-              onTap: () {
-                _pickFiles(context, FileType.any);
-              },
-            ),
-            const SizedBox(height: 8),
-            FilledButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-              child: const Text('取消'),
+
+            // 查看上传任务按钮
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                border: Border(
+                  top: BorderSide(color: Colors.grey.shade200),
+                ),
+              ),
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  icon: const Icon(Icons.list),
+                  label: const Text('查看上传任务'),
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    _showUploadTaskDialog(context);
+                  },
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size(200, 50),
+                  ),
+                ),
+              ),
             ),
           ],
         ),
       ),
     );
+  }
+
+  /// 显示上传任务对话框
+  void _showUploadTaskDialog(BuildContext context) {
+    showUploadDialogWidget(context);
   }
 
   Future<void> _pickFiles(BuildContext context, FileType type) async {
@@ -638,13 +710,19 @@ class _HomePageState extends State<HomePage> {
         type: type,
         allowMultiple: true,
       );
+      debugPrint('上传文件1 -> 选择文件: $result');
+
+      // 关闭选择对话框（在选择文件成功后）
+      if (context.mounted) {
+        Navigator.of(context).pop();
+      }
 
       if (!context.mounted) return;
-
       if (result == null || result.files.isEmpty) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('未选择文件')));
+        debugPrint('上传图片->未选择文件: $result');
         return;
       }
 
@@ -673,7 +751,17 @@ class _HomePageState extends State<HomePage> {
         listen: false,
       );
 
+      debugPrint('_pickFiles: 准备上传 ${files.length} 个文件到路径 ${fileManager.currentPath}');
+
+      // 开始上传
       await uploadManager.startUpload(files, fileManager.currentPath);
+
+      debugPrint('_pickFiles: 上传已启动');
+
+      // 显示上传任务对话框
+      if (context.mounted) {
+        _showUploadTaskDialog(context);
+      }
     } catch (e) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(

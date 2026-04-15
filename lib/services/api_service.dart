@@ -46,15 +46,15 @@ class ApiService {
   final List<Completer<void>> _refreshSubscribers = [];
 
   ApiService._() {
-    _dio = Dio(BaseOptions(
-      baseUrl: ApiConfig.baseUrl,
-      connectTimeout: const Duration(seconds: ApiConfig.connectTimeout),
-      receiveTimeout: const Duration(seconds: ApiConfig.receiveTimeout),
-      sendTimeout: const Duration(seconds: ApiConfig.sendTimeout),
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    ));
+    _dio = Dio(
+      BaseOptions(
+        baseUrl: ApiConfig.baseUrl,
+        connectTimeout: const Duration(seconds: ApiConfig.connectTimeout),
+        receiveTimeout: const Duration(seconds: ApiConfig.receiveTimeout),
+        sendTimeout: const Duration(seconds: ApiConfig.sendTimeout),
+        headers: {'Content-Type': 'application/json'},
+      ),
+    );
 
     _dio.interceptors.add(_requestInterceptor());
     _dio.interceptors.add(_responseInterceptor());
@@ -88,7 +88,9 @@ class ApiService {
   Interceptor _responseInterceptor() {
     return InterceptorsWrapper(
       onResponse: (response, handler) {
-        debugPrint('API Response: ${response.statusCode} - ${response.requestOptions.uri}');
+        debugPrint(
+          'API Response: ${response.statusCode} - ${response.requestOptions.uri}',
+        );
         return handler.next(response);
       },
     );
@@ -102,7 +104,8 @@ class ApiService {
 
         // 处理401未授权错误，尝试刷新token
         if (error.response?.statusCode == 401) {
-          final isNoAuth = error.requestOptions.extra['noAuth'] as bool? ?? false;
+          final isNoAuth =
+              error.requestOptions.extra['noAuth'] as bool? ?? false;
           if (!isNoAuth) {
             // 不是noAuth请求，需要刷新token
             final response = await _handle401Error(error, handler);
@@ -179,15 +182,15 @@ class ApiService {
       }
 
       // 创建一个新的Dio实例来避免循环调用
-      final refreshDio = Dio(BaseOptions(
-        baseUrl: ApiConfig.baseUrl,
-        connectTimeout: const Duration(seconds: ApiConfig.connectTimeout),
-        receiveTimeout: const Duration(seconds: ApiConfig.receiveTimeout),
-        sendTimeout: const Duration(seconds: ApiConfig.sendTimeout),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      ));
+      final refreshDio = Dio(
+        BaseOptions(
+          baseUrl: ApiConfig.baseUrl,
+          connectTimeout: const Duration(seconds: ApiConfig.connectTimeout),
+          receiveTimeout: const Duration(seconds: ApiConfig.receiveTimeout),
+          sendTimeout: const Duration(seconds: ApiConfig.sendTimeout),
+          headers: {'Content-Type': 'application/json'},
+        ),
+      );
 
       final response = await refreshDio.post<Map<String, dynamic>>(
         '/session/token/refresh',
@@ -240,9 +243,7 @@ class ApiService {
     final response = await _dio.get<T>(
       path,
       queryParameters: queryParameters,
-      options: Options(
-        extra: {'noAuth': noAuth},
-      ),
+      options: Options(extra: {'noAuth': noAuth}),
     );
     return _parseResponse<T>(response);
   }
@@ -262,10 +263,7 @@ class ApiService {
       path,
       data: data,
       queryParameters: queryParameters,
-      options: Options(
-        extra: {'noAuth': noAuth},
-        headers: headers,
-      ),
+      options: Options(extra: {'noAuth': noAuth}, headers: headers),
     );
 
     debugPrint('Response Data: ${response.data}');
@@ -274,17 +272,11 @@ class ApiService {
   }
 
   /// PUT请求
-  Future<T> put<T>(
-    String path, {
-    dynamic data,
-    bool noAuth = false,
-  }) async {
+  Future<T> put<T>(String path, {dynamic data, bool noAuth = false}) async {
     final response = await _dio.put<T>(
       path,
       data: data,
-      options: Options(
-        extra: {'noAuth': noAuth},
-      ),
+      options: Options(extra: {'noAuth': noAuth}),
     );
     return _parseResponse<T>(response);
   }
@@ -300,9 +292,7 @@ class ApiService {
       path,
       data: data,
       queryParameters: queryParameters,
-      options: Options(
-        extra: {'noAuth': noAuth},
-      ),
+      options: Options(extra: {'noAuth': noAuth}),
     );
     return _parseResponse<T>(response);
   }
@@ -318,9 +308,7 @@ class ApiService {
       path,
       data: data,
       queryParameters: queryParameters,
-      options: Options(
-        extra: {'noAuth': noAuth},
-      ),
+      options: Options(extra: {'noAuth': noAuth}),
     );
     return _parseResponse<T>(response);
   }
@@ -328,9 +316,23 @@ class ApiService {
   /// 解析响应
   T _parseResponse<T>(Response response) {
     final data = response.data;
+    debugPrint('解析响应 -> API Response: $data');
     if (data is Map<String, dynamic>) {
       final apiResponse = ApiResponse<T>.fromJson(data);
+      debugPrint(
+        '解析响应 -> API Response: ${apiResponse.isSuccess} - ${apiResponse.code} - ${apiResponse.message}',
+      );
       if (!apiResponse.isSuccess && !apiResponse.isContinue) {
+        _handle401Error(
+          DioException(
+            requestOptions: response.requestOptions,
+            type: DioExceptionType.unknown,  
+            response: response,
+            error: apiResponse.message,
+            message: apiResponse.code.toString(),
+          ),
+          ErrorInterceptorHandler(),
+        );
         throw ServerException(apiResponse.message, code: apiResponse.code);
       }
       return apiResponse.data as T;

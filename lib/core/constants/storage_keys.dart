@@ -17,6 +17,7 @@ class StorageKeys {
 
   // 上传相关
   static const String uploadQueue = 'upload_queue';
+  static const String uploadTasks = 'upload_tasks';
 
   // 下载相关
   static const String downloadTasks = 'download_tasks';

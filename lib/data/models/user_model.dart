@@ -138,11 +138,14 @@ class TokenModel {
   });
 
   factory TokenModel.fromJson(Map<String, dynamic> json) {
+    // debugPrint('Refresh token -> TokenModel: json -> $json');
+    // fixed refresh_token !!!
+    final data = json['data'] as Map<String, dynamic>;
     return TokenModel(
-      accessToken: json['access_token'] as String,
-      refreshToken: json['refresh_token'] as String,
-      accessExpires: DateTime.parse(json['access_expires'] as String),
-      refreshExpires: DateTime.parse(json['refresh_expires'] as String),
+      accessToken: data['access_token'] as String,
+      refreshToken: data['refresh_token'] as String,
+      accessExpires: DateTime.parse(data['access_expires'] as String),
+      refreshExpires: DateTime.parse(data['refresh_expires'] as String),
     );
   }
 

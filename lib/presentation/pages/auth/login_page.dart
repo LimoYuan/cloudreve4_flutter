@@ -32,6 +32,7 @@ class _LoginPageState extends State<LoginPage> {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       if (authProvider.rememberedEmail != null) {
         _emailController.text = authProvider.rememberedEmail!;
+        _passwordController.text = authProvider.rememberedPassword!;
         // 密码通常不自动填充，但可以根据需求实现
         _rememberMe = true;
         setState(() {});

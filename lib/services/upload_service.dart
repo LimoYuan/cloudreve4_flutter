@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:cloudreve4_flutter/config/api_config.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import '../core/constants/storage_keys.dart';
@@ -488,7 +489,7 @@ class UploadService extends ChangeNotifier {
   /// 创建配置了 token 的 Dio 实例
   Dio _createDio() {
     final dio = Dio(BaseOptions(
-      baseUrl: 'https://demo.cloudreve.org/api/v4',
+      baseUrl: ApiConfig.baseUrl,
       connectTimeout: const Duration(seconds: 30),
       receiveTimeout: const Duration(seconds: 300),
       sendTimeout: const Duration(seconds: 300),
@@ -506,8 +507,8 @@ class UploadService extends ChangeNotifier {
     ));
 
     // 添加错误拦截器（处理 401）
-    bool _isRefreshing = false;
-    final List<Completer<void>> _refreshSubscribers = [];
+    bool isRefreshing = false;
+    final List<Completer<void>> refreshSubscribers = [];
 
     dio.interceptors.add(InterceptorsWrapper(
       onError: (error, handler) async {
@@ -517,25 +518,25 @@ class UploadService extends ChangeNotifier {
             return handler.next(error);
           }
 
-          if (_isRefreshing) {
+          if (isRefreshing) {
             final completer = Completer<void>();
-            _refreshSubscribers.add(completer);
+            refreshSubscribers.add(completer);
             await completer.future;
             error.requestOptions.headers.remove('Authorization');
             return handler.resolve(await dio.fetch(error.requestOptions));
           }
 
-          _isRefreshing = true;
+          isRefreshing = true;
 
           try {
             final refreshToken = await StorageService.instance.refreshToken;
             if (refreshToken == null || refreshToken.isEmpty) {
-              _isRefreshing = false;
+              isRefreshing = false;
               return handler.next(error);
             }
 
             final refreshDio = Dio(BaseOptions(
-              baseUrl: 'https://demo.cloudreve.org/api/v4',
+              baseUrl: ApiConfig.baseUrl,
               headers: {'Content-Type': 'application/json'},
             ));
 
@@ -548,27 +549,27 @@ class UploadService extends ChangeNotifier {
             await StorageService.instance.setAccessToken(data['access_token'] as String);
             await StorageService.instance.setRefreshToken(data['refresh_token'] as String);
 
-            _isRefreshing = false;
+            isRefreshing = false;
 
-            for (final subscriber in _refreshSubscribers) {
+            for (final subscriber in refreshSubscribers) {
               if (!subscriber.isCompleted) {
                 subscriber.complete();
               }
             }
-            _refreshSubscribers.clear();
+            refreshSubscribers.clear();
 
             error.requestOptions.headers.remove('Authorization');
             return handler.resolve(await dio.fetch(error.requestOptions));
           } catch (e) {
             debugPrint('UploadService: Refresh token failed: $e');
-            _isRefreshing = false;
+            isRefreshing = false;
 
-            for (final subscriber in _refreshSubscribers) {
+            for (final subscriber in refreshSubscribers) {
               if (!subscriber.isCompleted) {
                 subscriber.completeError(e);
               }
             }
-            _refreshSubscribers.clear();
+            refreshSubscribers.clear();
 
             return handler.next(error);
           }

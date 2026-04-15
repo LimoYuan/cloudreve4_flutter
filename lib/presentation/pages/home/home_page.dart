@@ -233,7 +233,7 @@ class _HomePageState extends State<HomePage> {
                   onPressed: () {
                     fileManager.loadFiles();
                   },
-                  child: const Text('重试请求'),
+                  child: const Text('重试'),
                 ),
               ],
             ),

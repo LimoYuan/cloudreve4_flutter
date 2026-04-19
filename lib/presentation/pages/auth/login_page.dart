@@ -28,8 +28,10 @@ class _LoginPageState extends State<LoginPage> {
   void initState() {
     super.initState();
     // 加载记住我的信息
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      // 初始化 AuthProvider
+      await authProvider.init();
       if (authProvider.rememberedEmail != null) {
         _emailController.text = authProvider.rememberedEmail!;
         _passwordController.text = authProvider.rememberedPassword!;

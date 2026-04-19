@@ -142,8 +142,10 @@ class AuthProvider extends ChangeNotifier {
     _rememberMe = await StorageService.instance.rememberMe;
     if (_rememberMe) {
       _rememberedEmail = await StorageService.instance.userEmail;
-      _rememberedPassword = null;
+      _rememberedPassword = await StorageService.instance.userPasswd;
     }
+
+    // debugPrint("记住我信息: $_rememberMe, $_rememberedEmail, $_rememberedPassword");
   }
 
   /// 保存记住我信息

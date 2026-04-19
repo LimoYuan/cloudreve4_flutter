@@ -135,11 +135,15 @@ class FileManagerProvider extends ChangeNotifier {
     if (_selectedFiles.isEmpty) return;
 
     try {
-
       debugPrint("删除文件: ${_selectedFiles.join(', ')}");
       await FileService().deleteFiles(uris: _selectedFiles);
+
+      // 从本地列表中移除已删除的文件
+      setState(() {
+        _files.removeWhere((file) => _selectedFiles.contains(file.path));
+      });
+
       clearSelection();
-      await loadFiles();
     } catch (e) {
       setErrorMessage(e.toString());
     }

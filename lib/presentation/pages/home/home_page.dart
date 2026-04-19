@@ -436,7 +436,7 @@ class _HomePageState extends State<HomePage> {
             itemCount: fileManager.files.length,
             itemBuilder: (context, index) {
               final file = fileManager.files[index];
-              final isSelected = fileManager.selectedFiles.contains(file.id);
+              final isSelected = fileManager.selectedFiles.contains(file.path);
 
               return FileListItem(
                 key: ValueKey('file_${file.id}'),
@@ -445,14 +445,14 @@ class _HomePageState extends State<HomePage> {
                 showCheckbox: showCheckbox,
                 onTap: () {
                   if (showCheckbox) {
-                    fileManager.toggleSelection(file.id);
+                    fileManager.toggleSelection(file.path);
                   } else if (file.isFolder) {
                     fileManager.enterFolder(file.relativePath);
                   } else {
                     // TODO: 打开文件
                   }
                 },
-                onSelect: () => fileManager.toggleSelection(file.id),
+                onSelect: () => fileManager.toggleSelection(file.path),
                 onDownload: !file.isFolder ? () => _downloadFile(context, fileManager, file) : null,
                 onOpenInBrowser: !file.isFolder ? () => _openInBrowser(context, file) : null,
               );
@@ -499,7 +499,7 @@ class _HomePageState extends State<HomePage> {
         itemCount: fileManager.files.length,
         itemBuilder: (context, index) {
           final file = fileManager.files[index];
-          final isSelected = fileManager.selectedFiles.contains(file.id);
+          final isSelected = fileManager.selectedFiles.contains(file.path);
 
           return FileGridItem(
             key: ValueKey('file_grid_${file.id}'),
@@ -508,14 +508,14 @@ class _HomePageState extends State<HomePage> {
             showCheckbox: showCheckbox,
             onTap: () {
               if (showCheckbox) {
-                fileManager.toggleSelection(file.id);
+                fileManager.toggleSelection(file.path);
               } else if (file.isFolder) {
                 fileManager.enterFolder(file.relativePath);
               } else {
                 // TODO: 打开文件
               }
             },
-            onSelect: () => fileManager.toggleSelection(file.id),
+            onSelect: () => fileManager.toggleSelection(file.path),
             onDownload: !file.isFolder ? () => _downloadFile(context, fileManager, file) : null,
             onOpenInBrowser: !file.isFolder ? () => _openInBrowser(context, file) : null,
           );
@@ -709,8 +709,8 @@ class _HomePageState extends State<HomePage> {
   ) {
     if (fileManager.selectedFiles.length != 1) return;
 
-    final fileId = fileManager.selectedFiles.first;
-    final file = fileManager.files.firstWhere((f) => f.id == fileId);
+    final filePath = fileManager.selectedFiles.first;
+    final file = fileManager.files.firstWhere((f) => f.path == filePath);
     final controller = TextEditingController(text: file.name);
 
     showDialog(

@@ -91,18 +91,18 @@ class FileManagerProvider extends ChangeNotifier {
   }
 
   /// 选择/取消选择文件
-  void toggleSelection(String uri) {
-    if (_selectedFiles.contains(uri)) {
-      _selectedFiles.remove(uri);
+  void toggleSelection(String path) {
+    if (_selectedFiles.contains(path)) {
+      _selectedFiles.remove(path);
     } else {
-      _selectedFiles.add(uri);
+      _selectedFiles.add(path);
     }
     notifyListeners();
   }
 
   /// 选择所有
   void selectAll() {
-    _selectedFiles = _files.map((f) => f.id).toList();
+    _selectedFiles = _files.map((f) => f.path).toList();
     notifyListeners();
   }
 
@@ -135,6 +135,8 @@ class FileManagerProvider extends ChangeNotifier {
     if (_selectedFiles.isEmpty) return;
 
     try {
+
+      debugPrint("删除文件: ${_selectedFiles.join(', ')}");
       await FileService().deleteFiles(uris: _selectedFiles);
       clearSelection();
       await loadFiles();

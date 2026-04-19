@@ -48,15 +48,15 @@ class FileService {
   /// 创建文件/文件夹
   Future<Map<String, dynamic>> createFile({
     required String uri,
-    required String type, // "file":文件, "folder":文件夹
-    String? errOnConflict,
+    required String type,
+    bool? errOnConflict,
     Map<String, dynamic>? metadata,
   }) async {
     final data = <String, dynamic>{
       'uri': _toCloudreveUri(uri),
       'type': type,
-      if (errOnConflict != null) 'err_on_conflict': errOnConflict,
-      if (metadata != null) 'metadata': metadata,
+      'err_on_conflict': ?errOnConflict,
+      'metadata': ?metadata,
     };
 
     final response = await ApiService.instance
@@ -123,12 +123,12 @@ class FileService {
     final data = <String, dynamic>{
       'uris': uris.map((uri) => _toCloudreveUri(uri)).toList(),
       'download': download,
-      if (redirect != null) 'redirect': redirect,
-      if (entity != null) 'entity': entity,
-      if (usePrimarySiteUrl != null) 'use_primary_site_url': usePrimarySiteUrl,
-      if (skipError != null) 'skip_error': skipError,
-      if (archive != null) 'archive': archive,
-      if (noCache != null) 'no_cache': noCache,
+      'redirect': ?redirect,
+      'entity': ?entity,
+      'use_primary_site_url': ?usePrimarySiteUrl,
+      'skip_error': ?skipError,
+      'archive': ?archive,
+      'no_cache': ?noCache,
     };
 
     final headers = <String, dynamic>{};

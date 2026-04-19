@@ -674,7 +674,7 @@ class _HomePageState extends State<HomePage> {
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('创建文件夹'),
         content: TextField(
           controller: controller,
@@ -686,15 +686,35 @@ class _HomePageState extends State<HomePage> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () => Navigator.of(dialogContext).pop(),
             child: const Text('取消'),
           ),
           FilledButton(
             onPressed: () async {
               if (controller.text.isEmpty) return;
 
-              Navigator.of(context).pop();
-              await fileManager.createFolder(controller.text);
+              Navigator.of(dialogContext).pop();
+
+              final error = await fileManager.createFolder(controller.text);
+              if (error != null) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('创建文件夹失败: $error'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              } else {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('文件夹创建成功'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                }
+              }
             },
             child: const Text('创建'),
           ),

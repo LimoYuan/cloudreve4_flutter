@@ -153,7 +153,7 @@ class FileManagerProvider extends ChangeNotifier {
   }
 
   /// 创建文件夹
-  Future<void> createFolder(String name) async {
+  Future<String?> createFolder(String name) async {
     try {
       // 构建 uri，将新文件夹名添加到当前路径
       String uri;
@@ -163,14 +163,24 @@ class FileManagerProvider extends ChangeNotifier {
         uri = '$_currentPath/$name';
       }
 
-      await FileService().createFile(
+      final response = await FileService().createFile(
         uri: uri,
         type: 'folder',
-        errOnConflict: 'true',
+        errOnConflict: true,
       );
-      await loadFiles();
+
+      // 从响应中提取新文件夹信息并添加到本地列表
+      final newFolder = FileModel.fromJson(response);
+
+      setState(() {
+        _files.insert(0, newFolder);
+      });
+
+      return null;
     } catch (e) {
-      setErrorMessage(e.toString());
+      final error = e.toString();
+      setErrorMessage(error);
+      return error;
     }
   }
 

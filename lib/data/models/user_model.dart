@@ -11,6 +11,9 @@ class UserModel {
   final GroupModel? group;
   final List<PinedFileModel>? pined;
 
+  // Token 信息
+  final TokenModel? token;
+
   UserModel({
     required this.id,
     this.email,
@@ -22,6 +25,7 @@ class UserModel {
     this.anonymous,
     this.group,
     this.pined,
+    this.token,
   });
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
@@ -42,6 +46,37 @@ class UserModel {
                 .map((e) => PinedFileModel.fromJson(e as Map<String, dynamic>))
                 .toList()
           : null,
+      token: json['token'] != null
+          ? TokenModel.fromJson(json['token'] as Map<String, dynamic>)
+          : null,
+    );
+  }
+
+  UserModel copyWith({
+    String? id,
+    String? email,
+    String? nickname,
+    String? avatar,
+    DateTime? createdAt,
+    String? preferredTheme,
+    String? language,
+    bool? anonymous,
+    GroupModel? group,
+    List<PinedFileModel>? pined,
+    TokenModel? token,
+  }) {
+    return UserModel(
+      id: id ?? this.id,
+      email: email ?? this.email,
+      nickname: nickname ?? this.nickname,
+      avatar: avatar ?? this.avatar,
+      createdAt: createdAt ?? this.createdAt,
+      preferredTheme: preferredTheme ?? this.preferredTheme,
+      language: language ?? this.language,
+      anonymous: anonymous ?? this.anonymous,
+      group: group ?? this.group,
+      pined: pined ?? this.pined,
+      token: token ?? this.token,
     );
   }
 
@@ -57,6 +92,7 @@ class UserModel {
       'anonymous': anonymous,
       'group': group?.toJson(),
       'pined': pined?.map((e) => e.toJson()).toList(),
+      'token': token?.toJson(),
     };
   }
 }
@@ -132,10 +168,9 @@ class TokenModel {
   });
 
   factory TokenModel.fromJson(Map<String, dynamic> json) {
-    // debugPrint('Refresh token -> TokenModel: json -> $json');
-    // fixed refresh_token !!!
+    // 支持两种格式：直接是 token 数据或嵌套在 data 中
     Map<String, dynamic> data;
-    
+
     if (json['data'] != null) {
       data = json['data'] as Map<String, dynamic>;
     } else {
@@ -158,6 +193,12 @@ class TokenModel {
       'refresh_expires': refreshExpires.toIso8601String(),
     };
   }
+
+  /// 检查 access token 是否过期
+  bool get isAccessTokenExpired => DateTime.now().isAfter(accessExpires);
+
+  /// 检查 refresh token 是否过期
+  bool get isRefreshTokenExpired => DateTime.now().isAfter(refreshExpires);
 }
 
 /// 用户容量模型

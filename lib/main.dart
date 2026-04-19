@@ -8,10 +8,18 @@ import 'presentation/providers/file_manager_provider.dart';
 import 'presentation/providers/upload_manager_provider.dart';
 import 'presentation/providers/download_manager_provider.dart';
 import 'services/upload_service.dart';
+import 'services/api_service.dart';
+import 'services/server_service.dart';
 import 'router/app_router.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // 初始化服务器服务
+  await ServerService.instance.init();
+
+  // 初始化API服务
+  await ApiService.instance.init();
 
   // 设置横竖屏方向
   await SystemChrome.setPreferredOrientations([

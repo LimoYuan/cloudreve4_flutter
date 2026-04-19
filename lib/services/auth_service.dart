@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../data/models/user_model.dart';
-import '../core/exceptions/app_exception.dart';
 import 'api_service.dart';
-import 'storage_service.dart';
 
 /// 认证服务
 class AuthService {
@@ -66,12 +64,8 @@ class AuthService {
   }
 
   /// 刷新Token
-  Future<TokenModel> refreshToken() async {
-    final refreshToken = await StorageService.instance.refreshToken;
-    if (refreshToken == null || refreshToken.isEmpty) {
-      throw TokenExpiredException();
-    }
-
+  /// 这个方法现在由 ApiService 调用，传入当前的 refreshToken
+  Future<TokenModel> refreshToken(String refreshToken) async {
     final data = <String, dynamic>{'refresh_token': refreshToken};
 
     final response = await ApiService.instance.post<Map<String, dynamic>>(
@@ -84,23 +78,19 @@ class AuthService {
   }
 
   /// 登出
+  /// 现在由 ServerService 和 AuthProvider 负责清除本地数据
   Future<void> logout() async {
     try {
-      final refreshToken = await StorageService.instance.refreshToken;
-      if (refreshToken != null && refreshToken.isNotEmpty) {
-        await ApiService.instance.delete<void>(
-          '/session/token',
-          data: <String, dynamic>{'refresh_token': refreshToken},
-          noAuth: true,
-        );
-      }
+      // 登出需要调用 API，但 refreshToken 由调用方提供
+      // 这个方法现在主要用于调用登出 API
+      await ApiService.instance.delete<void>(
+        '/session/token',
+        data: <String, dynamic>{},
+        noAuth: true,
+      );
     } catch (e) {
-      // 登出失败也要清除本地数据
-      await _clearAuthData();
+      // 登出失败也要清除本地数据（由调用方处理）
       rethrow;
-    } finally {
-      // 无论成功失败，都清除本地认证数据（不包括邮箱密码）
-      await _clearAuthData();
     }
   }
 
@@ -119,80 +109,33 @@ class AuthService {
     );
     return CapacityModel.fromJson(response);
   }
-
-  /// 保存登录信息
-  Future<void> saveLoginInfo(LoginResponseModel response) async {
-    final storage = StorageService.instance;
-
-    // 保存Token
-    await storage.setAccessToken(response.token.accessToken);
-    await storage.setRefreshToken(response.token.refreshToken);
-
-    // 保存用户信息
-    await storage.setUserId(response.user.id);
-    await storage.setUserEmail(response.user.email ?? '');
-  }
-
-  /// 清除认证数据
-  Future<void> _clearAuthData() async {
-    final storage = StorageService.instance;
-
-    await storage.removeAccessToken();
-    await storage.removeRefreshToken();
-    await storage.removeUserId();
-    // 不清除邮箱和密码，用于记住我功能
-    // await storage.removeUserEmail();
-  }
-
-  /// 完全清除所有认证数据（包括记住我信息）
-  Future<void> clearAllAuthData() async {
-    final storage = StorageService.instance;
-
-    await storage.removeAccessToken();
-    await storage.removeRefreshToken();
-    await storage.removeUserId();
-    await storage.removeUserEmail();
-  }
-
-  /// 检查登录状态
-  Future<bool> isLoggedIn() async {
-    final accessToken = await StorageService.instance.accessToken;
-    return accessToken != null && accessToken.isNotEmpty;
-  }
-
-  /// 自动登录
-  Future<UserModel?> autoLogin() async {
-    if (!await isLoggedIn()) {
-      return null;
-    }
-
-    try {
-      return await getCurrentUser();
-    } catch (e) {
-      // Token可能已过期，清除数据
-      if (e is AuthException) {
-        await _clearAuthData();
-      }
-      rethrow;
-    }
-  }
 }
 
 /// 登录响应模型
+/// 这个模型现在将 token 合并到 user 中返回
 class LoginResponseModel {
   final UserModel user;
-  final TokenModel token;
 
-  LoginResponseModel({required this.user, required this.token});
+  LoginResponseModel({required this.user});
 
   factory LoginResponseModel.fromJson(Map<String, dynamic> json) {
-    return LoginResponseModel(
-      user: UserModel.fromJson(json['user'] as Map<String, dynamic>),
-      token: TokenModel.fromJson(json['token'] as Map<String, dynamic>),
-    );
+    // debugPrint('AuthProvider 登录成功: ${json}');
+    final Map<String, dynamic> data;
+    
+    if (json['data'] != null) {
+      data = json['data'] as Map<String, dynamic>;
+    } else {
+      data = json;
+    }
+
+    // 将 token 合并到 user 中
+    final userJson = data['user'] as Map<String, dynamic>;
+    userJson['token'] = data['token'];
+
+    return LoginResponseModel(user: UserModel.fromJson(userJson));
   }
 
   Map<String, dynamic> toJson() {
-    return {'user': user.toJson(), 'token': token.toJson()};
+    return {'user': user.toJson()};
   }
 }

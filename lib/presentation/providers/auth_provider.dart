@@ -1,7 +1,11 @@
 import 'package:flutter/foundation.dart';
+import '../../data/models/server_model.dart';
 import '../../data/models/user_model.dart';
 import '../../services/auth_service.dart';
+import '../../services/server_service.dart';
 import '../../services/storage_service.dart';
+import '../../services/api_service.dart';
+import '../../core/exceptions/app_exception.dart';
 
 /// 认证状态
 enum AuthState { loading, authenticated, unauthenticated, error }
@@ -11,9 +15,6 @@ class AuthProvider extends ChangeNotifier {
   AuthState _state = AuthState.unauthenticated;
   UserModel? _user;
   String? _errorMessage;
-  String? _rememberedEmail;
-  String? _rememberedPassword;
-  bool _rememberMe = false;
   bool _hasRefreshTokenExpired = false;
 
   AuthState get state => _state;
@@ -21,26 +22,89 @@ class AuthProvider extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
   bool get isAuthenticated => _state == AuthState.authenticated;
   bool get isLoading => _state == AuthState.loading;
-  bool get rememberMe => _rememberMe;
-  String? get rememberedEmail => _rememberedEmail;
-  String? get rememberedPassword => _rememberedPassword;
   bool get hasRefreshTokenExpired => _hasRefreshTokenExpired;
+
+  /// 当前选中的服务器
+  ServerModel? get currentServer => ServerService.instance.currentServer;
+
+  /// 获取当前用户的 token
+  TokenModel? get token => _user?.token;
 
   /// 初始化
   Future<void> init() async {
     try {
       setState(AuthState.loading);
-      await _loadRememberedInfo();
-      final user = await AuthService.instance.autoLogin();
-      if (user != null) {
-        setUser(user);
-        setState(AuthState.authenticated);
-      } else {
+
+      // 初始化服务器服务
+      await ServerService.instance.init();
+
+      // 获取当前服务器
+      final server = ServerService.instance.currentServer;
+      if (server == null) {
         setState(AuthState.unauthenticated);
+        return;
       }
+
+      // 设置 API 的 baseUrl
+      await _setApiBaseUrl(server.baseUrl);
+
+      // 设置 ApiService 的认证回调
+      _setupApiCallbacks();
+
+      // 检查是否有保存的登录信息
+      if (server.user != null && server.user!.token != null) {
+        // 有保存的用户信息，检查 token 是否过期
+        if (!server.user!.token!.isRefreshTokenExpired) {
+          // Refresh token 未过期，设置用户信息
+          setUser(server.user);
+          setState(AuthState.authenticated);
+          return;
+        } else {
+          // Refresh token 已过期，清除登录信息
+          await ServerService.instance.clearCurrentServerLogin();
+        }
+      }
+
+      setState(AuthState.unauthenticated);
     } catch (e) {
+      debugPrint('AuthProvider 初始化失败: $e');
       setState(AuthState.unauthenticated);
     }
+  }
+
+  /// 设置 ApiService 的认证回调
+  void _setupApiCallbacks() {
+    ApiService.setAuthCallbacks(
+      getToken: () async {
+        // 返回当前的 access token
+        return _user?.token?.accessToken;
+      },
+      refreshToken: () async {
+        // 刷新 token
+        try {
+          await refreshToken();
+        } catch (e) {
+          // 刷新失败，设置过期标志
+          if (e is RefreshTokenExpiredException) {
+            setRefreshTokenExpired();
+          }
+          rethrow;
+        }
+      },
+      clearAuth: () async {
+        // 清除认证数据
+        await ServerService.instance.clearCurrentServerLogin();
+        setRefreshTokenExpired();
+      },
+    );
+  }
+
+  /// 设置 API baseUrl
+  Future<void> _setApiBaseUrl(String baseUrl) async {
+    // 这里需要通过某种方式设置 API 的 baseUrl
+    // 暂时使用 StorageService 的 customBaseUrl 机制
+    final storageService = StorageService.instance;
+    await storageService.setCustomBaseUrl(baseUrl);
   }
 
   /// 密码登录
@@ -51,22 +115,31 @@ class AuthProvider extends ChangeNotifier {
   }) async {
     try {
       setState(AuthState.loading);
+
+      // 获取当前服务器
+      final server = ServerService.instance.currentServer;
+      if (server == null) {
+        _errorMessage = '请先选择服务器';
+        setState(AuthState.error);
+        return false;
+      }
+
+      // 设置 API 的 baseUrl
+      await _setApiBaseUrl(server.baseUrl);
+
+      // 执行登录
       final response = await AuthService.instance.passwordLogin(
         email: email,
         password: password,
       );
-
-      await AuthService.instance.saveLoginInfo(response);
-
-      _rememberMe = rememberMe;
-      if (rememberMe) {
-        _rememberedEmail = email;
-        _rememberedPassword = password;
-      } else {
-        _rememberedEmail = null;
-        _rememberedPassword = null;
-      }
-      await _saveRememberedInfo();
+      debugPrint('AuthProvider 登录成功: $response');
+      // 保存登录信息到当前服务器（包含完整 user 和 token）
+      await ServerService.instance.updateCurrentServerLogin(
+        email: rememberMe ? email : null,
+        password: rememberMe ? password : null,
+        user: response.user,
+        rememberMe: rememberMe,
+      );
 
       setUser(response.user);
       setState(AuthState.authenticated);
@@ -82,7 +155,14 @@ class AuthProvider extends ChangeNotifier {
   /// 登出
   Future<void> logout() async {
     try {
-      await AuthService.instance.logout();
+      // 调用登出 API（需要 token）
+      if (token?.refreshToken != null) {
+        await AuthService.instance.logout();
+      }
+
+      // 清除当前服务器的登录信息
+      await ServerService.instance.clearCurrentServerLogin();
+
       _clearUserData();
       setState(AuthState.unauthenticated);
     } catch (e) {
@@ -96,8 +176,40 @@ class AuthProvider extends ChangeNotifier {
     try {
       final user = await AuthService.instance.getCurrentUser();
       setUser(user);
+
+      // 更新服务器中的用户信息（保留 token）
+      final server = ServerService.instance.currentServer;
+      if (server != null && token != null) {
+        await ServerService.instance.updateCurrentServerLogin(
+          user: user.copyWith(token: token),
+        );
+      }
     } catch (e) {
       _errorMessage = e.toString();
+    }
+  }
+
+  /// 刷新 token
+  Future<void> refreshToken() async {
+    try {
+      final currentToken = token;
+      if (currentToken == null || currentToken.isRefreshTokenExpired) {
+        throw Exception('Refresh token 已过期，需要重新登录');
+      }
+
+      // 调用刷新 token 接口
+      final newToken = await AuthService.instance.refreshToken(currentToken.refreshToken);
+
+      // 更新用户信息中的 token
+      final updatedUser = _user!.copyWith(token: newToken);
+
+      // 保存到服务器
+      await ServerService.instance.updateCurrentServerLogin(user: updatedUser);
+
+      setUser(updatedUser);
+    } catch (e) {
+      debugPrint('刷新 token 失败: $e');
+      rethrow;
     }
   }
 
@@ -137,25 +249,21 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 加载记住我信息
-  Future<void> _loadRememberedInfo() async {
-    _rememberMe = await StorageService.instance.rememberMe;
-    if (_rememberMe) {
-      _rememberedEmail = await StorageService.instance.userEmail;
-      _rememberedPassword = await StorageService.instance.userPasswd;
-    }
-
-    // debugPrint("记住我信息: $_rememberMe, $_rememberedEmail, $_rememberedPassword");
+  /// 获取上次登录的邮箱（用于填充输入框）
+  String? get rememberedEmail {
+    final server = ServerService.instance.currentServer;
+    return server?.email;
   }
 
-  /// 保存记住我信息
-  Future<void> _saveRememberedInfo() async {
-    await StorageService.instance.setRememberMe(_rememberMe);
-    if (_rememberMe) {
-      await StorageService.instance.setUserEmail(_rememberedEmail ?? '');
-      await StorageService.instance.setUserPasswd(_rememberedPassword ?? '');
-    } else {
-      await StorageService.instance.removeUserEmail();
-    }
+  /// 获取上次登录的密码（用于填充输入框）
+  String? get rememberedPassword {
+    final server = ServerService.instance.currentServer;
+    return server?.password;
+  }
+
+  /// 是否记住密码
+  bool get rememberMe {
+    final server = ServerService.instance.currentServer;
+    return server?.rememberMe ?? false;
   }
 }

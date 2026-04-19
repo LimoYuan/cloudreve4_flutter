@@ -1,11 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:cloudreve4_flutter/config/api_config.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import '../core/constants/storage_keys.dart';
 import '../data/models/upload_task_model.dart';
 import 'storage_service.dart';
+import 'api_service.dart';
 
 /// 上传服务 - 单例模式
 class UploadService extends ChangeNotifier {
@@ -51,7 +51,11 @@ class UploadService extends ChangeNotifier {
 
   /// 获取进行中的任务
   List<UploadTaskModel> get activeTasks => _tasks.values
-      .where((t) => t.status == UploadStatus.uploading || t.status == UploadStatus.waiting)
+      .where(
+        (t) =>
+            t.status == UploadStatus.uploading ||
+            t.status == UploadStatus.waiting,
+      )
       .toList();
 
   /// 移除任务
@@ -87,7 +91,11 @@ class UploadService extends ChangeNotifier {
   /// 清除已完成的任务
   void clearCompletedTasks() {
     final completedIds = _tasks.values
-        .where((t) => t.status == UploadStatus.completed || t.status == UploadStatus.cancelled)
+        .where(
+          (t) =>
+              t.status == UploadStatus.completed ||
+              t.status == UploadStatus.cancelled,
+        )
         .map((t) => t.id)
         .toList();
 
@@ -118,7 +126,9 @@ class UploadService extends ChangeNotifier {
   /// 从本地存储加载上传任务
   Future<void> _loadTasks() async {
     try {
-      final tasksJson = await StorageService.instance.getString(StorageKeys.uploadTasks);
+      final tasksJson = await StorageService.instance.getString(
+        StorageKeys.uploadTasks,
+      );
       if (tasksJson == null || tasksJson.isEmpty) {
         debugPrint('没有保存的上传任务');
         return;
@@ -130,7 +140,9 @@ class UploadService extends ChangeNotifier {
       final now = DateTime.now();
       for (final taskJson in tasksList) {
         try {
-          final task = UploadTaskModel.fromJson(taskJson as Map<String, dynamic>);
+          final task = UploadTaskModel.fromJson(
+            taskJson as Map<String, dynamic>,
+          );
 
           // 检查文件是否存在
           if (!await task.file.exists()) {
@@ -148,7 +160,9 @@ class UploadService extends ChangeNotifier {
             if (task.completedAt == null) {
               continue;
             }
-            final daysSinceCompletion = now.difference(task.completedAt!).inDays;
+            final daysSinceCompletion = now
+                .difference(task.completedAt!)
+                .inDays;
             if (daysSinceCompletion > 7) {
               debugPrint('跳过超过7天的已完成任务: ${task.fileName}');
               continue;
@@ -156,14 +170,17 @@ class UploadService extends ChangeNotifier {
           }
 
           // 对于未完成的任务，重置状态为等待（因为应用关闭后上传已停止）
-          if (task.status == UploadStatus.uploading || task.status == UploadStatus.waiting) {
-            loadedTasks.add(task.copyWith(
-              status: UploadStatus.waiting,
-              uploadedBytes: 0,
-              progress: 0,
-              uploadedChunks: 0,
-              errorMessage: null,
-            ));
+          if (task.status == UploadStatus.uploading ||
+              task.status == UploadStatus.waiting) {
+            loadedTasks.add(
+              task.copyWith(
+                status: UploadStatus.waiting,
+                uploadedBytes: 0,
+                progress: 0,
+                uploadedChunks: 0,
+                errorMessage: null,
+              ),
+            );
           } else {
             loadedTasks.add(task);
           }
@@ -194,11 +211,12 @@ class UploadService extends ChangeNotifier {
   /// 保存上传任务到本地存储
   Future<void> _saveTasks() async {
     try {
-      final tasksList = _tasks.values
-          .map((task) => task.toJson())
-          .toList();
+      final tasksList = _tasks.values.map((task) => task.toJson()).toList();
       final tasksJson = jsonEncode(tasksList);
-      await StorageService.instance.setString(StorageKeys.uploadTasks, tasksJson);
+      await StorageService.instance.setString(
+        StorageKeys.uploadTasks,
+        tasksJson,
+      );
       debugPrint('已保存 ${_tasks.length} 个上传任务到存储');
     } catch (e) {
       debugPrint('保存上传任务失败: $e');
@@ -214,9 +232,7 @@ class UploadService extends ChangeNotifier {
 
     final task = _tasks[taskId];
     if (task != null) {
-      updateTask(task.copyWith(
-        status: UploadStatus.cancelled,
-      ));
+      updateTask(task.copyWith(status: UploadStatus.cancelled));
     }
   }
 
@@ -226,13 +242,15 @@ class UploadService extends ChangeNotifier {
     if (task == null) return;
 
     // 重置任务状态
-    updateTask(task.copyWith(
-      status: UploadStatus.waiting,
-      uploadedBytes: 0,
-      progress: 0,
-      uploadedChunks: 0,
-      errorMessage: null,
-    ));
+    updateTask(
+      task.copyWith(
+        status: UploadStatus.waiting,
+        uploadedBytes: 0,
+        progress: 0,
+        uploadedChunks: 0,
+        errorMessage: null,
+      ),
+    );
 
     // 开始上传
     await startUpload(task);
@@ -248,7 +266,9 @@ class UploadService extends ChangeNotifier {
       // 步骤1：创建上传会话
       debugPrint('UploadService.startUpload: 创建上传会话...');
       final session = await _createUploadSession(task);
-      debugPrint('UploadService.startUpload: 上传会话创建成功，sessionId=${session.sessionId}, chunkSize=${session.chunkSize}');
+      debugPrint(
+        'UploadService.startUpload: 上传会话创建成功，sessionId=${session.sessionId}, chunkSize=${session.chunkSize}',
+      );
 
       // 更新任务，添加会话信息
       final updatedTask = task.copyWith(
@@ -275,12 +295,15 @@ class UploadService extends ChangeNotifier {
     } catch (e) {
       debugPrint('Upload failed for ${task.fileName}: $e');
 
-      final isCancelled = e is DioException && e.type == DioExceptionType.cancel;
+      final isCancelled =
+          e is DioException && e.type == DioExceptionType.cancel;
 
-      updateTask(task.copyWith(
-        status: isCancelled ? UploadStatus.cancelled : UploadStatus.failed,
-        errorMessage: e.toString(),
-      ));
+      updateTask(
+        task.copyWith(
+          status: isCancelled ? UploadStatus.cancelled : UploadStatus.failed,
+          errorMessage: e.toString(),
+        ),
+      );
 
       if (!isCancelled) {
         _emitProgress(task.id, task.progress);
@@ -290,49 +313,49 @@ class UploadService extends ChangeNotifier {
 
   /// 创建上传会话
   Future<UploadSessionModel> _createUploadSession(UploadTaskModel task) async {
-    final dio = _createDio();
-
-    // 构建 URI - 正确处理路径分隔符
-    String uri;
-    if (task.targetPath.endsWith('/')) {
-      uri = '${task.targetPath}${task.fileName}';
-    } else {
-      uri = '${task.targetPath}/${task.fileName}';
-    }
-    debugPrint('Upload URI: $uri');
-
-    final response = await dio.put<Map<String, dynamic>>(
+    final response = await ApiService.instance.put<Map<String, dynamic>>(
       '/file/upload',
       data: {
-        'uri': uri,
+        'uri': task.targetPath.endsWith('/')
+            ? '${task.targetPath}${task.fileName}'
+            : '${task.targetPath}/${task.fileName}',
         'size': task.fileSize,
       },
     );
 
     // API 响应格式: {code: 0, data: {...}, msg: ''}
-    final data = response.data as Map<String, dynamic>;
-    final sessionData = data['data'] as Map<String, dynamic>?;
-    if (sessionData == null) {
-      throw Exception('API 响应中没有 data 字段: ${data['msg']}');
+    final Map<String, dynamic> data;
+    if (response['data'] != null) {
+      data = response['data'];
+      throw Exception('API 响应中没有 data 字段: ${data['msg']}, factory response: $response}');
+    } else {
+      data = response;
     }
+
+    final sessionData = data;
+
     return UploadSessionModel.fromJson(sessionData);
   }
 
   /// 上传文件（支持分片上传）
-  Future<void> _uploadFile(UploadTaskModel task, CancelToken cancelToken) async {
+  Future<void> _uploadFile(
+    UploadTaskModel task,
+    CancelToken cancelToken,
+  ) async {
     final session = task.session!;
     final file = task.file;
-    final dio = _createDio();
+
+    debugPrint('开始上传 -> ${task.fileName}');
 
     // 读取文件
     final fileBytes = await file.readAsBytes();
 
     if (session.isMultipartEnabled) {
       // 分片上传
-      await _uploadMultipart(fileBytes, session, dio, task, cancelToken);
+      await _uploadMultipart(fileBytes, session, task, cancelToken);
     } else {
       // 单次上传
-      await _uploadSinglePart(fileBytes, session, dio, task, cancelToken);
+      await _uploadSinglePart(fileBytes, session, task, cancelToken);
     }
   }
 
@@ -340,7 +363,6 @@ class UploadService extends ChangeNotifier {
   Future<void> _uploadMultipart(
     List<int> fileBytes,
     UploadSessionModel session,
-    Dio dio,
     UploadTaskModel task,
     CancelToken cancelToken,
   ) async {
@@ -365,7 +387,7 @@ class UploadService extends ChangeNotifier {
 
       if (session.isRelayUpload) {
         // 上传到 Cloudreve 服务器
-        await _uploadChunkToRelay(chunkData, i, session.sessionId, dio, cancelToken);
+        await _uploadChunkToRelay(chunkData, i, session.sessionId, cancelToken);
       } else {
         // 上传到远程存储
         await _uploadChunkToRemote(chunkData, i, session, cancelToken);
@@ -374,17 +396,19 @@ class UploadService extends ChangeNotifier {
       // 更新进度
       final uploadedBytes = end;
       final progress = uploadedBytes / task.fileSize;
-      updateTask(task.copyWith(
-        uploadedBytes: uploadedBytes,
-        progress: progress,
-        uploadedChunks: i + 1,
-      ));
+      updateTask(
+        task.copyWith(
+          uploadedBytes: uploadedBytes,
+          progress: progress,
+          uploadedChunks: i + 1,
+        ),
+      );
       _emitProgress(task.id, progress);
     }
 
     // 完成上传（某些存储策略需要）
     if (session.completeUrl != null && session.completeUrl!.isNotEmpty) {
-      await _completeMultipartUpload(session, dio);
+      await _completeMultipartUpload(session);
     }
   }
 
@@ -393,19 +417,15 @@ class UploadService extends ChangeNotifier {
     List<int> chunkData,
     int index,
     String sessionId,
-    Dio dio,
     CancelToken cancelToken,
   ) async {
-    await dio.post(
+    await ApiService.instance.post(
       '/file/upload/$sessionId/$index',
       data: Stream.fromIterable([chunkData]),
-      options: Options(
-        contentType: 'application/octet-stream',
-        headers: {
-          'Content-Length': chunkData.length.toString(),
-        },
-      ),
-      cancelToken: cancelToken,
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': chunkData.length.toString(),
+      },
     );
   }
 
@@ -444,37 +464,32 @@ class UploadService extends ChangeNotifier {
   }
 
   /// 完成多部分上传
-  Future<void> _completeMultipartUpload(
-    UploadSessionModel session,
-    Dio dio,
-  ) async {
-    await dio.post(
-      session.completeUrl!,
-      data: {},
-    );
+  Future<void> _completeMultipartUpload(UploadSessionModel session) async {
+    await ApiService.instance.post(session.completeUrl!, data: {});
   }
 
   /// 单次上传
   Future<void> _uploadSinglePart(
     List<int> fileBytes,
     UploadSessionModel session,
-    Dio dio,
     UploadTaskModel task,
     CancelToken cancelToken,
   ) async {
     if (session.isRelayUpload) {
       // 上传到中继服务器
-      await _uploadChunkToRelay(fileBytes, 0, session.sessionId, dio, cancelToken);
+      await _uploadChunkToRelay(fileBytes, 0, session.sessionId, cancelToken);
     } else {
       // 上传到远程存储
       await _uploadChunkToRemote(fileBytes, 0, session, cancelToken);
     }
 
-    updateTask(task.copyWith(
-      uploadedBytes: task.fileSize,
-      progress: 1.0,
-      uploadedChunks: 1,
-    ));
+    updateTask(
+      task.copyWith(
+        uploadedBytes: task.fileSize,
+        progress: 1.0,
+        uploadedChunks: 1,
+      ),
+    );
     _emitProgress(task.id, 1.0);
   }
 
@@ -484,101 +499,5 @@ class UploadService extends ChangeNotifier {
     if (controller != null && !controller.isClosed) {
       controller.add(progress);
     }
-  }
-
-  /// 创建配置了 token 的 Dio 实例
-  Dio _createDio() {
-    final dio = Dio(BaseOptions(
-      baseUrl: ApiConfig.baseUrl,
-      connectTimeout: const Duration(seconds: 30),
-      receiveTimeout: const Duration(seconds: 300),
-      sendTimeout: const Duration(seconds: 300),
-    ));
-
-    // 添加请求拦截器
-    dio.interceptors.add(InterceptorsWrapper(
-      onRequest: (options, handler) async {
-        final token = await StorageService.instance.accessToken;
-        if (token != null && token.isNotEmpty) {
-          options.headers['Authorization'] = 'Bearer $token';
-        }
-        return handler.next(options);
-      },
-    ));
-
-    // 添加错误拦截器（处理 401）
-    bool isRefreshing = false;
-    final List<Completer<void>> refreshSubscribers = [];
-
-    dio.interceptors.add(InterceptorsWrapper(
-      onError: (error, handler) async {
-        if (error.response?.statusCode == 401) {
-          final path = error.requestOptions.path;
-          if (path.contains('/session/token/refresh')) {
-            return handler.next(error);
-          }
-
-          if (isRefreshing) {
-            final completer = Completer<void>();
-            refreshSubscribers.add(completer);
-            await completer.future;
-            error.requestOptions.headers.remove('Authorization');
-            return handler.resolve(await dio.fetch(error.requestOptions));
-          }
-
-          isRefreshing = true;
-
-          try {
-            final refreshToken = await StorageService.instance.refreshToken;
-            if (refreshToken == null || refreshToken.isEmpty) {
-              isRefreshing = false;
-              return handler.next(error);
-            }
-
-            final refreshDio = Dio(BaseOptions(
-              baseUrl: ApiConfig.baseUrl,
-              headers: {'Content-Type': 'application/json'},
-            ));
-
-            final response = await refreshDio.post<Map<String, dynamic>>(
-              '/session/token/refresh',
-              data: {'refresh_token': refreshToken},
-            );
-
-            final data = response.data as Map<String, dynamic>;
-            await StorageService.instance.setAccessToken(data['access_token'] as String);
-            await StorageService.instance.setRefreshToken(data['refresh_token'] as String);
-
-            isRefreshing = false;
-
-            for (final subscriber in refreshSubscribers) {
-              if (!subscriber.isCompleted) {
-                subscriber.complete();
-              }
-            }
-            refreshSubscribers.clear();
-
-            error.requestOptions.headers.remove('Authorization');
-            return handler.resolve(await dio.fetch(error.requestOptions));
-          } catch (e) {
-            debugPrint('UploadService: Refresh token failed: $e');
-            isRefreshing = false;
-
-            for (final subscriber in refreshSubscribers) {
-              if (!subscriber.isCompleted) {
-                subscriber.completeError(e);
-              }
-            }
-            refreshSubscribers.clear();
-
-            return handler.next(error);
-          }
-        }
-
-        return handler.next(error);
-      },
-    ));
-
-    return dio;
   }
 }

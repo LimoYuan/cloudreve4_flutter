@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../../router/app_router.dart';
+import '../../../services/api_service.dart';
+import '../../../services/server_service.dart';
 import '../../../services/storage_service.dart';
+import '../../providers/auth_provider.dart';
 
 /// 启动页
 class SplashPage extends StatefulWidget {
@@ -18,19 +22,39 @@ class _SplashPageState extends State<SplashPage> {
   }
 
   Future<void> _initApp() async {
-    // 初始化存储
-    await StorageService.instance.init();
+    // 先初始化服务器服务，获取正确的 baseUrl
+    await ServerService.instance.init();
 
-    // 检查登录状态
-    final storage = StorageService.instance;
-    final accessToken = await storage.accessToken;
-    final isLoggedIn = accessToken != null && accessToken.isNotEmpty;
+    // 根据服务器服务中的 baseUrl 设置 API 服务
+    final currentServer = ServerService.instance.currentServer;
+    if (currentServer != null) {
+      await _setApiBaseUrl(currentServer.baseUrl);
+    }
 
-    if (isLoggedIn && mounted) {
+    // 初始化 API 服务
+    await ApiService.instance.init();
+
+    // 使用 AuthProvider 检查登录状态
+    if (!mounted) return;
+
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+
+    // 初始化 AuthProvider（会自动检查登录状态）
+    await authProvider.init();
+
+    if (!mounted) return;
+
+    if (authProvider.isAuthenticated) {
       Navigator.of(context).pushReplacementNamed(RouteNames.home);
-    } else if (mounted) {
+    } else {
       Navigator.of(context).pushReplacementNamed(RouteNames.login);
     }
+  }
+
+  /// 设置 API baseUrl
+  Future<void> _setApiBaseUrl(String baseUrl) async {
+    final storageService = StorageService.instance;
+    await storageService.setCustomBaseUrl(baseUrl);
   }
 
   @override

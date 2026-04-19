@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/constants/storage_keys.dart';
+import '../data/models/server_model.dart';
 
 /// 存储服务
 class StorageService {
@@ -76,34 +78,42 @@ class StorageService {
     return _prefs!.clear();
   }
 
-  /// Token相关
-  Future<String?> get accessToken => getString(StorageKeys.accessToken);
-  Future<bool> setAccessToken(String value) => setString(StorageKeys.accessToken, value);
-  Future<bool> removeAccessToken() => remove(StorageKeys.accessToken);
-
-  Future<String?> get refreshToken => getString(StorageKeys.refreshToken);
-  Future<bool> setRefreshToken(String value) => setString(StorageKeys.refreshToken, value);
-  Future<bool> removeRefreshToken() => remove(StorageKeys.refreshToken);
-
-  /// 用户信息
-  Future<String?> get userId => getString(StorageKeys.userId);
-  Future<bool> setUserId(String value) => setString(StorageKeys.userId, value);
-  Future<bool> removeUserId() => remove(StorageKeys.userId);
-
-  Future<String?> get userEmail => getString(StorageKeys.userEmail);
-  Future<bool> setUserEmail(String value) => setString(StorageKeys.userEmail, value);
-
-  Future<String?> get userPasswd => getString(StorageKeys.userPasswd);
-  Future<bool> setUserPasswd(String value) => setString(StorageKeys.userPasswd, value);
-  Future<bool> removeUserEmail() => remove(StorageKeys.userEmail);
-
   /// 设置
-  Future<bool> get rememberMe async => await getBool(StorageKeys.rememberMe) ?? false;
-  Future<bool> setRememberMe(bool value) => setBool(StorageKeys.rememberMe, value);
-
   Future<String?> get themeMode => getString(StorageKeys.themeMode);
   Future<bool> setThemeMode(String value) => setString(StorageKeys.themeMode, value);
 
-  Future<String?> get language => getString(StorageKeys.language);
-  Future<bool> setLanguage(String value) => setString(StorageKeys.language, value);
+  /// 服务器地址配置
+  Future<String?> get customBaseUrl => getString(StorageKeys.customBaseUrl);
+  Future<bool> setCustomBaseUrl(String? value) => setString(StorageKeys.customBaseUrl, value);
+  Future<bool> removeCustomBaseUrl() => remove(StorageKeys.customBaseUrl);
+
+  /// 服务器列表
+  Future<List<ServerModel>> get servers async {
+    final serversJson = await getString(StorageKeys.servers);
+    if (serversJson == null || serversJson.isEmpty) {
+      return [];
+    }
+
+    try {
+      final serversList = jsonDecode(serversJson) as List<dynamic>;
+      return serversList
+          .map((e) => ServerModel.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      return [];
+    }
+  }
+
+  Future<bool> setServers(List<ServerModel> servers) async {
+    try {
+      final serversJson = jsonEncode(servers.map((s) => s.toJson()).toList());
+      return await setString(StorageKeys.servers, serversJson);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// 上次选中的服务器 label
+  Future<String?> get lastSelectedServerLabel => getString(StorageKeys.lastSelectedServer);
+  Future<bool> setLastSelectedServerLabel(String? value) => setString(StorageKeys.lastSelectedServer, value);
 }

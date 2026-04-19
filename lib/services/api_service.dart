@@ -4,8 +4,6 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import '../config/api_config.dart';
 import '../core/exceptions/app_exception.dart';
-import '../data/models/user_model.dart';
-import 'storage_service.dart';
 
 /// API响应
 class ApiResponse<T> {
@@ -44,11 +42,19 @@ class ApiService {
   static ApiService? _instance;
   bool _isRefreshing = false;
   final List<Completer<void>> _refreshSubscribers = [];
+  bool _initialized = false;
+
+  /// 获取 token 的回调
+  Future<String?> Function()? getTokenCallback;
+  /// 刷新 token 的回调
+  Future<void> Function()? refreshTokenCallback;
+  /// 清除认证数据的回调
+  Future<void> Function()? clearAuthCallback;
 
   ApiService._() {
     _dio = Dio(
       BaseOptions(
-        baseUrl: ApiConfig.baseUrl,
+        baseUrl: ApiConfig.defaultBaseUrl,
         connectTimeout: const Duration(seconds: ApiConfig.connectTimeout),
         receiveTimeout: const Duration(seconds: ApiConfig.receiveTimeout),
         sendTimeout: const Duration(seconds: ApiConfig.sendTimeout),
@@ -70,14 +76,38 @@ class ApiService {
     return _instance!;
   }
 
+  /// 设置认证回调
+  /// 由 AuthProvider 在初始化时调用
+  static void setAuthCallbacks({
+    required Future<String?> Function() getToken,
+    required Future<void> Function() refreshToken,
+    required Future<void> Function() clearAuth,
+  }) {
+    final service = instance;
+    service.getTokenCallback = getToken;
+    service.refreshTokenCallback = refreshToken;
+    service.clearAuthCallback = clearAuth;
+  }
+
+  /// 初始化API服务（设置正确的baseUrl）
+  Future<void> init() async {
+    if (_initialized) return;
+
+    final baseUrl = await ApiConfig.baseUrl;
+    _dio.options.baseUrl = baseUrl;
+    _initialized = true;
+  }
+
   /// 请求拦截器
   Interceptor _requestInterceptor() {
     return InterceptorsWrapper(
       onRequest: (options, handler) async {
-        // 添加Token
-        final token = await StorageService.instance.accessToken;
-        if (token != null && token.isNotEmpty) {
-          options.headers['Authorization'] = 'Bearer $token';
+        // 从回调获取 Token
+        if (getTokenCallback != null) {
+          final token = await getTokenCallback!();
+          if (token != null && token.isNotEmpty) {
+            options.headers['Authorization'] = 'Bearer $token';
+          }
         }
         return handler.next(options);
       },
@@ -142,7 +172,7 @@ class ApiService {
     );
   }
 
-  /// 处理401错误，，尝试刷新token
+  /// 处理401错误，尝试刷新token
   Future<Response?> _handle401Error(
     DioException error,
     ErrorInterceptorHandler handler,
@@ -173,52 +203,10 @@ class ApiService {
     _isRefreshing = true;
 
     try {
-      // 获取新的token
-      final refreshToken = await StorageService.instance.refreshToken;
-      if (refreshToken == null || refreshToken.isEmpty) {
-        // 没有refresh token，无法刷新
-        _isRefreshing = false;
-        return null;
+      // 调用回调刷新 token
+      if (refreshTokenCallback != null) {
+        await refreshTokenCallback!();
       }
-
-      // 创建一个新的Dio实例来避免循环调用
-      final refreshDio = Dio(
-        BaseOptions(
-          baseUrl: ApiConfig.baseUrl,
-          connectTimeout: const Duration(seconds: ApiConfig.connectTimeout),
-          receiveTimeout: const Duration(seconds: ApiConfig.receiveTimeout),
-          sendTimeout: const Duration(seconds: ApiConfig.sendTimeout),
-          headers: {'Content-Type': 'application/json'},
-        ),
-      );
-
-      final response = await refreshDio.post<Map<String, dynamic>>(
-        '/session/token/refresh',
-        data: {'refresh_token': refreshToken},
-      );
-
-      final data = response.data as Map<String, dynamic>;
-
-      // 检查响应中是否有错误 code
-      if (data['code'] != null) {
-        final responseCode = data['code'] as int;
-        if (responseCode == 40020) {
-          // RefreshToken 也过期了
-          debugPrint('RefreshToken 已过期，需要重新登录');
-          // 清除认证数据
-          await StorageService.instance.removeAccessToken();
-          await StorageService.instance.removeRefreshToken();
-          await StorageService.instance.removeUserId();
-          // 抛出特殊异常
-          throw RefreshTokenExpiredException();
-        }
-      }
-
-      final tokenModel = TokenModel.fromJson(data);
-      // debugPrint('Refresh token -> TokenModel: $tokenModel');
-      // 保存新的token到 StorageService
-      await StorageService.instance.setAccessToken(tokenModel.accessToken);
-      await StorageService.instance.setRefreshToken(tokenModel.refreshToken);
 
       _isRefreshing = false;
 
@@ -237,14 +225,12 @@ class ApiService {
       debugPrint('Refresh token failed: $e');
       _isRefreshing = false;
 
-      // 如果是 RefreshTokenExpiredException，清除认证数据并抛出
-      if (e is RefreshTokenExpiredException) {
-        // 已经在上面清除了认证数据
-        // 抛出异常让调用者处理
-        rethrow;
+      // 刷新失败，清除认证数据
+      if (clearAuthCallback != null) {
+        await clearAuthCallback!();
       }
 
-      // 刷新失败，通知所有等待的请求
+      // 通知所有等待的请求
       for (final subscriber in _refreshSubscribers) {
         if (!subscriber.isCompleted) {
           subscriber.completeError(e);
@@ -339,26 +325,13 @@ class ApiService {
   /// 解析响应
   T _parseResponse<T>(Response response) {
     final data = response.data;
-    // debugPrint('解析响应 -> API Response: $data');
     if (data is Map<String, dynamic>) {
       final apiResponse = ApiResponse<T>.fromJson(data);
-      // debugPrint(
-      //   '解析响应 -> API Response: ${apiResponse.isSuccess} - ${apiResponse.code} - ${apiResponse.message}',
-      // );
       if (!apiResponse.isSuccess && !apiResponse.isContinue) {
-        _handle401Error(
-          DioException(
-            requestOptions: response.requestOptions,
-            type: DioExceptionType.unknown,  
-            response: response,
-            error: apiResponse.message,
-            message: apiResponse.code.toString(),
-          ),
-          ErrorInterceptorHandler(),
-        );
         throw ServerException(apiResponse.message, code: apiResponse.code);
       }
       return apiResponse.data as T;
+
     }
     return data as T;
   }

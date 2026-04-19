@@ -102,7 +102,7 @@ class FileService {
   }) async {
     final data = <String, dynamic>{
       'uri': _toCloudreveUri(uri),
-      'name': newName,
+      'new_name': newName,
     };
 
     await ApiService.instance.post<void>('/file/rename', data: data);

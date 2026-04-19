@@ -12,6 +12,7 @@ class FileListItem extends StatelessWidget {
   final VoidCallback? onSelect;
   final VoidCallback? onDownload;
   final VoidCallback? onOpenInBrowser;
+  final VoidCallback? onRename;
   final VoidCallback? onDelete;
 
   const FileListItem({
@@ -23,6 +24,7 @@ class FileListItem extends StatelessWidget {
     this.onSelect,
     this.onDownload,
     this.onOpenInBrowser,
+    this.onRename,
     this.onDelete,
   });
 
@@ -101,6 +103,7 @@ class FileListItem extends StatelessWidget {
       hasSelect: onSelect != null,
       hasDownload: onDownload != null,
       hasOpenInBrowser: onOpenInBrowser != null,
+      hasRename: onRename != null,
       hasDelete: onDelete != null,
     );
 
@@ -111,6 +114,8 @@ class FileListItem extends StatelessWidget {
         onDownload?.call();
       case FileMenuAction.openInBrowser:
         onOpenInBrowser?.call();
+      case FileMenuAction.rename:
+        onRename?.call();
       case FileMenuAction.delete:
         onDelete?.call();
       case null:

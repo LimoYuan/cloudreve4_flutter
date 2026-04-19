@@ -3,7 +3,8 @@
     "allow": [
       "WebFetch",
       "WebSearch",
-      "Read(//tmp/**)"
+      "Read(//tmp/**)",
+      "Read(//home/home/aeno/Documents/cloudreve4_flutter/lib/presentation/widgets/**)"
     ]
   }
 }

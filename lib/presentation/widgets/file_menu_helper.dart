@@ -5,6 +5,7 @@ enum FileMenuAction {
   select,
   download,
   openInBrowser,
+  rename,
   delete,
 }
 
@@ -14,6 +15,7 @@ Future<FileMenuAction?> showFileMenu({
   required bool hasSelect,
   required bool hasDownload,
   required bool hasOpenInBrowser,
+  required bool hasRename,
   required bool hasDelete,
 }) async {
   final renderBox = context.findRenderObject() as RenderBox?;
@@ -70,6 +72,17 @@ Future<FileMenuAction?> showFileMenu({
               Icon(Icons.open_in_browser, size: 20),
               SizedBox(width: 12),
               Text('在浏览器中打开'),
+            ],
+          ),
+        ),
+      if (hasRename)
+        const PopupMenuItem(
+          value: FileMenuAction.rename,
+          child: Row(
+            children: [
+              Icon(Icons.edit, size: 20),
+              SizedBox(width: 12),
+              Text('重命名'),
             ],
           ),
         ),

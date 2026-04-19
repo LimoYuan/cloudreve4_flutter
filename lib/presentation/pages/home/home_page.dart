@@ -483,6 +483,7 @@ class _HomePageState extends State<HomePage> {
                 onSelect: () => fileManager.toggleSelection(file.path),
                 onDownload: !file.isFolder ? () => _downloadFile(context, fileManager, file) : null,
                 onOpenInBrowser: !file.isFolder ? () => _openInBrowser(context, file) : null,
+                onRename: () => _showRenameSingleDialog(context, fileManager, file),
                 onDelete: () => _showDeleteSingleConfirmation(context, fileManager, file),
               );
             },
@@ -547,6 +548,7 @@ class _HomePageState extends State<HomePage> {
             onSelect: () => fileManager.toggleSelection(file.path),
             onDownload: !file.isFolder ? () => _downloadFile(context, fileManager, file) : null,
             onOpenInBrowser: !file.isFolder ? () => _openInBrowser(context, file) : null,
+            onRename: () => _showRenameSingleDialog(context, fileManager, file),
             onDelete: () => _showDeleteSingleConfirmation(context, fileManager, file),
           );
         },
@@ -1138,6 +1140,45 @@ class _HomePageState extends State<HomePage> {
         ).showSnackBar(SnackBar(content: Text('获取下载链接失败: $e')));
       }
     }
+  }
+
+  /// 显示单个文件重命名对话框
+  void _showRenameSingleDialog(
+    BuildContext context,
+    FileManagerProvider fileManager,
+    FileModel file,
+  ) {
+    final controller = TextEditingController(text: file.name);
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('重命名'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            hintText: '新名称',
+            prefixIcon: Icon(Icons.edit),
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              if (controller.text.isEmpty) return;
+
+              Navigator.of(dialogContext).pop();
+              await fileManager.renameFile(file.path, controller.text);
+            },
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
   }
 
   /// 显示单个文件删除确认对话框

@@ -484,6 +484,8 @@ class _HomePageState extends State<HomePage> {
                 onDownload: !file.isFolder ? () => _downloadFile(context, fileManager, file) : null,
                 onOpenInBrowser: !file.isFolder ? () => _openInBrowser(context, file) : null,
                 onRename: () => _showRenameSingleDialog(context, fileManager, file),
+                onMove: () => _showMoveSingleDialog(context, fileManager, file, false),
+                onCopy: () => _showMoveSingleDialog(context, fileManager, file, true),
                 onDelete: () => _showDeleteSingleConfirmation(context, fileManager, file),
               );
             },
@@ -545,10 +547,12 @@ class _HomePageState extends State<HomePage> {
                 // TODO: 打开文件
               }
             },
-            onSelect: () => fileManager.toggleSelection(file.path),
+            onSelect: () => fileManager.toggleSelection( file.path),
             onDownload: !file.isFolder ? () => _downloadFile(context, fileManager, file) : null,
             onOpenInBrowser: !file.isFolder ? () => _openInBrowser(context, file) : null,
             onRename: () => _showRenameSingleDialog(context, fileManager, file),
+            onMove: () => _showMoveSingleDialog(context, fileManager, file, false),
+            onCopy: () => _showMoveSingleDialog(context, fileManager, file, true),
             onDelete: () => _showDeleteSingleConfirmation(context, fileManager, file),
           );
         },
@@ -1142,6 +1146,65 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  /// 显示单个文件移动对话框
+  void _showMoveSingleDialog(
+    BuildContext context,
+    FileManagerProvider fileManager,
+    FileModel file,
+    bool copy,
+  ) {
+    // 创建文件夹选择器对话框
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(copy ? '复制文件' : '移动文件'),
+        content: SizedBox(
+          width: 300,
+          height: 400,
+          child: _FolderPicker(
+            currentPath: fileManager.currentPath,
+            onFolderSelected: (selectedPath) async {
+              Navigator.of(dialogContext).pop();
+
+              try {
+                await FileService().moveFiles(
+                  uris: [file.path],
+                  dst: selectedPath,
+                  copy: copy,
+                );
+
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(copy ? '复制成功' : '移动成功'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                  await fileManager.loadFiles();
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('${copy ? '复制' : '移动'}失败: $e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('取消'),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// 显示单个文件重命名对话框
   void _showRenameSingleDialog(
     BuildContext context,
@@ -1232,4 +1295,277 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+}
+
+/// 文件夹选择器
+class _FolderPicker extends StatefulWidget {
+  final String currentPath;
+  final void Function(String path) onFolderSelected;
+
+  const _FolderPicker({
+    required this.currentPath,
+    required this.onFolderSelected,
+  });
+
+  @override
+  State<_FolderPicker> createState() => _FolderPickerState();
+}
+
+class _FolderPickerState extends State<_FolderPicker> {
+  String _currentPath = '/';
+  List<FileModel> _folders = [];
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentPath = widget.currentPath;
+    _loadFolders();
+  }
+
+  Future<void> _loadFolders() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final response = await FileService().listFiles(
+        uri: _currentPath,
+        pageSize: 100,
+      );
+
+      final List<dynamic> filesData = response['files'] as List<dynamic>? ?? [];
+      setState(() {
+        _folders = filesData
+            .map((f) => FileModel.fromJson(f as Map<String, dynamic>))
+            .where((f) => f.isFolder)
+            .toList();
+      });
+    } catch (e) {
+      debugPrint('加载文件夹失败: $e');
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _enterFolder(FileModel folder) {
+    setState(() {
+      _currentPath = folder.path;
+    });
+    _loadFolders();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final primaryColor = Theme.of(context).colorScheme.primary;
+
+    return Column(
+      children: [
+        // 面包屑导航
+        _buildBreadcrumb(context, primaryColor),
+
+        const Divider(height: 1),
+
+        // 文件夹列表
+        Expanded(
+          child: _isLoading
+              ? const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(32),
+                    child: CircularProgressIndicator(),
+                  ),
+                )
+              : _folders.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.folder_off,
+                            size: 48,
+                            color: Colors.grey.shade400,
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            '此文件夹为空',
+                            style: TextStyle(
+                              color: Colors.grey.shade600,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.separated(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      itemCount: _folders.length,
+                      separatorBuilder: (_, __) => Divider(
+                        height: 1,
+                        indent: 56,
+                        endIndent: 16,
+                      ),
+                      itemBuilder: (context, index) {
+                        final folder = _folders[index];
+                        return InkWell(
+                          onTap: () => _enterFolder(folder),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 8,
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 40,
+                                  height: 40,
+                                  decoration: BoxDecoration(
+                                    color: primaryColor.withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Icon(
+                                    Icons.folder,
+                                    color: primaryColor,
+                                    size: 24,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    folder.name,
+                                    style: const TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                                Icon(
+                                  Icons.chevron_right,
+                                  color: Colors.grey.shade400,
+                                  size: 20,
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBreadcrumb(BuildContext context, Color primaryColor) {
+    final pathParts = _currentPath.split('/');
+    pathParts.removeWhere((part) => part.isEmpty);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _buildBreadcrumbItem(
+                        context,
+                        name: '首页',
+                        path: '/',
+                        isLast: pathParts.isEmpty,
+                        primaryColor: primaryColor,
+                      ),
+                      ...pathParts.asMap().entries.expand((entry) {
+                        final index = entry.key;
+                        final part = entry.value;
+                        final path = '/${pathParts.sublist(0, index + 1).join('/')}';
+
+                        return [
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            child: Icon(
+                              Icons.chevron_right,
+                              size: 16,
+                              color: Colors.grey.shade400,
+                            ),
+                          ),
+                          _buildBreadcrumbItem(
+                            context,
+                            name: part,
+                            path: path,
+                            isLast: index == pathParts.length - 1,
+                            primaryColor: primaryColor,
+                          ),
+                        ];
+                      }),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              FilledButton.tonal(
+                onPressed: () => widget.onFolderSelected(_currentPath),
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                ),
+                child: const Text('选择'),
+              ),
+            ],
+          ),
+        ),
+        Divider(height: 1),
+      ],
+    );
+  }
+
+  Widget _buildBreadcrumbItem(
+    BuildContext context, {
+    required String name,
+    required String path,
+    required bool isLast,
+    required Color primaryColor,
+  }) {
+    return InkWell(
+      onTap: isLast ? null : () {
+        setState(() {
+          _currentPath = path;
+        });
+        _loadFolders();
+      },
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: isLast
+              ? primaryColor.withValues(alpha: 0.15)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (name == '首页')
+              Icon(
+                Icons.home_filled,
+                size: 16,
+                color: isLast ? primaryColor : Colors.grey.shade600,
+              ),
+            if (name == '首页') const SizedBox(width: 6),
+            Text(
+              name,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: isLast ? FontWeight.w600 : FontWeight.w500,
+                color: isLast ? primaryColor : Colors.grey.shade700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

@@ -67,6 +67,8 @@ class _LoginPageState extends State<LoginPage> {
         rememberMe: _rememberMe,
       );
 
+      debugPrint('Login-Page -> Login success: $success');
+
       if (success && mounted) {
         // 关闭键盘
         _focusNode.unfocus();

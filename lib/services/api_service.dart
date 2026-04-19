@@ -198,6 +198,22 @@ class ApiService {
       );
 
       final data = response.data as Map<String, dynamic>;
+
+      // 检查响应中是否有错误 code
+      if (data['code'] != null) {
+        final responseCode = data['code'] as int;
+        if (responseCode == 40020) {
+          // RefreshToken 也过期了
+          debugPrint('RefreshToken 已过期，需要重新登录');
+          // 清除认证数据
+          await StorageService.instance.removeAccessToken();
+          await StorageService.instance.removeRefreshToken();
+          await StorageService.instance.removeUserId();
+          // 抛出特殊异常
+          throw RefreshTokenExpiredException();
+        }
+      }
+
       final tokenModel = TokenModel.fromJson(data);
       // debugPrint('Refresh token -> TokenModel: $tokenModel');
       // 保存新的token到 StorageService
@@ -220,6 +236,13 @@ class ApiService {
     } catch (e) {
       debugPrint('Refresh token failed: $e');
       _isRefreshing = false;
+
+      // 如果是 RefreshTokenExpiredException，清除认证数据并抛出
+      if (e is RefreshTokenExpiredException) {
+        // 已经在上面清除了认证数据
+        // 抛出异常让调用者处理
+        rethrow;
+      }
 
       // 刷新失败，通知所有等待的请求
       for (final subscriber in _refreshSubscribers) {

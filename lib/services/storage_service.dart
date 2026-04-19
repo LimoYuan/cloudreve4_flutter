@@ -92,6 +92,9 @@ class StorageService {
 
   Future<String?> get userEmail => getString(StorageKeys.userEmail);
   Future<bool> setUserEmail(String value) => setString(StorageKeys.userEmail, value);
+
+  Future<String?> get userPasswd => getString(StorageKeys.userEmail);
+  Future<bool> setUserPasswd(String value) => setString(StorageKeys.userPasswd, value);
   Future<bool> removeUserEmail() => remove(StorageKeys.userEmail);
 
   /// 设置

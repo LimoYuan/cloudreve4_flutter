@@ -31,6 +31,12 @@ class TokenExpiredException extends AuthException {
       : super('Token已过期，请重新登录', code: 401);
 }
 
+/// RefreshToken过期异常
+class RefreshTokenExpiredException extends AuthException {
+  RefreshTokenExpiredException()
+      : super('登录已过期，请重新登录', code: 40020);
+}
+
 /// 未授权异常
 class UnauthorizedException extends AuthException {
   UnauthorizedException() : super('未授权，请先登录', code: 403);

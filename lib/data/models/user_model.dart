@@ -39,8 +39,8 @@ class UserModel {
           : null,
       pined: json['pined'] != null
           ? (json['pined'] as List)
-              .map((e) => PinedFileModel.fromJson(e as Map<String, dynamic>))
-              .toList()
+                .map((e) => PinedFileModel.fromJson(e as Map<String, dynamic>))
+                .toList()
           : null,
     );
   }
@@ -103,10 +103,7 @@ class PinedFileModel {
   final String uri;
   final String? name;
 
-  PinedFileModel({
-    required this.uri,
-    this.name,
-  });
+  PinedFileModel({required this.uri, this.name});
 
   factory PinedFileModel.fromJson(Map<String, dynamic> json) {
     return PinedFileModel(
@@ -116,10 +113,7 @@ class PinedFileModel {
   }
 
   Map<String, dynamic> toJson() {
-    return {
-      'uri': uri,
-      'name': name,
-    };
+    return {'uri': uri, 'name': name};
   }
 }
 
@@ -140,7 +134,14 @@ class TokenModel {
   factory TokenModel.fromJson(Map<String, dynamic> json) {
     // debugPrint('Refresh token -> TokenModel: json -> $json');
     // fixed refresh_token !!!
-    final data = json['data'] as Map<String, dynamic>;
+    Map<String, dynamic> data;
+    
+    if (json['data'] != null) {
+      data = json['data'] as Map<String, dynamic>;
+    } else {
+      data = json;
+    }
+
     return TokenModel(
       accessToken: data['access_token'] as String,
       refreshToken: data['refresh_token'] as String,
@@ -167,10 +168,7 @@ class CapacityModel {
 
   int get remaining => total - used;
 
-  CapacityModel({
-    required this.total,
-    required this.used,
-  });
+  CapacityModel({required this.total, required this.used});
 
   factory CapacityModel.fromJson(Map<String, dynamic> json) {
     return CapacityModel(
@@ -180,9 +178,6 @@ class CapacityModel {
   }
 
   Map<String, dynamic> toJson() {
-    return {
-      'total': total,
-      'used': used,
-    };
+    return {'total': total, 'used': used};
   }
 }

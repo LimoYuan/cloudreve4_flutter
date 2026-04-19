@@ -7,6 +7,7 @@ class StorageKeys {
   static const String refreshExpires = 'refresh_expires';
   static const String userId = 'user_id';
   static const String userEmail = 'user_email';
+  static const String userPasswd = 'user_password';
   static const String userNickname = 'user_nickname';
   static const String userAvatar = 'user_avatar';
 

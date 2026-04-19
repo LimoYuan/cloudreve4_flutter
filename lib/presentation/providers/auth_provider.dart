@@ -14,6 +14,7 @@ class AuthProvider extends ChangeNotifier {
   String? _rememberedEmail;
   String? _rememberedPassword;
   bool _rememberMe = false;
+  bool _hasRefreshTokenExpired = false;
 
   AuthState get state => _state;
   UserModel? get user => _user;
@@ -23,12 +24,12 @@ class AuthProvider extends ChangeNotifier {
   bool get rememberMe => _rememberMe;
   String? get rememberedEmail => _rememberedEmail;
   String? get rememberedPassword => _rememberedPassword;
+  bool get hasRefreshTokenExpired => _hasRefreshTokenExpired;
 
   /// 初始化
   Future<void> init() async {
     try {
       setState(AuthState.loading);
-      // 加载记住我信息
       await _loadRememberedInfo();
       final user = await AuthService.instance.autoLogin();
       if (user != null) {
@@ -57,7 +58,6 @@ class AuthProvider extends ChangeNotifier {
 
       await AuthService.instance.saveLoginInfo(response);
 
-      // 保存记住我信息
       _rememberMe = rememberMe;
       if (rememberMe) {
         _rememberedEmail = email;
@@ -126,12 +126,22 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 处理 RefreshTokenExpiredException
+  void setRefreshTokenExpired() {
+    _hasRefreshTokenExpired = true;
+    notifyListeners();
+  }
+
+  void clearRefreshTokenExpired() {
+    _hasRefreshTokenExpired = false;
+    notifyListeners();
+  }
+
   /// 加载记住我信息
   Future<void> _loadRememberedInfo() async {
     _rememberMe = await StorageService.instance.rememberMe;
     if (_rememberMe) {
       _rememberedEmail = await StorageService.instance.userEmail;
-      // 密码通常不存储在本地，这里只是示例
       _rememberedPassword = null;
     }
   }
@@ -141,6 +151,7 @@ class AuthProvider extends ChangeNotifier {
     await StorageService.instance.setRememberMe(_rememberMe);
     if (_rememberMe) {
       await StorageService.instance.setUserEmail(_rememberedEmail ?? '');
+      await StorageService.instance.setUserPasswd(_rememberedPassword ?? '');
     } else {
       await StorageService.instance.removeUserEmail();
     }

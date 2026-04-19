@@ -63,6 +63,52 @@ class AppView extends StatelessWidget {
       themeMode: ThemeMode.system,
       onGenerateRoute: AppRouter.generateRoute,
       initialRoute: RouteNames.splash,
+      builder: (context, child) {
+        // 添加全局错误处理
+        return ErrorHandler(child: child!);
+      },
+    );
+  }
+}
+
+/// 全局错误处理器
+class ErrorHandler extends StatelessWidget {
+  final Widget child;
+
+  const ErrorHandler({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<AuthProvider>(
+      builder: (context, authProvider, child) {
+        // 检查是否有待处理的登录过期错误
+        if (authProvider.hasRefreshTokenExpired) {
+          WidgetsBinding.instance.addPostFrameCallback((_) async {
+            final scaffoldMessenger = ScaffoldMessenger.of(context);
+            final navigator = Navigator.of(context);
+
+            // 显示 SnackBar
+            scaffoldMessenger.showSnackBar(
+              const SnackBar(
+                content: Text('登录已过期，请重新登录'),
+                backgroundColor: Colors.red,
+                duration: Duration(seconds: 2),
+              ),
+            );
+
+            // 跳转到登录页
+            navigator.pushNamedAndRemoveUntil(
+              RouteNames.login,
+              (route) => false,
+            );
+
+            // 清除标志
+            authProvider.clearRefreshTokenExpired();
+          });
+        }
+        return child!;
+      },
+      child: child,
     );
   }
 }

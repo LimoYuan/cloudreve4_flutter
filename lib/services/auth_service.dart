@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+
 import '../data/models/user_model.dart';
 import '../core/exceptions/app_exception.dart';
 import 'api_service.dart';
@@ -36,8 +38,13 @@ class AuthService {
       ...captcha != null ? {'captcha': captcha} : {},
     };
 
-    final response = await ApiService.instance
-        .post<Map<String, dynamic>>('/session/token', data: data, noAuth: true);
+    final response = await ApiService.instance.post<Map<String, dynamic>>(
+      '/session/token',
+      data: data,
+      noAuth: true,
+    );
+
+    debugPrint('AuthService -> 登录响应: $response');
 
     return LoginResponseModel.fromJson(response);
   }
@@ -47,13 +54,13 @@ class AuthService {
     required String otp,
     required String sessionId,
   }) async {
-    final data = <String, dynamic>{
-      'otp': otp,
-      'session_id': sessionId,
-    };
+    final data = <String, dynamic>{'otp': otp, 'session_id': sessionId};
 
-    final response = await ApiService.instance
-        .post<Map<String, dynamic>>('/session/token/2fa', data: data, noAuth: true);
+    final response = await ApiService.instance.post<Map<String, dynamic>>(
+      '/session/token/2fa',
+      data: data,
+      noAuth: true,
+    );
 
     return LoginResponseModel.fromJson(response);
   }
@@ -67,8 +74,11 @@ class AuthService {
 
     final data = <String, dynamic>{'refresh_token': refreshToken};
 
-    final response = await ApiService.instance
-        .post<Map<String, dynamic>>('/session/token/refresh', data: data, noAuth: true);
+    final response = await ApiService.instance.post<Map<String, dynamic>>(
+      '/session/token/refresh',
+      data: data,
+      noAuth: true,
+    );
 
     return TokenModel.fromJson(response);
   }
@@ -96,13 +106,17 @@ class AuthService {
 
   /// 获取当前用户信息
   Future<UserModel> getCurrentUser() async {
-    final response = await ApiService.instance.get<Map<String, dynamic>>('/user/me');
+    final response = await ApiService.instance.get<Map<String, dynamic>>(
+      '/user/me',
+    );
     return UserModel.fromJson(response);
   }
 
   /// 获取用户容量
   Future<CapacityModel> getUserCapacity() async {
-    final response = await ApiService.instance.get<Map<String, dynamic>>('/user/capacity');
+    final response = await ApiService.instance.get<Map<String, dynamic>>(
+      '/user/capacity',
+    );
     return CapacityModel.fromJson(response);
   }
 
@@ -169,10 +183,7 @@ class LoginResponseModel {
   final UserModel user;
   final TokenModel token;
 
-  LoginResponseModel({
-    required this.user,
-    required this.token,
-  });
+  LoginResponseModel({required this.user, required this.token});
 
   factory LoginResponseModel.fromJson(Map<String, dynamic> json) {
     return LoginResponseModel(
@@ -182,9 +193,6 @@ class LoginResponseModel {
   }
 
   Map<String, dynamic> toJson() {
-    return {
-      'user': user.toJson(),
-      'token': token.toJson(),
-    };
+    return {'user': user.toJson(), 'token': token.toJson()};
   }
 }

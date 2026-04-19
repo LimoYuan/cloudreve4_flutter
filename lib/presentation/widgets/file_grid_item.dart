@@ -8,6 +8,7 @@ import 'file_menu_helper.dart';
 class FileGridItem extends StatelessWidget {
   final FileModel file;
   final bool isSelected;
+  final bool showCheckbox;
   final VoidCallback? onTap;
   final VoidCallback? onSelect;
   final VoidCallback? onDownload;
@@ -17,6 +18,7 @@ class FileGridItem extends StatelessWidget {
     super.key,
     required this.file,
     this.isSelected = false,
+    this.showCheckbox = false,
     this.onTap,
     this.onSelect,
     this.onDownload,
@@ -60,26 +62,32 @@ class FileGridItem extends StatelessWidget {
                   Expanded(
                     flex: 7,
                     child: Center(
-                      child: FittedBox(
-                        fit: BoxFit.contain,
-                        child: Container(
-                          width: 64,
-                          height: 64,
-                          decoration: BoxDecoration(
-                            color: file.isFolder
-                                  ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.1)
-                                  : Colors.grey.shade100,
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: Icon(
-                            file.isFolder ? Icons.folder : _getFileIcon(file.name),
-                            color: file.isFolder
-                                ? Theme.of(context).colorScheme.primary
-                                : _getFileIconColor(file.name),
-                            size: 36,
-                          ),
-                        ),
-                      ),
+                      child: showCheckbox
+                          ? Checkbox(
+                              value: isSelected,
+                              onChanged: (_) => onSelect?.call(),
+                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            )
+                          : FittedBox(
+                              fit: BoxFit.contain,
+                              child: Container(
+                                width: 64,
+                                height: 64,
+                                decoration: BoxDecoration(
+                                  color: file.isFolder
+                                        ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.1)
+                                        : Colors.grey.shade100,
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                child: Icon(
+                                  file.isFolder ? Icons.folder : _getFileIcon(file.name),
+                                  color: file.isFolder
+                                      ? Theme.of(context).colorScheme.primary
+                                      : _getFileIconColor(file.name),
+                                  size: 36,
+                                ),
+                              ),
+                            ),
                     ),
                   ),
                   // 文本区域 - 占 30%

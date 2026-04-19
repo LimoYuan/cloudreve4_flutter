@@ -7,6 +7,7 @@ import 'file_menu_helper.dart';
 class FileListItem extends StatelessWidget {
   final FileModel file;
   final bool isSelected;
+  final bool showCheckbox;
   final VoidCallback? onTap;
   final VoidCallback? onSelect;
   final VoidCallback? onDownload;
@@ -16,6 +17,7 @@ class FileListItem extends StatelessWidget {
     super.key,
     required this.file,
     this.isSelected = false,
+    this.showCheckbox = false,
     this.onTap,
     this.onSelect,
     this.onDownload,
@@ -37,7 +39,18 @@ class FileListItem extends StatelessWidget {
           ),
           margin: const EdgeInsets.symmetric(vertical: 2),
           child: ListTile(
-            leading: _buildIcon(context),
+            leading: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (showCheckbox)
+                  Checkbox(
+                    value: isSelected,
+                    onChanged: (_) => onSelect?.call(),
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                if (!showCheckbox) _buildIcon(context),
+              ],
+            ),
             title: Text(
               file.name,
               style: TextStyle(

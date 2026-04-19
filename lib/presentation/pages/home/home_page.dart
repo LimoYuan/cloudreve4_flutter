@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:cloudreve4_flutter/data/models/file_model.dart';
 import 'package:cloudreve4_flutter/services/file_service.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -24,6 +25,10 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  DateTime? _lastSwipeTime;
+  OverlayEntry? _exitHintOverlay;
+
   @override
   void initState() {
     super.initState();
@@ -47,8 +52,20 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (!didPop) {
+          final fileManager = Provider.of<FileManagerProvider>(
+            context,
+            listen: false,
+          );
+          await _handleBackPress(context, fileManager);
+        }
+      },
+      child: Scaffold(
+        key: _scaffoldKey,
+        appBar: AppBar(
         title: Consumer<AuthProvider>(
           builder: (context, authProvider, child) {
             final user = authProvider.user;
@@ -112,7 +129,7 @@ class _HomePageState extends State<HomePage> {
       drawer: _buildDrawer(context),
       body: Stack(
         children: [
-          _buildFileList(context),
+          _buildFileListWithGesture(context),
           Consumer<UploadManagerProvider>(
             builder: (context, uploadManager, child) {
               if (uploadManager.showUploadDialog) {
@@ -133,6 +150,7 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
       ),
+      bottomNavigationBar: _buildBottomBar(context),
       floatingActionButton: Consumer<FileManagerProvider>(
         builder: (context, fileManager, child) {
           return FloatingActionButton(
@@ -143,6 +161,121 @@ class _HomePageState extends State<HomePage> {
           );
         },
       ),
+      ),
+    );
+  }
+
+  /// 带手势检测的文件列表
+  Widget _buildFileListWithGesture(BuildContext context) {
+    return Consumer<FileManagerProvider>(
+      builder: (context, fileManager, child) {
+        return GestureDetector(
+          onHorizontalDragEnd: (details) => _handleSwipe(context, fileManager, details),
+          child: _buildFileList(context),
+        );
+      },
+    );
+  }
+
+  /// 处理左滑手势
+  void _handleSwipe(
+    BuildContext context,
+    FileManagerProvider fileManager,
+    DragEndDetails details,
+  ) {
+    if (details.primaryVelocity == null) return;
+    // primaryVelocity 是 double，负值表示向左滑动
+    if (details.primaryVelocity! < 0) {
+      if (fileManager.currentPath == '/') {
+        _checkExitApp(context);
+      } else {
+        _navigateBack(context, fileManager);
+      }
+    }
+  }
+
+  /// 处理返回键
+  Future<void> _handleBackPress(
+    BuildContext context,
+    FileManagerProvider fileManager,
+  ) async {
+    if (fileManager.currentPath == '/') {
+      await _checkExitApp(context);
+    } else {
+      await _navigateBack(context, fileManager);
+    }
+  }
+
+  /// 返回上一级
+  Future<void> _navigateBack(
+    BuildContext context,
+    FileManagerProvider fileManager,
+  ) async {
+    await fileManager.goBack();
+  }
+
+  /// 检查退出应用
+  Future<void> _checkExitApp(BuildContext context) async {
+    final now = DateTime.now();
+    if (_lastSwipeTime != null && now.difference(_lastSwipeTime!).inSeconds < 2) {
+      SystemNavigator.pop();
+    } else {
+      _lastSwipeTime = now;
+      _showExitHint();
+      Future.delayed(const Duration(seconds: 2), () {
+        _removeExitHint();
+      });
+    }
+  }
+
+  /// 显示退出提示
+  void _showExitHint() {
+    _removeExitHint();
+    _exitHintOverlay = OverlayEntry(
+      builder: (context) => Positioned(
+        bottom: 100,
+        left: 0,
+        right: 0,
+        child: Center(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.8),
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.arrow_back, color: Colors.white, size: 20),
+                SizedBox(width: 8),
+                Text(
+                  '再次左滑退出应用',
+                  style: TextStyle(color: Colors.white, fontSize: 14),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    Overlay.of(context).insert(_exitHintOverlay!);
+  }
+
+  /// 移除退出提示
+  void _removeExitHint() {
+    _exitHintOverlay?.remove();
+    _exitHintOverlay = null;
+  }
+
+  /// 构建底部导航栏
+  Widget _buildBottomBar(BuildContext context) {
+    return Consumer<FileManagerProvider>(
+      builder: (context, fileManager, child) {
+        if (fileManager.hasSelection) {
+          return _buildSelectionToolbar(context, fileManager);
+        }
+        return _buildBreadcrumb(context, fileManager);
+      },
     );
   }
 
@@ -294,10 +427,10 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildListView(BuildContext context, FileManagerProvider fileManager) {
+    final showCheckbox = fileManager.hasSelection;
+
     return Column(
       children: [
-        _buildBreadcrumb(context, fileManager),
-        _buildSelectionToolbar(context, fileManager),
         Expanded(
           child: ListView.builder(
             itemCount: fileManager.files.length,
@@ -309,8 +442,11 @@ class _HomePageState extends State<HomePage> {
                 key: ValueKey('file_${file.id}'),
                 file: file,
                 isSelected: isSelected,
+                showCheckbox: showCheckbox,
                 onTap: () {
-                  if (file.isFolder) {
+                  if (showCheckbox) {
+                    fileManager.toggleSelection(file.id);
+                  } else if (file.isFolder) {
                     fileManager.enterFolder(file.relativePath);
                   } else {
                     // TODO: 打开文件
@@ -349,44 +485,42 @@ class _HomePageState extends State<HomePage> {
     final itemWidth = (availableWidth - spacing * (crossAxisCount - 1)) / crossAxisCount;
     // 宽高比设置为正方形，避免溢出
     final childAspectRatio = itemWidth / 140;
+    final showCheckbox = fileManager.hasSelection;
 
-    return Column(
-      children: [
-        _buildBreadcrumb(context, fileManager),
-        _buildSelectionToolbar(context, fileManager),
-        Expanded(
-          child: GridView.builder(
-            padding: const EdgeInsets.all(8),
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: crossAxisCount,
-              mainAxisSpacing: spacing / 2,
-              crossAxisSpacing: spacing / 2,
-              childAspectRatio: childAspectRatio,
-            ),
-            itemCount: fileManager.files.length,
-            itemBuilder: (context, index) {
-              final file = fileManager.files[index];
-              final isSelected = fileManager.selectedFiles.contains(file.id);
-
-              return FileGridItem(
-                key: ValueKey('file_grid_${file.id}'),
-                file: file,
-                isSelected: isSelected,
-                onTap: () {
-                  if (file.isFolder) {
-                    fileManager.enterFolder(file.relativePath);
-                  } else {
-                    // TODO: 打开文件
-                  }
-                },
-                onSelect: () => fileManager.toggleSelection(file.id),
-                onDownload: !file.isFolder ? () => _downloadFile(context, fileManager, file) : null,
-                onOpenInBrowser: !file.isFolder ? () => _openInBrowser(context, file) : null,
-              );
-            },
-          ),
+    return Expanded(
+      child: GridView.builder(
+        padding: const EdgeInsets.all(8),
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: crossAxisCount,
+          mainAxisSpacing: spacing / 2,
+          crossAxisSpacing: spacing / 2,
+          childAspectRatio: childAspectRatio,
         ),
-      ],
+        itemCount: fileManager.files.length,
+        itemBuilder: (context, index) {
+          final file = fileManager.files[index];
+          final isSelected = fileManager.selectedFiles.contains(file.id);
+
+          return FileGridItem(
+            key: ValueKey('file_grid_${file.id}'),
+            file: file,
+            isSelected: isSelected,
+            showCheckbox: showCheckbox,
+            onTap: () {
+              if (showCheckbox) {
+                fileManager.toggleSelection(file.id);
+              } else if (file.isFolder) {
+                fileManager.enterFolder(file.relativePath);
+              } else {
+                // TODO: 打开文件
+              }
+            },
+            onSelect: () => fileManager.toggleSelection(file.id),
+            onDownload: !file.isFolder ? () => _downloadFile(context, fileManager, file) : null,
+            onOpenInBrowser: !file.isFolder ? () => _openInBrowser(context, file) : null,
+          );
+        },
+      ),
     );
   }
 
@@ -396,51 +530,78 @@ class _HomePageState extends State<HomePage> {
   ) {
     final pathParts = fileManager.currentPath.split('/');
     pathParts.removeWhere((part) => part.isEmpty);
+    final primaryColor = Theme.of(context).colorScheme.primary;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      color: Colors.grey.shade50,
+      height: 56,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(
+          top: BorderSide(color: Colors.grey.shade200, width: 1),
+        ),
+      ),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: Row(
           children: [
-            // 根目录
-            InkWell(
-              onTap: () {
-                fileManager.enterFolder('/');
-              },
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Row(
-                  children: [
-                    Icon(Icons.home, size: 20),
-                    const SizedBox(width: 4),
-                    Text(
-                      '首页',
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.primary,
-                        fontWeight: FontWeight.w500,
+            Container(
+              height: 36,
+              decoration: BoxDecoration(
+                color: primaryColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: InkWell(
+                onTap: () {
+                  fileManager.enterFolder('/');
+                },
+                borderRadius: BorderRadius.circular(18),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Row(
+                    children: [
+                      Icon(Icons.home, size: 18, color: primaryColor),
+                      const SizedBox(width: 6),
+                      Text(
+                        '首页',
+                        style: TextStyle(
+                          color: primaryColor,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
 
             for (int i = 0; i < pathParts.length; i++) ...[
-              Icon(Icons.chevron_right, size: 16, color: Colors.grey.shade400),
-              InkWell(
-                onTap: () {
-                  final path = '/${pathParts.sublist(0, i + 1).join('/')}';
-                  fileManager.enterFolder(path);
-                },
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: Text(
-                    pathParts[i],
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.primary,
-                      fontWeight: FontWeight.w500,
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Icon(Icons.chevron_right, size: 18, color: Colors.grey.shade400),
+              ),
+              Container(
+                height: 36,
+                decoration: BoxDecoration(
+                  color: primaryColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: InkWell(
+                  onTap: () {
+                    final path = '/${pathParts.sublist(0, i + 1).join('/')}';
+                    fileManager.enterFolder(path);
+                  },
+                  borderRadius: BorderRadius.circular(18),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Text(
+                      pathParts[i],
+                      style: TextStyle(
+                        color: primaryColor,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
                     ),
                   ),
                 ),
@@ -802,20 +963,24 @@ class _HomePageState extends State<HomePage> {
   /// 处理退出登录
   Future<void> _handleLogout(BuildContext context) async {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final fileManager = Provider.of<FileManagerProvider>(
+      context,
+      listen: false,
+    );
 
     // 显示确认对话框
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('退出登录'),
         content: const Text('确定要退出登录吗？'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
+            onPressed: () => Navigator.of(dialogContext).pop(false),
             child: const Text('取消'),
           ),
           FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
             child: const Text('退出'),
           ),
         ],
@@ -823,12 +988,6 @@ class _HomePageState extends State<HomePage> {
     );
 
     if (confirmed == true) {
-      // 获取Provider引用（在async操作前）
-      final fileManager = Provider.of<FileManagerProvider>(
-        context,
-        listen: false,
-      );
-
       // 执行登出
       await authProvider.logout();
 

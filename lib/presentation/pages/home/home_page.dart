@@ -64,6 +64,21 @@ class _HomePageState extends State<HomePage> {
             },
             tooltip: '搜索',
           ),
+          // 视图切换按钮
+          Consumer<FileManagerProvider>(
+            builder: (context, fileManager, child) {
+              final icon = fileManager.viewType == FileViewType.list
+                  ? Icons.grid_view
+                  : Icons.view_list;
+              return IconButton(
+                icon: Icon(icon),
+                onPressed: () {
+                  _toggleView(context, fileManager);
+                },
+                tooltip: fileManager.viewType == FileViewType.list ? '网格视图' : '列表视图',
+              );
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.cloud_upload),
             onPressed: () {
@@ -321,6 +336,28 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildGridView(BuildContext context, FileManagerProvider fileManager) {
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final padding = 16.0;
+    final spacing = 16.0;
+    final availableWidth = screenWidth - padding * 2;
+
+    // 计算每项宽度（包括间距）
+    int crossAxisCount;
+    if (screenWidth < 400) {
+      crossAxisCount = 2;
+    } else if (screenWidth < 600) {
+      crossAxisCount = 3;
+    } else if (screenWidth < 900) {
+      crossAxisCount = 4;
+    } else {
+      crossAxisCount = 5;
+    }
+
+    // 计算每项的实际宽度
+    final itemWidth = (availableWidth - spacing * (crossAxisCount - 1)) / crossAxisCount;
+    // 宽高比设置为正方形，避免溢出
+    final childAspectRatio = itemWidth / 140;
+
     return Column(
       children: [
         _buildBreadcrumb(context, fileManager),
@@ -328,11 +365,11 @@ class _HomePageState extends State<HomePage> {
         Expanded(
           child: GridView.builder(
             padding: const EdgeInsets.all(8),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 4,
-              mainAxisSpacing: 8,
-              crossAxisSpacing: 8,
-              childAspectRatio: 1,
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: crossAxisCount,
+              mainAxisSpacing: spacing / 2,
+              crossAxisSpacing: spacing / 2,
+              childAspectRatio: childAspectRatio,
             ),
             itemCount: fileManager.files.length,
             itemBuilder: (context, index) {
@@ -350,17 +387,9 @@ class _HomePageState extends State<HomePage> {
                     // TODO: 打开文件
                   }
                 },
-                onLongPress: () {
-                  fileManager.toggleSelection(file.id);
-                },
-                onDownload: () {
-                  _downloadFile(context, fileManager, file);
-                },
-                onOpenInBrowser: !file.isFolder
-                    ? () {
-                        _openInBrowser(context, file);
-                      }
-                    : null,
+                onSelect: () => fileManager.toggleSelection(file.id),
+                onDownload: !file.isFolder ? () => _downloadFile(context, fileManager, file) : null,
+                onOpenInBrowser: !file.isFolder ? () => _openInBrowser(context, file) : null,
               );
             },
           ),
@@ -587,6 +616,14 @@ class _HomePageState extends State<HomePage> {
         ],
       ),
     );
+  }
+
+  /// 切换视图类型
+  void _toggleView(BuildContext context, FileManagerProvider fileManager) {
+    final newType = fileManager.viewType == FileViewType.list
+        ? FileViewType.grid
+        : FileViewType.list;
+    fileManager.setViewType(newType);
   }
 
   void _showUploadDialog(BuildContext context) {
@@ -881,4 +918,5 @@ class _HomePageState extends State<HomePage> {
       }
     }
   }
+
 }

@@ -316,17 +316,9 @@ class _HomePageState extends State<HomePage> {
                     // TODO: 打开文件
                   }
                 },
-                onLongPress: () {
-                  fileManager.toggleSelection(file.id);
-                },
-                onDownload: () {
-                  _downloadFile(context, fileManager, file);
-                },
-                onOpenInBrowser: !file.isFolder
-                    ? () {
-                        _openInBrowser(context, file);
-                      }
-                    : null,
+                onSelect: () => fileManager.toggleSelection(file.id),
+                onDownload: !file.isFolder ? () => _downloadFile(context, fileManager, file) : null,
+                onOpenInBrowser: !file.isFolder ? () => _openInBrowser(context, file) : null,
               );
             },
           ),

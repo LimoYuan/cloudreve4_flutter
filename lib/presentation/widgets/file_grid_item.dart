@@ -2,6 +2,7 @@ import 'package:flutter/material.dart' hide DateUtils;
 import '../../data/models/file_model.dart';
 import '../../core/utils/file_utils.dart';
 import '../../core/utils/date_utils.dart';
+import 'file_menu_helper.dart';
 
 /// 文件网格项
 class FileGridItem extends StatelessWidget {
@@ -66,8 +67,8 @@ class FileGridItem extends StatelessWidget {
                           height: 64,
                           decoration: BoxDecoration(
                             color: file.isFolder
-                                ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.1)
-                                : Colors.grey.shade100,
+                                  ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.1)
+                                  : Colors.grey.shade100,
                             borderRadius: BorderRadius.circular(16),
                           ),
                           child: Icon(
@@ -115,9 +116,9 @@ class FileGridItem extends StatelessWidget {
                     ),
                   ),
                 ],
-                ),
               ),
-            );
+            ),
+          );
         },
       ),
     );
@@ -148,69 +149,24 @@ class FileGridItem extends StatelessWidget {
     return '${name.substring(0, half)}...${name.substring(name.length - half)}';
   }
 
-  void _showMenu(BuildContext context) {
-    final renderBox = context.findRenderObject() as RenderBox?;
-    if (renderBox == null) {
-      debugPrint('_showMenu: renderBox is null');
-      return;
-    }
-
-    final offset = renderBox.localToGlobal(Offset.zero);
-    final position = RelativeRect.fromLTRB(
-      offset.dx,
-      offset.dy,
-      offset.dx + renderBox.size.width,
-      offset.dy + renderBox.size.height,
+  Future<void> _showMenu(BuildContext context) async {
+    final result = await showFileMenu(
+      context: context,
+      hasSelect: onSelect != null,
+      hasDownload: onDownload != null,
+      hasOpenInBrowser: onOpenInBrowser != null,
     );
 
-    showMenu<String>(
-      context: context,
-      position: position,
-      items: <PopupMenuEntry<String>>[
-        if (onSelect != null)
-          const PopupMenuItem(
-            value: 'select',
-            child: Row(
-              children: [
-                Icon(Icons.check_circle_outline, size: 20),
-                SizedBox(width: 12),
-                Text('选择'),
-              ],
-            ),
-          ),
-        if (onDownload != null)
-          const PopupMenuItem(
-            value: 'download',
-            child: Row(
-              children: [
-                Icon(Icons.download, size: 20),
-                SizedBox(width: 12),
-                Text('下载'),
-              ],
-            ),
-          ),
-        if (onOpenInBrowser != null)
-          const PopupMenuItem(
-            value: 'open',
-            child: Row(
-              children: [
-                Icon(Icons.open_in_browser, size: 20),
-                SizedBox(width: 12),
-                Text('在浏览器中打开'),
-              ],
-            ),
-          ),
-      ],
-    ).then((value) {
-      debugPrint('_showMenu: selected value: $value');
-      if (value == 'select') {
+    switch (result) {
+      case FileMenuAction.select:
         onSelect?.call();
-      } else if (value == 'download') {
+      case FileMenuAction.download:
         onDownload?.call();
-      } else if (value == 'open') {
+      case FileMenuAction.openInBrowser:
         onOpenInBrowser?.call();
-      }
-    });
+      case null:
+        break;
+    }
   }
 
   IconData _getFileIcon(String fileName) {

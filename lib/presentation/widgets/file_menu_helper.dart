@@ -1,0 +1,79 @@
+import 'package:flutter/material.dart';
+
+/// 文件菜单选项
+enum FileMenuAction {
+  select,
+  download,
+  openInBrowser,
+}
+
+/// 显示文件菜单
+Future<FileMenuAction?> showFileMenu({
+  required BuildContext context,
+  required bool hasSelect,
+  required bool hasDownload,
+  required bool hasOpenInBrowser,
+}) async {
+  final renderBox = context.findRenderObject() as RenderBox?;
+  if (renderBox == null) {
+    debugPrint('showFileMenu: renderBox is null');
+    return null;
+  }
+
+  final offset = renderBox.localToGlobal(Offset.zero);
+  final size = renderBox.size;
+
+  // 计算菜单位置，居中显示
+  final centerX = offset.dx + size.width / 2;
+  final position = RelativeRect.fromLTRB(
+    centerX - 120, // 菜单宽度约240，居中显示
+    offset.dy + size.height / 2,
+    centerX + 120,
+    offset.dy + size.height / 2,
+  );
+
+  debugPrint('showFileMenu: widget offset: $offset, size: $size, center: $centerX');
+
+  final result = await showMenu<FileMenuAction>(
+    context: context,
+    position: position,
+    items: <PopupMenuEntry<FileMenuAction>>[
+      if (hasSelect)
+        const PopupMenuItem(
+          value: FileMenuAction.select,
+          child: Row(
+            children: [
+              Icon(Icons.check_circle_outline, size: 20),
+              SizedBox(width: 12),
+              Text('选择'),
+            ],
+          ),
+        ),
+      if (hasDownload)
+        const PopupMenuItem(
+          value: FileMenuAction.download,
+          child: Row(
+            children: [
+              Icon(Icons.download, size: 20),
+              SizedBox(width: 12),
+              Text('下载'),
+            ],
+          ),
+        ),
+      if (hasOpenInBrowser)
+        const PopupMenuItem(
+          value: FileMenuAction.openInBrowser,
+          child: Row(
+            children: [
+              Icon(Icons.open_in_browser, size: 20),
+              SizedBox(width: 12),
+              Text('在浏览器中打开'),
+            ],
+          ),
+        ),
+    ],
+  );
+
+  debugPrint('showFileMenu: selected value: $result');
+  return result;
+}

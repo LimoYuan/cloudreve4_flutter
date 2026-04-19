@@ -323,16 +323,8 @@ class UploadService extends ChangeNotifier {
       },
     );
 
-    // API 响应格式: {code: 0, data: {...}, msg: ''}
-    final Map<String, dynamic> data;
-    if (response['data'] != null) {
-      data = response['data'];
-      throw Exception('API 响应中没有 data 字段: ${data['msg']}, factory response: $response}');
-    } else {
-      data = response;
-    }
-
-    final sessionData = data;
+    // API: /file/upload 响应格式: {code: 0, data: {...}, msg: ''} 但在 _parseResponse 已经解析过 data, 这里直接使用 response
+    final Map<String, dynamic> sessionData = response;
 
     return UploadSessionModel.fromJson(sessionData);
   }
@@ -350,9 +342,14 @@ class UploadService extends ChangeNotifier {
     // 读取文件
     final fileBytes = await file.readAsBytes();
 
-    if (session.isMultipartEnabled) {
+    // 检查是否需要分片：服务器返回了分片大小 或 文件大于20MB
+    const largeFileThreshold = 20 * 1024 * 1024; // 20MB
+    final shouldMultipart = session.isMultipartEnabled || task.fileSize > largeFileThreshold;
+
+    if (shouldMultipart) {
       // 分片上传
-      await _uploadMultipart(fileBytes, session, task, cancelToken);
+      final chunkSize = session.isMultipartEnabled ? session.chunkSize : largeFileThreshold;
+      await _uploadMultipart(fileBytes, chunkSize, task, cancelToken);
     } else {
       // 单次上传
       await _uploadSinglePart(fileBytes, session, task, cancelToken);
@@ -362,12 +359,12 @@ class UploadService extends ChangeNotifier {
   /// 分片上传
   Future<void> _uploadMultipart(
     List<int> fileBytes,
-    UploadSessionModel session,
+    int chunkSize,
     UploadTaskModel task,
     CancelToken cancelToken,
   ) async {
-    final totalChunks = task.totalChunks;
-    final chunkSize = session.chunkSize;
+    final session = task.session!;
+    final totalChunks = (fileBytes.length / chunkSize).ceil();
 
     for (int i = 0; i < totalChunks; i++) {
       if (cancelToken.isCancelled) {
@@ -387,18 +384,18 @@ class UploadService extends ChangeNotifier {
 
       if (session.isRelayUpload) {
         // 上传到 Cloudreve 服务器
-        await _uploadChunkToRelay(chunkData, i, session.sessionId, cancelToken);
+        await _uploadChunkToRelay(chunkData, i, session.sessionId, cancelToken, null);
       } else {
         // 上传到远程存储
-        await _uploadChunkToRemote(chunkData, i, session, cancelToken);
+        await _uploadChunkToRemote(chunkData, i, session, cancelToken, null);
       }
 
-      // 更新进度
-      final uploadedBytes = end;
-      final progress = uploadedBytes / task.fileSize;
+      // 更新进度 - 获取最新任务状态并计算正确进度
+      final currentTask = getTask(task.id) ?? task;
+      final progress = (i + 1) / totalChunks;
       updateTask(
-        task.copyWith(
-          uploadedBytes: uploadedBytes,
+        currentTask.copyWith(
+          uploadedBytes: end,
           progress: progress,
           uploadedChunks: i + 1,
         ),
@@ -418,14 +415,16 @@ class UploadService extends ChangeNotifier {
     int index,
     String sessionId,
     CancelToken cancelToken,
+    void Function(int, int)? onProgress,
   ) async {
-    await ApiService.instance.post(
+    await ApiService.instance.postWithProgress(
       '/file/upload/$sessionId/$index',
       data: Stream.fromIterable([chunkData]),
       headers: {
         'Content-Type': 'application/octet-stream',
         'Content-Length': chunkData.length.toString(),
       },
+      onSendProgress: onProgress,
     );
   }
 
@@ -435,6 +434,7 @@ class UploadService extends ChangeNotifier {
     int index,
     UploadSessionModel session,
     CancelToken cancelToken,
+    void Function(int, int)? onProgress,
   ) async {
     final urls = session.uploadUrls ?? [];
     if (urls.isEmpty) {
@@ -460,6 +460,7 @@ class UploadService extends ChangeNotifier {
         },
       ),
       cancelToken: cancelToken,
+      onSendProgress: onProgress,
     );
   }
 
@@ -477,20 +478,43 @@ class UploadService extends ChangeNotifier {
   ) async {
     if (session.isRelayUpload) {
       // 上传到中继服务器
-      await _uploadChunkToRelay(fileBytes, 0, session.sessionId, cancelToken);
+      await _uploadChunkToRelay(
+        fileBytes,
+        0,
+        session.sessionId,
+        cancelToken,
+        (sent, total) {
+          final progress = sent / total;
+          final currentTask = getTask(task.id) ?? task;
+          updateTask(
+            currentTask.copyWith(
+              uploadedBytes: sent,
+              progress: progress,
+            ),
+          );
+          _emitProgress(task.id, progress);
+        },
+      );
     } else {
       // 上传到远程存储
-      await _uploadChunkToRemote(fileBytes, 0, session, cancelToken);
+      await _uploadChunkToRemote(
+        fileBytes,
+        0,
+        session,
+        cancelToken,
+        (sent, total) {
+          final progress = sent / total;
+          final currentTask = getTask(task.id) ?? task;
+          updateTask(
+            currentTask.copyWith(
+              uploadedBytes: sent,
+              progress: progress,
+            ),
+          );
+          _emitProgress(task.id, progress);
+        },
+      );
     }
-
-    updateTask(
-      task.copyWith(
-        uploadedBytes: task.fileSize,
-        progress: 1.0,
-        uploadedChunks: 1,
-      ),
-    );
-    _emitProgress(task.id, 1.0);
   }
 
   /// 发送进度更新

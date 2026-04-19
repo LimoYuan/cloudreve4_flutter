@@ -280,6 +280,30 @@ class ApiService {
     return _parseResponse<T>(response);
   }
 
+  /// POST请求（带上传进度）
+  Future<T> postWithProgress<T>(
+    String path, {
+    dynamic data,
+    Map<String, dynamic>? queryParameters,
+    bool noAuth = false,
+    Map<String, dynamic>? headers,
+    ProgressCallback? onSendProgress,
+  }) async {
+    debugPrint('API POST Request with progress: $path');
+
+    final response = await _dio.post<T>(
+      path,
+      data: data,
+      queryParameters: queryParameters,
+      options: Options(extra: {'noAuth': noAuth}, headers: headers),
+      onSendProgress: onSendProgress,
+    );
+
+    debugPrint('Response Data: ${response.data}');
+
+    return _parseResponse<T>(response);
+  }
+
   /// PUT请求
   Future<T> put<T>(String path, {dynamic data, bool noAuth = false}) async {
     final response = await _dio.put<T>(

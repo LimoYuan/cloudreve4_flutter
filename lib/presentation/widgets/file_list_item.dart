@@ -12,6 +12,7 @@ class FileListItem extends StatelessWidget {
   final VoidCallback? onSelect;
   final VoidCallback? onDownload;
   final VoidCallback? onOpenInBrowser;
+  final VoidCallback? onDelete;
 
   const FileListItem({
     super.key,
@@ -22,6 +23,7 @@ class FileListItem extends StatelessWidget {
     this.onSelect,
     this.onDownload,
     this.onOpenInBrowser,
+    this.onDelete,
   });
 
   @override
@@ -99,6 +101,7 @@ class FileListItem extends StatelessWidget {
       hasSelect: onSelect != null,
       hasDownload: onDownload != null,
       hasOpenInBrowser: onOpenInBrowser != null,
+      hasDelete: onDelete != null,
     );
 
     switch (result) {
@@ -108,6 +111,8 @@ class FileListItem extends StatelessWidget {
         onDownload?.call();
       case FileMenuAction.openInBrowser:
         onOpenInBrowser?.call();
+      case FileMenuAction.delete:
+        onDelete?.call();
       case null:
         break;
     }

@@ -483,6 +483,7 @@ class _HomePageState extends State<HomePage> {
                 onSelect: () => fileManager.toggleSelection(file.path),
                 onDownload: !file.isFolder ? () => _downloadFile(context, fileManager, file) : null,
                 onOpenInBrowser: !file.isFolder ? () => _openInBrowser(context, file) : null,
+                onDelete: () => _showDeleteSingleConfirmation(context, fileManager, file),
               );
             },
           ),
@@ -546,6 +547,7 @@ class _HomePageState extends State<HomePage> {
             onSelect: () => fileManager.toggleSelection(file.path),
             onDownload: !file.isFolder ? () => _downloadFile(context, fileManager, file) : null,
             onOpenInBrowser: !file.isFolder ? () => _openInBrowser(context, file) : null,
+            onDelete: () => _showDeleteSingleConfirmation(context, fileManager, file),
           );
         },
       ),
@@ -1136,6 +1138,57 @@ class _HomePageState extends State<HomePage> {
         ).showSnackBar(SnackBar(content: Text('获取下载链接失败: $e')));
       }
     }
+  }
+
+  /// 显示单个文件删除确认对话框
+  void _showDeleteSingleConfirmation(
+    BuildContext context,
+    FileManagerProvider fileManager,
+    FileModel file,
+  ) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('删除确认'),
+        content: Text('确定删除文件 "${file.name}" 吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              Navigator.of(dialogContext).pop();
+
+              try {
+                await FileService().deleteFiles(uris: [file.path]);
+
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('删除成功'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                  await fileManager.loadFiles();
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('删除失败: $e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
+            },
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
   }
 
 }

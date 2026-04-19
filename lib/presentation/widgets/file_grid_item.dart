@@ -13,6 +13,7 @@ class FileGridItem extends StatelessWidget {
   final VoidCallback? onSelect;
   final VoidCallback? onDownload;
   final VoidCallback? onOpenInBrowser;
+  final VoidCallback? onDelete;
 
   const FileGridItem({
     super.key,
@@ -23,6 +24,7 @@ class FileGridItem extends StatelessWidget {
     this.onSelect,
     this.onDownload,
     this.onOpenInBrowser,
+    this.onDelete,
   });
 
   @override
@@ -163,6 +165,7 @@ class FileGridItem extends StatelessWidget {
       hasSelect: onSelect != null,
       hasDownload: onDownload != null,
       hasOpenInBrowser: onOpenInBrowser != null,
+      hasDelete: onDelete != null,
     );
 
     switch (result) {
@@ -172,6 +175,8 @@ class FileGridItem extends StatelessWidget {
         onDownload?.call();
       case FileMenuAction.openInBrowser:
         onOpenInBrowser?.call();
+      case FileMenuAction.delete:
+        onDelete?.call();
       case null:
         break;
     }

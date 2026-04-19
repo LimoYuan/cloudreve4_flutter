@@ -5,6 +5,7 @@ enum FileMenuAction {
   select,
   download,
   openInBrowser,
+  delete,
 }
 
 /// 显示文件菜单
@@ -13,6 +14,7 @@ Future<FileMenuAction?> showFileMenu({
   required bool hasSelect,
   required bool hasDownload,
   required bool hasOpenInBrowser,
+  required bool hasDelete,
 }) async {
   final renderBox = context.findRenderObject() as RenderBox?;
   if (renderBox == null) {
@@ -68,6 +70,17 @@ Future<FileMenuAction?> showFileMenu({
               Icon(Icons.open_in_browser, size: 20),
               SizedBox(width: 12),
               Text('在浏览器中打开'),
+            ],
+          ),
+        ),
+      if (hasDelete)
+        const PopupMenuItem(
+          value: FileMenuAction.delete,
+          child: Row(
+            children: [
+              Icon(Icons.delete, size: 20, color: Colors.red),
+              SizedBox(width: 12),
+              Text('删除', style: TextStyle(color: Colors.red)),
             ],
           ),
         ),

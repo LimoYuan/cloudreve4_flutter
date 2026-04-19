@@ -121,19 +121,72 @@ class ApiService {
         debugPrint(
           'API Response: ${response.statusCode} - ${response.requestOptions.uri}',
         );
+
+        // 检查 JSON 响应中的 code 字段
+        if (response.data is Map<String, dynamic>) {
+          final data = response.data as Map<String, dynamic>;
+          final code = data['code'] as int?;
+          debugPrint('_responseInterceptor -> JSON code: $code');
+          if (code == 401) {
+            // HTTP 200 但 JSON code 是 401，需要处理未授权
+            final isNoAuth = response.requestOptions.extra['noAuth'] as bool? ?? false;
+            debugPrint('_responseInterceptor -> isNoAuth: $isNoAuth');
+            if (!isNoAuth) {
+              // 直接在响应拦截器中处理 401
+              debugPrint('_responseInterceptor -> 触发 401 处理');
+              // 异步处理，不阻塞响应
+              _handle401InResponse(response.requestOptions);
+            }
+          }
+        }
         return handler.next(response);
       },
     );
+  }
+
+  /// 在响应拦截器中处理 401 错误
+  Future<void> _handle401InResponse(RequestOptions requestOptions) async {
+    final path = requestOptions.path;
+    if (path.contains('/session/token/refresh')) {
+      return;
+    }
+
+    if (_isRefreshing) {
+      return;
+    }
+
+    _isRefreshing = true;
+    try {
+      debugPrint('_handle401InResponse -> 开始刷新 token');
+      if (refreshTokenCallback != null) {
+        await refreshTokenCallback!();
+      }
+      debugPrint('_handle401InResponse -> token 刷新完成');
+    } catch (e) {
+      debugPrint('_handle401InResponse -> 刷新失败: $e');
+      if (clearAuthCallback != null) {
+        await clearAuthCallback!();
+      }
+    } finally {
+      _isRefreshing = false;
+    }
   }
 
   /// 错误拦截器
   Interceptor _errorInterceptor() {
     return InterceptorsWrapper(
       onError: (error, handler) async {
+        debugPrint("_errorInterceptor -> 获取files列表: response");
         debugPrint('API Error: ${error.requestOptions.uri} - ${error.message}');
 
-        // 处理401未授权错误，尝试刷新token
-        if (error.response?.statusCode == 401) {
+        // 检查是否是 401 错误（HTTP 401 或 JSON code: 401）
+        bool is401Error = error.response?.statusCode == 401;
+        if (!is401Error && error.response?.data is Map<String, dynamic>) {
+          final data = error.response!.data as Map<String, dynamic>;
+          is401Error = data['code'] == 401;
+        }
+
+        if (is401Error) {
           final isNoAuth =
               error.requestOptions.extra['noAuth'] as bool? ?? false;
           if (!isNoAuth) {
@@ -254,6 +307,7 @@ class ApiService {
       queryParameters: queryParameters,
       options: Options(extra: {'noAuth': noAuth}),
     );
+    debugPrint("获取files列表: $response");
     return _parseResponse<T>(response);
   }
 

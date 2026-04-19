@@ -151,15 +151,43 @@ class _HomePageState extends State<HomePage> {
         ],
       ),
       bottomNavigationBar: _buildBottomBar(context),
-      floatingActionButton: Consumer<FileManagerProvider>(
-        builder: (context, fileManager, child) {
-          return FloatingActionButton(
-            onPressed: () {
-              _showCreateDialog(context, fileManager);
+      floatingActionButton: Column(
+        mainAxisAlignment: MainAxisAlignment.end,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Consumer<FileManagerProvider>(
+            builder: (context, fileManager, child) {
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: FloatingActionButton(
+                  heroTag: 'refresh',
+                  onPressed: () {
+                    fileManager.refreshFiles();
+                  },
+                  child: fileManager.isLoading
+                      ? const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.refresh),
+                ),
+              );
             },
-            child: const Icon(Icons.add),
-          );
-        },
+          ),
+          Consumer<FileManagerProvider>(
+            builder: (context, fileManager, child) {
+              return FloatingActionButton(
+                heroTag: 'add',
+                onPressed: () {
+                  _showCreateDialog(context, fileManager);
+                },
+                child: const Icon(Icons.add),
+              );
+            },
+          ),
+        ],
       ),
       ),
     );

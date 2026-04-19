@@ -214,4 +214,69 @@ class FileManagerProvider extends ChangeNotifier {
       _errorMessage = null;
     });
   }
+
+  /// 智能刷新 - 只更新差异部分
+  Future<void> refreshFiles() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final response = await FileService().listFiles(
+        uri: _currentPath,
+        pageSize: 50,
+      );
+
+      final List<dynamic> filesData = response['files'] as List<dynamic>? ?? [];
+      final newFiles = filesData
+          .map((f) => FileModel.fromJson(f as Map<String, dynamic>))
+          .toList();
+
+      // 创建当前文件的 path -> FileModel 映射
+      final currentMap = <String, FileModel>{};
+      for (final file in _files) {
+        currentMap[file.path] = file;
+      }
+
+      // 创建新文件的 path -> FileModel 映射
+      final newMap = <String, FileModel>{};
+      for (final file in newFiles) {
+        newMap[file.path] = file;
+      }
+
+      final updatedFiles = <FileModel>[];
+
+      // 1. 保留或更新的文件
+      for (final file in newFiles) {
+        final existingFile = currentMap[file.path];
+        if (existingFile != null) {
+          // 文件已存在，检查是否需要更新（通过比较修改时间和大小）
+          if (existingFile.updatedAt != file.updatedAt ||
+              existingFile.size != file.size) {
+            updatedFiles.add(file);
+          } else {
+            updatedFiles.add(existingFile);
+          }
+        } else {
+          // 新增的文件
+          updatedFiles.add(file);
+        }
+      }
+
+      setState(() {
+        _files = updatedFiles;
+        _hasMore = response['pagination']?['next_token'] != null;
+        _contextHint = response['context_hint'] as String?;
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = e.toString();
+      });
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
 }

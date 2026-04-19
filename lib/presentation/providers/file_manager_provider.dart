@@ -131,8 +131,8 @@ class FileManagerProvider extends ChangeNotifier {
   }
 
   /// 删除选中的文件
-  Future<void> deleteSelectedFiles() async {
-    if (_selectedFiles.isEmpty) return;
+  Future<String?> deleteSelectedFiles() async {
+    if (_selectedFiles.isEmpty) return null;
 
     try {
       debugPrint("删除文件: ${_selectedFiles.join(', ')}");
@@ -144,8 +144,11 @@ class FileManagerProvider extends ChangeNotifier {
       });
 
       clearSelection();
+      return null;
     } catch (e) {
-      setErrorMessage(e.toString());
+      final error = e.toString();
+      setErrorMessage(error);
+      return error;
     }
   }
 

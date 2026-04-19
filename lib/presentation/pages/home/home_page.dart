@@ -750,18 +750,38 @@ class _HomePageState extends State<HomePage> {
   ) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('删除确认'),
         content: Text('确定删除这 ${fileManager.selectedFiles.length} 个文件吗？'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () => Navigator.of(dialogContext).pop(),
             child: const Text('取消'),
           ),
           FilledButton(
             onPressed: () async {
-              Navigator.of(context).pop();
-              await fileManager.deleteSelectedFiles();
+              Navigator.of(dialogContext).pop();
+
+              final error = await fileManager.deleteSelectedFiles();
+              if (error != null) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('删除失败: $error'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              } else {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('删除成功'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                }
+              }
             },
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
             child: const Text('删除'),

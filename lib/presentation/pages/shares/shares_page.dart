@@ -203,12 +203,28 @@ class _SharesPageState extends State<SharesPage> {
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: '文件名',
-                  prefixIcon: Icon(Icons.description),
+                  prefixIcon: const Icon(Icons.description),
+                  suffixIcon: IconButton(
+                    icon: const Icon(Icons.copy, size: 18),
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: share.name));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('文件名已复制'),
+                        ),
+                      );
+                    },
+                    tooltip: '复制文件名',
+                    style: IconButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
                 ),
                 controller: TextEditingController(text: share.name),
-                enabled: false,
+                readOnly: true,
               ),
               const SizedBox(height: 16),
               TextField(

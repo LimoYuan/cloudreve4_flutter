@@ -1265,49 +1265,51 @@ class _HomePageState extends State<HomePage> {
             title: const Text('创建分享'),
             content: SizedBox(
               width: 400,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    decoration: const InputDecoration(
-                      labelText: '文件名',
-                      prefixIcon: Icon(Icons.description),
-                    ),
-                    controller: TextEditingController(text: file.name),
-                    enabled: false,
-                  ),
-                  const SizedBox(height: 16),
-                  SwitchListTile(
-                    title: const Text('密码保护'),
-                    subtitle: const Text('需要密码才能访问'),
-                    value: isPrivate,
-                    onChanged: (value) {
-                      setState(() {
-                        isPrivate = value;
-                      });
-                    },
-                  ),
-                  if (isPrivate)
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
                     TextField(
-                      controller: passwordController,
                       decoration: const InputDecoration(
-                        labelText: '分享密码',
-                        hintText: '留空则自动生成',
-                        prefixIcon: Icon(Icons.lock),
+                        labelText: '文件名',
+                        prefixIcon: Icon(Icons.description),
                       ),
+                      controller: TextEditingController(text: file.name),
+                      enabled: false,
                     ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: expireDaysController,
-                    decoration: const InputDecoration(
-                      labelText: '有效期（天）',
-                      hintText: '留空则永久有效',
-                      prefixIcon: Icon(Icons.timer),
-                      suffixText: '天',
+                    const SizedBox(height: 16),
+                    SwitchListTile(
+                      title: const Text('密码保护'),
+                      subtitle: const Text('需要密码才能访问'),
+                      value: isPrivate,
+                      onChanged: (value) {
+                        setState(() {
+                          isPrivate = value;
+                        });
+                      },
                     ),
-                    keyboardType: TextInputType.number,
-                  ),
-                ],
+                    if (isPrivate)
+                      TextField(
+                        controller: passwordController,
+                        decoration: const InputDecoration(
+                          labelText: '分享密码',
+                          hintText: '留空则自动生成',
+                          prefixIcon: Icon(Icons.lock),
+                        ),
+                      ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: expireDaysController,
+                      decoration: const InputDecoration(
+                        labelText: '有效期（天）',
+                        hintText: '留空则永久有效',
+                        prefixIcon: Icon(Icons.timer),
+                        suffixText: '天',
+                      ),
+                      keyboardType: TextInputType.number,
+                    ),
+                  ],
+                ),
               ),
             ),
             actions: [

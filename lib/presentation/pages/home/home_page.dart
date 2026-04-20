@@ -15,6 +15,7 @@ import '../../widgets/file_grid_item.dart';
 import '../../widgets/upload_progress_dialog.dart';
 import '../../widgets/download_progress_dialog.dart';
 import '../../../router/app_router.dart';
+import '../../../services/share_service.dart';
 
 /// 主页
 class HomePage extends StatefulWidget {
@@ -347,8 +348,8 @@ class _HomePageState extends State<HomePage> {
             leading: const Icon(Icons.share),
             title: const Text('我的分享'),
             onTap: () {
-              // TODO: 导航到分享页面
               Navigator.of(context).pop();
+              Navigator.of(context).pushNamed(RouteNames.share);
             },
           ),
 
@@ -486,6 +487,7 @@ class _HomePageState extends State<HomePage> {
                 onRename: () => _showRenameSingleDialog(context, fileManager, file),
                 onMove: () => _showMoveSingleDialog(context, fileManager, file, false),
                 onCopy: () => _showMoveSingleDialog(context, fileManager, file, true),
+                onShare: () => _showShareDialog(context, fileManager, file),
                 onDelete: () => _showDeleteSingleConfirmation(context, fileManager, file),
               );
             },
@@ -553,6 +555,7 @@ class _HomePageState extends State<HomePage> {
             onRename: () => _showRenameSingleDialog(context, fileManager, file),
             onMove: () => _showMoveSingleDialog(context, fileManager, file, false),
             onCopy: () => _showMoveSingleDialog(context, fileManager, file, true),
+            onShare: () => _showShareDialog(context, fileManager, file),
             onDelete: () => _showDeleteSingleConfirmation(context, fileManager, file),
           );
         },
@@ -1244,6 +1247,160 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  /// 显示创建分享对话框
+  void _showShareDialog(
+    BuildContext context,
+    FileManagerProvider fileManager,
+    FileModel file,
+  ) {
+    final passwordController = TextEditingController();
+    final expireDaysController = TextEditingController(text: '7');
+    bool isPrivate = true;
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setState) {
+          return AlertDialog(
+            title: const Text('创建分享'),
+            content: SizedBox(
+              width: 400,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    decoration: const InputDecoration(
+                      labelText: '文件名',
+                      prefixIcon: Icon(Icons.description),
+                    ),
+                    controller: TextEditingController(text: file.name),
+                    enabled: false,
+                  ),
+                  const SizedBox(height: 16),
+                  SwitchListTile(
+                    title: const Text('密码保护'),
+                    subtitle: const Text('需要密码才能访问'),
+                    value: isPrivate,
+                    onChanged: (value) {
+                      setState(() {
+                        isPrivate = value;
+                      });
+                    },
+                  ),
+                  if (isPrivate)
+                    TextField(
+                      controller: passwordController,
+                      decoration: const InputDecoration(
+                        labelText: '分享密码',
+                        hintText: '留空则自动生成',
+                        prefixIcon: Icon(Icons.lock),
+                      ),
+                    ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: expireDaysController,
+                    decoration: const InputDecoration(
+                      labelText: '有效期（天）',
+                      hintText: '留空则永久有效',
+                      prefixIcon: Icon(Icons.timer),
+                      suffixText: '天',
+                    ),
+                    keyboardType: TextInputType.number,
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: () async {
+                  final expireDaysText = expireDaysController.text.trim();
+                  final expireDays = expireDaysText.isEmpty
+                      ? null
+                      : int.tryParse(expireDaysText);
+
+                  final expireSeconds = expireDays != null
+                      ? expireDays * 24 * 60 * 60
+                      : null;
+
+                  Navigator.of(dialogContext).pop();
+
+                  try {
+                    final shareUrl = await ShareService().createShare(
+                      uri: file.path,
+                      isPrivate: isPrivate,
+                      password: isPrivate
+                          ? (passwordController.text.isEmpty
+                                  ? null
+                                  : passwordController.text)
+                          : null,
+                      expire: expireSeconds,
+                    );
+
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Row(
+                            children: [
+                              const Icon(Icons.check_circle, color: Colors.white),
+                              const SizedBox(width: 8),
+                              const Text('分享创建成功'),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  shareUrl,
+                                  style: const TextStyle(fontSize: 12),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.copy, size: 16),
+                                onPressed: () {
+                                  Clipboard.setData(
+                                    ClipboardData(text: shareUrl),
+                                  );
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('已复制到剪贴板'),
+                                    ),
+                                  );
+                                },
+                                style: IconButton.styleFrom(
+                                  padding: EdgeInsets.zero,
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                              ),
+                            ],
+                          ),
+                          backgroundColor: Colors.green,
+                          duration: const Duration(seconds: 5),
+                        ),
+                      );
+                    }
+                  } catch (e) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('分享创建失败: $e'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                  }
+                },
+                child: const Text('创建'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   /// 显示单个文件删除确认对话框
   void _showDeleteSingleConfirmation(
     BuildContext context,
@@ -1401,7 +1558,7 @@ class _FolderPickerState extends State<_FolderPicker> {
                   : ListView.separated(
                       padding: const EdgeInsets.symmetric(vertical: 8),
                       itemCount: _folders.length,
-                      separatorBuilder: (_, __) => Divider(
+                      separatorBuilder: (_, _) => Divider(
                         height: 1,
                         indent: 56,
                         endIndent: 16,

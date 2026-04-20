@@ -46,8 +46,10 @@ class ApiService {
 
   /// 获取 token 的回调
   Future<String?> Function()? getTokenCallback;
+
   /// 刷新 token 的回调
   Future<void> Function()? refreshTokenCallback;
+
   /// 清除认证数据的回调
   Future<void> Function()? clearAuthCallback;
 
@@ -129,7 +131,8 @@ class ApiService {
           debugPrint('_responseInterceptor -> JSON code: $code');
           if (code == 401) {
             // HTTP 200 但 JSON code 是 401，需要处理未授权
-            final isNoAuth = response.requestOptions.extra['noAuth'] as bool? ?? false;
+            final isNoAuth =
+                response.requestOptions.extra['noAuth'] as bool? ?? false;
             debugPrint('_responseInterceptor -> isNoAuth: $isNoAuth');
             if (!isNoAuth) {
               // 直接在响应拦截器中处理 401
@@ -296,18 +299,22 @@ class ApiService {
     }
   }
 
-  /// GET请求
+  /// GET请求 , 如果是分享请求, 则不进入 _parseResponse
   Future<T> get<T>(
     String path, {
     Map<String, dynamic>? queryParameters,
     bool noAuth = false,
+    isShare = false,
   }) async {
     final response = await _dio.get<T>(
       path,
       queryParameters: queryParameters,
       options: Options(extra: {'noAuth': noAuth}),
     );
-    debugPrint("获取files列表: $response");
+    // 如果是分享请求, 则不进入 _parseResponse
+    if (isShare) {
+      return response.data as T;
+    }
     return _parseResponse<T>(response);
   }
 
@@ -318,6 +325,7 @@ class ApiService {
     Map<String, dynamic>? queryParameters,
     bool noAuth = false,
     Map<String, dynamic>? headers,
+    bool isShare = false,
   }) async {
     debugPrint('API POST Request: $path');
     debugPrint('Request Data: $data');
@@ -330,6 +338,10 @@ class ApiService {
     );
 
     debugPrint('Response Data: ${response.data}');
+    
+    if (isShare) {
+      return response.data as T;
+    }
 
     return _parseResponse<T>(response);
   }
@@ -359,12 +371,21 @@ class ApiService {
   }
 
   /// PUT请求
-  Future<T> put<T>(String path, {dynamic data, bool noAuth = false}) async {
+  Future<T> put<T>(
+    String path, {
+    dynamic data,
+    bool noAuth = false,
+    bool isShare = false,
+  }) async {
     final response = await _dio.put<T>(
       path,
       data: data,
       options: Options(extra: {'noAuth': noAuth}),
     );
+    // 当请求的接口为创建分享时, 逻辑上不适合走到 _parseResponse -> ApiResponse.fromJson 直接返回结果即可
+    if (isShare) {
+      return response.data as T;
+    }
     return _parseResponse<T>(response);
   }
 
@@ -409,7 +430,6 @@ class ApiService {
         throw ServerException(apiResponse.message, code: apiResponse.code);
       }
       return apiResponse.data as T;
-
     }
     return data as T;
   }

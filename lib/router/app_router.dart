@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../presentation/pages/auth/login_page.dart';
 import '../presentation/pages/home/home_page.dart';
 import '../presentation/pages/splash/splash_page.dart';
+import '../presentation/pages/shares/shares_page.dart';
 
 /// 路由名称
 class RouteNames {
@@ -34,6 +35,12 @@ class AppRouter {
         return MaterialPageRoute(
           settings: settings,
           builder: (context) => const HomePage(),
+        );
+
+      case RouteNames.share:
+        return MaterialPageRoute(
+          settings: settings,
+          builder: (context) => const SharesPage(),
         );
 
       default:

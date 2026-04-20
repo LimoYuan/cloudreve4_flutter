@@ -16,6 +16,7 @@ class FileGridItem extends StatelessWidget {
   final VoidCallback? onRename;
   final VoidCallback? onMove;
   final VoidCallback? onCopy;
+  final VoidCallback? onShare;
   final VoidCallback? onDelete;
 
   const FileGridItem({
@@ -30,6 +31,7 @@ class FileGridItem extends StatelessWidget {
     this.onRename,
     this.onMove,
     this.onCopy,
+    this.onShare,
     this.onDelete,
   });
 
@@ -174,6 +176,7 @@ class FileGridItem extends StatelessWidget {
       hasRename: onRename != null,
       hasMove: onMove != null,
       hasCopy: onCopy != null,
+      hasShare: onShare != null,
       hasDelete: onDelete != null,
     );
 
@@ -190,6 +193,8 @@ class FileGridItem extends StatelessWidget {
         onMove?.call();
       case FileMenuAction.copy:
         onCopy?.call();
+      case FileMenuAction.share:
+        onShare?.call();
       case FileMenuAction.delete:
         onDelete?.call();
       case null:

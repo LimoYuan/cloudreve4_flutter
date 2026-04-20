@@ -8,6 +8,7 @@ enum FileMenuAction {
   rename,
   move,
   copy,
+  share,
   delete,
 }
 
@@ -20,6 +21,7 @@ Future<FileMenuAction?> showFileMenu({
   required bool hasRename,
   required bool hasMove,
   required bool hasCopy,
+  required bool hasShare,
   required bool hasDelete,
 }) async {
   final renderBox = context.findRenderObject() as RenderBox?;
@@ -109,6 +111,17 @@ Future<FileMenuAction?> showFileMenu({
               Icon(Icons.copy, size: 20),
               SizedBox(width: 12),
               Text('复制'),
+            ],
+          ),
+        ),
+      if (hasShare)
+        const PopupMenuItem(
+          value: FileMenuAction.share,
+          child: Row(
+            children: [
+              Icon(Icons.share, size: 20),
+              SizedBox(width: 12),
+              Text('分享'),
             ],
           ),
         ),

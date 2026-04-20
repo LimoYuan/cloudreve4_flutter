@@ -4,7 +4,12 @@
       "WebFetch",
       "WebSearch",
       "Read(//tmp/**)",
-      "Read(//home/home/aeno/Documents/cloudreve4_flutter/lib/presentation/widgets/**)"
+      "Read(//home/home/aeno/Documents/cloudreve4_flutter/lib/presentation/widgets/**)",
+      "Bash(awk '/^import/ {print NR\": $0}' /home/aeno/Documents/cloudreve4_flutter/lib/presentation/pages/home/home_page.dart)",
+      "Bash(python3 -c ' *)",
+      "Bash(git checkout *)",
+      "Bash(awk '/void _showShareDialog/,/^  \\\\}\\\\\\)/{print NR\": $0}' /home/aeno/Documents/cloudreve4_flutter/lib/presentation/pages/home/home_page.dart)",
+      "Bash(grep -A \"^+.*onShare\\\\|^+.*_showShareDialog\")"
     ]
   }
 }

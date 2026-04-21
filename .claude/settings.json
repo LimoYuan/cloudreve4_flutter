@@ -10,6 +10,9 @@
       "Bash(git checkout *)",
       "Bash(awk '/void _showShareDialog/,/^  \\\\}\\\\\\)/{print NR\": $0}' /home/aeno/Documents/cloudreve4_flutter/lib/presentation/pages/home/home_page.dart)",
       "Bash(grep -A \"^+.*onShare\\\\|^+.*_showShareDialog\")"
+    ],
+    "additionalDirectories": [
+      "/home/aeno/Documents/cloudreve4_flutter4_flutter/lib/presentation/widgets"
     ]
   }
 }

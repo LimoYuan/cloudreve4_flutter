@@ -3,6 +3,7 @@ import '../presentation/pages/auth/login_page.dart';
 import '../presentation/pages/home/home_page.dart';
 import '../presentation/pages/splash/splash_page.dart';
 import '../presentation/pages/shares/shares_page.dart';
+import '../presentation/pages/recycle_bin/recycle_bin_page.dart';
 
 /// 路由名称
 class RouteNames {
@@ -13,6 +14,7 @@ class RouteNames {
   static const String profile = '/profile';
   static const String share = '/share';
   static const String fileDetail = '/file-detail';
+  static const String recycleBin = '/recycle-bin';
 }
 
 /// 应用路由
@@ -41,6 +43,12 @@ class AppRouter {
         return MaterialPageRoute(
           settings: settings,
           builder: (context) => const SharesPage(),
+        );
+
+      case RouteNames.recycleBin:
+        return MaterialPageRoute(
+          settings: settings,
+          builder: (context) => const RecycleBinPage(),
         );
 
       default:

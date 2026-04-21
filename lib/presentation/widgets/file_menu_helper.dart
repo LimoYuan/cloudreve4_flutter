@@ -10,6 +10,7 @@ enum FileMenuAction {
   copy,
   share,
   delete,
+  restore,
 }
 
 /// 显示文件菜单
@@ -23,6 +24,7 @@ Future<FileMenuAction?> showFileMenu({
   required bool hasCopy,
   required bool hasShare,
   required bool hasDelete,
+  required bool hasRestore,
 }) async {
   final renderBox = context.findRenderObject() as RenderBox?;
   if (renderBox == null) {
@@ -133,6 +135,17 @@ Future<FileMenuAction?> showFileMenu({
               Icon(Icons.delete, size: 20, color: Colors.red),
               SizedBox(width: 12),
               Text('删除', style: TextStyle(color: Colors.red)),
+            ],
+          ),
+        ),
+      if (hasRestore)
+        const PopupMenuItem(
+          value: FileMenuAction.restore,
+          child: Row(
+            children: [
+              Icon(Icons.restore, size: 20),
+              SizedBox(width: 12),
+              Text('恢复'),
             ],
           ),
         ),

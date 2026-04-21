@@ -18,6 +18,7 @@ class FileGridItem extends StatelessWidget {
   final VoidCallback? onCopy;
   final VoidCallback? onShare;
   final VoidCallback? onDelete;
+  final VoidCallback? onRestore;
 
   const FileGridItem({
     super.key,
@@ -33,6 +34,7 @@ class FileGridItem extends StatelessWidget {
     this.onCopy,
     this.onShare,
     this.onDelete,
+    this.onRestore,
   });
 
   @override
@@ -68,9 +70,9 @@ class FileGridItem extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // 图标区域 - 占 70%
+                  // 图标区域
                   Expanded(
-                    flex: 7,
+                    flex: 65,
                     child: Center(
                       child: showCheckbox
                           ? Checkbox(
@@ -100,9 +102,9 @@ class FileGridItem extends StatelessWidget {
                             ),
                     ),
                   ),
-                  // 文本区域 - 占 30%
+                  // 文本区域
                   Expanded(
-                    flex: 3,
+                    flex: 35,
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -118,8 +120,7 @@ class FileGridItem extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           textAlign: TextAlign.center,
                         ),
-                        const SizedBox(height: 2),
-                        // 文件大小
+                        // 文件大小（去除间距，改为直接显示）
                         if (!file.isFolder)
                           Text(
                             _formatFileSize(file.size),
@@ -178,6 +179,7 @@ class FileGridItem extends StatelessWidget {
       hasCopy: onCopy != null,
       hasShare: onShare != null,
       hasDelete: onDelete != null,
+      hasRestore: onRestore != null,
     );
 
     switch (result) {
@@ -197,6 +199,8 @@ class FileGridItem extends StatelessWidget {
         onShare?.call();
       case FileMenuAction.delete:
         onDelete?.call();
+      case FileMenuAction.restore:
+        onRestore?.call();
       case null:
         break;
     }

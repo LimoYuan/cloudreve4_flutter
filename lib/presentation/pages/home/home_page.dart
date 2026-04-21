@@ -151,7 +151,7 @@ class _HomePageState extends State<HomePage> with GestureHandlerMixin {
         Navigator.of(context).pushNamed(RouteNames.share);
       },
       onRecycleBin: () {
-        // TODO: 导航到回收站
+        Navigator.of(context).pushNamed(RouteNames.recycleBin);
       },
       onSettings: () {
         // TODO: 导航到设置页面

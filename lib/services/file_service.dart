@@ -160,4 +160,32 @@ class FileService {
 
     return response;
   }
+
+  /// 恢复文件（从回收站）
+  Future<void> restoreFiles({
+    required List<String> uris,
+  }) async {
+    final data = <String, dynamic>{
+      'uris': uris.map((uri) => _toCloudreveUri(uri)).toList(),
+    };
+
+    await ApiService.instance.post<void>('/file/restore', data: data);
+  }
+
+  /// 列出回收站文件
+  Future<Map<String, dynamic>> listTrashFiles({
+    int page = 0,
+    int? pageSize,
+  }) async {
+    final params = <String, dynamic>{
+      'uri': 'cloudreve://trash',
+      'page': page,
+      'page_size': pageSize,
+    };
+
+    final response = await ApiService.instance
+        .get<Map<String, dynamic>>('/file', queryParameters: params);
+
+    return response;
+  }
 }

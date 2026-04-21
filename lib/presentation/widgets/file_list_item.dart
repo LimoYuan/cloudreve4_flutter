@@ -17,6 +17,7 @@ class FileListItem extends StatelessWidget {
   final VoidCallback? onCopy;
   final VoidCallback? onShare;
   final VoidCallback? onDelete;
+  final VoidCallback? onRestore;
 
   const FileListItem({
     super.key,
@@ -32,6 +33,7 @@ class FileListItem extends StatelessWidget {
     this.onCopy,
     this.onShare,
     this.onDelete,
+    this.onRestore,
   });
 
   @override
@@ -114,6 +116,7 @@ class FileListItem extends StatelessWidget {
       hasCopy: onCopy != null,
       hasShare: onShare != null,
       hasDelete: onDelete != null,
+      hasRestore: onRestore != null,
     );
 
     switch (result) {
@@ -133,6 +136,8 @@ class FileListItem extends StatelessWidget {
         onShare?.call();
       case FileMenuAction.delete:
         onDelete?.call();
+      case FileMenuAction.restore:
+        onRestore?.call();
       case null:
         break;
     }

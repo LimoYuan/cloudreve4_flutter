@@ -64,8 +64,8 @@ class HomeDrawer extends StatelessWidget {
             leading: const Icon(Icons.restore),
             title: const Text('回收站'),
             onTap: () {
-              onRecycleBin();
               Navigator.of(context).pop();
+              onRecycleBin();
             },
           ),
           const Divider(),

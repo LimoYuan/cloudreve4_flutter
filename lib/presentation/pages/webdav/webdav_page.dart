@@ -117,38 +117,118 @@ class _WebdavPageState extends State<WebdavPage> {
   }
 
   Widget _buildAccountItem(BuildContext context, DavAccountModel account) {
-    return ListTile(
-      leading: const CircleAvatar(child: Icon(Icons.cloud_sync)),
-      title: Text(account.name),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(account.uri, style: const TextStyle(fontSize: 12)),
-          Text(
-            '密码: ${account.password}',
-            style: const TextStyle(fontSize: 11, color: Colors.grey),
-          ),
-        ],
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      elevation: 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
       ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            icon: const Icon(Icons.copy, size: 18),
-            onPressed: () => _copyCredentials(context, account),
-            tooltip: '复制凭据',
-          ),
-          IconButton(
-            icon: const Icon(Icons.edit),
-            onPressed: () => _showEditDialog(context, account),
-            tooltip: '编辑',
-          ),
-          IconButton(
-            icon: const Icon(Icons.delete, color: Colors.red),
-            onPressed: () => _showDeleteDialog(context, account),
-            tooltip: '删除',
-          ),
-        ],
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Container(
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Colors.blue.shade400, Colors.blue.shade600],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.cloud_sync, color: Colors.white, size: 28),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    account.name,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    account.uri,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.grey.shade600,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(Icons.lock_outline, size: 14, color: Colors.grey.shade400),
+                      const SizedBox(width: 4),
+                      Text(
+                        _maskPassword(account.password),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade500,
+                          fontFamily: 'monospace',
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildActionButton(
+                  icon: Icons.copy,
+                  onPressed: () => _copyCredentials(context, account),
+                  tooltip: '复制',
+                  color: Colors.blue.shade500,
+                ),
+                _buildActionButton(
+                  icon: Icons.edit,
+                  onPressed: () => _showEditDialog(context, account),
+                  tooltip: '编辑',
+                  color: Colors.orange.shade500,
+                ),
+                _buildActionButton(
+                  icon: Icons.delete,
+                  onPressed: () => _showDeleteDialog(context, account),
+                  tooltip: '删除',
+                  color: Colors.red.shade500,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _maskPassword(String password) {
+    if (password.length <= 4) return '••••';
+    return '••••${password.substring(password.length - 4)}';
+  }
+
+  Widget _buildActionButton({
+    required IconData icon,
+    required VoidCallback onPressed,
+    required String tooltip,
+    required Color color,
+  }) {
+    return IconButton(
+      icon: Icon(icon, size: 20, color: color),
+      onPressed: onPressed,
+      tooltip: tooltip,
+      style: IconButton.styleFrom(
+        backgroundColor: color.withOpacity(0.1),
+        padding: const EdgeInsets.all(8),
+        minimumSize: const Size(36, 36),
       ),
     );
   }

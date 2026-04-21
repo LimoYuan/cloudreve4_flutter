@@ -109,6 +109,32 @@ class AuthService {
     );
     return CapacityModel.fromJson(response);
   }
+
+  /// 发送重置密码邮件
+  Future<void> sendResetPasswordEmail({
+    required String email,
+    String? captcha,
+    String? ticket,
+  }) async {
+    final data = <String, dynamic>{
+      'email': email,
+      ...captcha != null ? {'captcha': captcha} : {},
+      ...ticket != null ? {'ticket': ticket} : {},
+    };
+
+    final response = await ApiService.instance.post<Map<String, dynamic>>(
+      '/user/reset',
+      data: data,
+      noAuth: true,
+      isNoData: true,
+    );
+
+    final code = response['code'] as int?;
+    if (code != 0) {
+      final msg = response['msg'] as String? ?? '发送失败';
+      throw Exception(msg);
+    }
+  }
 }
 
 /// 登录响应模型

@@ -304,7 +304,7 @@ class ApiService {
     String path, {
     Map<String, dynamic>? queryParameters,
     bool noAuth = false,
-    isShare = false,
+    isNoData = false,
   }) async {
     final response = await _dio.get<T>(
       path,
@@ -312,7 +312,7 @@ class ApiService {
       options: Options(extra: {'noAuth': noAuth}),
     );
     // 如果是分享请求, 则不进入 _parseResponse
-    if (isShare) {
+    if (isNoData) {
       return response.data as T;
     }
     return _parseResponse<T>(response);
@@ -325,7 +325,7 @@ class ApiService {
     Map<String, dynamic>? queryParameters,
     bool noAuth = false,
     Map<String, dynamic>? headers,
-    bool isShare = false,
+    bool isNoData = false,
   }) async {
     debugPrint('API POST Request: $path');
     debugPrint('Request Data: $data');
@@ -338,8 +338,8 @@ class ApiService {
     );
 
     debugPrint('Response Data: ${response.data}');
-    
-    if (isShare) {
+
+    if (isNoData) {
       return response.data as T;
     }
 
@@ -375,7 +375,7 @@ class ApiService {
     String path, {
     dynamic data,
     bool noAuth = false,
-    bool isShare = false,
+    bool isNoData = false,
   }) async {
     final response = await _dio.put<T>(
       path,
@@ -383,7 +383,7 @@ class ApiService {
       options: Options(extra: {'noAuth': noAuth}),
     );
     // 当请求的接口为创建分享时, 逻辑上不适合走到 _parseResponse -> ApiResponse.fromJson 直接返回结果即可
-    if (isShare) {
+    if (isNoData) {
       return response.data as T;
     }
     return _parseResponse<T>(response);

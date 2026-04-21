@@ -24,7 +24,7 @@ PROJECT_REQUIREMENTS.md
 DESIGN_OVERVIEW.md
 DESIGN.md
 DESIGN-copy.md
-log.txt
+*.txt
 *.json
 *.jsonl
 

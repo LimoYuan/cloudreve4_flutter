@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/validators/string_validator.dart';
+import '../../../services/auth_service.dart';
 
 /// 忘记密码页
 class ForgotPasswordPage extends StatefulWidget {
@@ -32,13 +33,14 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
     });
 
     try {
-      // TODO: 调用发送重置密码邮件API
-      await Future.delayed(const Duration(seconds: 2));
+      await AuthService.instance.sendResetPasswordEmail(
+        email: _emailController.text.trim(),
+      );
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('重置密码邮件已发送，请查收邮箱'),
+          const SnackBar(
+            content: Text('重置密码邮件已发送，请查收邮箱'),
             backgroundColor: Colors.green,
           ),
         );

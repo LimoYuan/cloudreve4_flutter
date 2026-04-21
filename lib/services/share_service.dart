@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 
 import 'api_service.dart';
@@ -30,10 +29,7 @@ class ShareService {
     bool? showReadme,
   }) async {
     final data = <String, dynamic>{
-      'permissions': {
-        'anonymous': 'BQ==',
-        'everyone': 'AQ==',
-      },
+      'permissions': {'anonymous': 'BQ==', 'everyone': 'AQ=='},
       'uri': _toCloudreveUri(uri),
       'is_private': ?isPrivate,
       'share_view': ?shareView,
@@ -46,7 +42,7 @@ class ShareService {
     final response = await ApiService.instance.put<Map<String, dynamic>>(
       '/share',
       data: data,
-      isShare: true,
+      isNoData: true,
     );
     return response['data'] as String;
   }
@@ -81,7 +77,9 @@ class ShareService {
     final queryParams = <String, dynamic>{};
     if (password != null) queryParams['password'] = password;
     if (countViews != null) queryParams['count_views'] = countViews.toString();
-    if (ownerExtended != null) queryParams['owner_extended'] = ownerExtended.toString();
+    if (ownerExtended != null) {
+      queryParams['owner_extended'] = ownerExtended.toString();
+    }
     // 获取分享详情是 GET 请求
     final response = await ApiService.instance.get<Map<String, dynamic>>(
       '/share/info/$id',
@@ -117,15 +115,13 @@ class ShareService {
     final response = await ApiService.instance.post<Map<String, dynamic>>(
       '/share/$id',
       data: data,
-      isShare: true,
+      isNoData: true,
     );
     return response['data'] as String;
   }
 
   /// 删除分享
-  Future<void> deleteShare({
-    required String id,
-  }) async {
+  Future<void> deleteShare({required String id}) async {
     await ApiService.instance.delete<void>('/share/$id');
   }
 }

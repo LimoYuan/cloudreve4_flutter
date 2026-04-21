@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/validators/string_validator.dart';
+import '../../../services/auth_service.dart';
 
 /// 注册页
 class RegisterPage extends StatefulWidget {
@@ -47,13 +48,20 @@ class _RegisterPageState extends State<RegisterPage> {
     });
 
     try {
-      // TODO: 调用注册API
-      await Future.delayed(const Duration(seconds: 2));
+      final response = await AuthService.instance.signUp(
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
+        language: 'zh-CN',
+      );
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('注册成功，请查收邮箱进行验证'),
+            content: Text(
+              response.requiresEmailActivation
+                  ? '注册成功，请查收邮箱进行验证'
+                  : '注册成功',
+            ),
             backgroundColor: Colors.green,
           ),
         );

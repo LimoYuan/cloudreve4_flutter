@@ -338,8 +338,14 @@ class ApiService {
     );
 
     debugPrint('Response Data: ${response.data}');
+    
+    var isActivEmail = 0;
+    if (response.statusCode == 200) {
+      Map<String, dynamic>? tmp = response.data as Map<String, dynamic>?;
+      isActivEmail = tmp?['code'] as int;
+    }
 
-    if (isNoData) {
+    if (isNoData || isActivEmail == 203) {
       return response.data as T;
     }
 

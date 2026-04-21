@@ -135,6 +135,55 @@ class AuthService {
       throw Exception(msg);
     }
   }
+
+  /// 用户注册
+  Future<SignUpResponse> signUp({
+    required String email,
+    required String password,
+    String? language,
+    String? captcha,
+    String? ticket,
+  }) async {
+    final data = <String, dynamic>{
+      'email': email,
+      'password': password,
+      ...language != null ? {'language': language} : {},
+      ...captcha != null ? {'captcha': captcha} : {},
+      ...ticket != null ? {'ticket': ticket} : {},
+    };
+
+    final response = await ApiService.instance.post<Map<String, dynamic>>(
+      '/user',
+      data: data,
+      noAuth: true,
+    );
+
+    final code = response['code'] as int?;
+    final msg = response['msg'] as String?;
+
+    if (code != 0 && code != 203) {
+      throw Exception('注册失败: $msg');
+    }
+
+    return SignUpResponse(
+      code: code ?? 0,
+      msg: msg,
+      requiresEmailActivation: code == 203,
+    );
+  }
+}
+
+/// 注册响应
+class SignUpResponse {
+  final int code;
+  final String? msg;
+  final bool requiresEmailActivation;
+
+  SignUpResponse({
+    required this.code,
+    this.msg,
+    required this.requiresEmailActivation,
+  });
 }
 
 /// 登录响应模型

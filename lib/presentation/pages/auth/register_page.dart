@@ -15,7 +15,6 @@ class _RegisterPageState extends State<RegisterPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
-  final _nicknameController = TextEditingController();
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
   bool _isLoading = false;
@@ -26,7 +25,6 @@ class _RegisterPageState extends State<RegisterPage> {
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
-    _nicknameController.dispose();
     super.dispose();
   }
 
@@ -96,19 +94,6 @@ class _RegisterPageState extends State<RegisterPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // 昵称输入框
-                TextFormField(
-                  controller: _nicknameController,
-                  validator: StringValidator.validateNickname,
-                  decoration: const InputDecoration(
-                    labelText: '昵称',
-                    hintText: '请输入昵称',
-                    prefixIcon: Icon(Icons.person_outlined),
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
                 // 邮箱输入框
                 TextFormField(
                   controller: _emailController,

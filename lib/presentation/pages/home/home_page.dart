@@ -153,6 +153,9 @@ class _HomePageState extends State<HomePage> with GestureHandlerMixin {
       onRecycleBin: () {
         Navigator.of(context).pushNamed(RouteNames.recycleBin);
       },
+      onWebdav: () {
+        Navigator.of(context).pushNamed(RouteNames.webdav);
+      },
       onSettings: () {
         // TODO: 导航到设置页面
       },

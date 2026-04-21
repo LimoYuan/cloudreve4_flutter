@@ -8,6 +8,7 @@ class HomeDrawer extends StatelessWidget {
   final VoidCallback onMyFiles;
   final VoidCallback onMyShares;
   final VoidCallback onRecycleBin;
+  final VoidCallback onWebdav;
   final VoidCallback onSettings;
   final VoidCallback onLogout;
 
@@ -17,6 +18,7 @@ class HomeDrawer extends StatelessWidget {
     required this.onMyFiles,
     required this.onMyShares,
     required this.onRecycleBin,
+    required this.onWebdav,
     required this.onSettings,
     required this.onLogout,
   });
@@ -58,6 +60,14 @@ class HomeDrawer extends StatelessWidget {
             onTap: () {
               Navigator.of(context).pop();
               onMyShares();
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.cloud_sync),
+            title: const Text('WebDAV'),
+            onTap: () {
+              Navigator.of(context).pop();
+              onWebdav();
             },
           ),
           ListTile(

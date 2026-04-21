@@ -5,6 +5,7 @@ import '../presentation/pages/splash/splash_page.dart';
 import '../presentation/pages/shares/shares_page.dart';
 import '../presentation/pages/recycle_bin/recycle_bin_page.dart';
 import '../presentation/pages/webdav/webdav_page.dart';
+import '../presentation/pages/search/search_page.dart';
 
 /// 路由名称
 class RouteNames {
@@ -17,6 +18,7 @@ class RouteNames {
   static const String fileDetail = '/file-detail';
   static const String recycleBin = '/recycle-bin';
   static const String webdav = '/webdav';
+  static const String search = '/search';
 }
 
 /// 应用路由
@@ -57,6 +59,12 @@ class AppRouter {
         return MaterialPageRoute(
           settings: settings,
           builder: (context) => const WebdavPage(),
+        );
+
+      case RouteNames.search:
+        return MaterialPageRoute(
+          settings: settings,
+          builder: (context) => const SearchPage(),
         );
 
       default:

@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+
 import 'api_service.dart';
 
 /// 文件服务
@@ -186,6 +188,31 @@ class FileService {
     final response = await ApiService.instance
         .get<Map<String, dynamic>>('/file', queryParameters: params);
 
+    return response;
+  }
+
+  /// 搜索文件
+  Future<Map<String, dynamic>> searchFiles({
+    String uri = '/',
+    required String name,
+    bool caseFolding = false,
+    int page = 0,
+    int? pageSize,
+  }) async {
+    // 构造搜索 URI: cloudreve://my?name=xxx
+    final cloudreveUri = '${_toCloudreveUri(uri)}?name=$name';
+
+    final params = <String, dynamic>{
+      'uri': cloudreveUri,
+      'page': page,
+      'case_folding': caseFolding,
+      'page_size': pageSize,
+    };
+
+    final response = await ApiService.instance
+        .get<Map<String, dynamic>>('/file', queryParameters: params);
+
+    debugPrint('Search files ---------> : $response');
     return response;
   }
 }

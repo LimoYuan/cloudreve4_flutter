@@ -1,3 +1,4 @@
+
 /// 文件模型
 class FileModel {
   final int type; // 0:文件, 1:文件夹
@@ -74,8 +75,10 @@ class FileModel {
       // 如果不是 cloudreve://my 开头，返回空
       return '/';
     }
-    final relative = path.replaceFirst('cloudreve://my', '');
-    return relative.isEmpty ? '/' : '/$relative';
+    final prefix = 'cloudreve://my';
+    final relative = path.substring(prefix.length);
+    // debugPrint('Path: $path, relative ---------> : $relative');
+    return relative.isEmpty ? '/' : relative;
   }
 }
 

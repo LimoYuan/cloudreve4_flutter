@@ -88,7 +88,7 @@ class _HomePageState extends State<HomePage> with GestureHandlerMixin {
         IconButton(
           icon: const Icon(Icons.search),
           onPressed: () {
-            // TODO: 实现搜索功能
+            Navigator.of(context).pushNamed(RouteNames.search);
           },
           tooltip: '搜索',
         ),

@@ -150,7 +150,7 @@ class _LoginPageState extends State<LoginPage> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   // Logo或应用名称
-                  _buildLogo(),
+                  Center(child: _buildLogo()),
 
                   const SizedBox(height: 48),
 
@@ -291,14 +291,13 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Widget _buildLogo() {
-    return Container(
-      width: 80,
-      height: 80,
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.primary,
-        borderRadius: BorderRadius.circular(16),
+    return ClipOval(
+      child: Image.asset(
+        'assets/images/app_logo.png',
+        width: 120,
+        height: 120,
+        fit: BoxFit.cover,
       ),
-      child: const Icon(Icons.cloud, color: Colors.white, size: 48),
     );
   }
 }

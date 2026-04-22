@@ -10,6 +10,7 @@ import 'presentation/providers/download_manager_provider.dart';
 import 'services/upload_service.dart';
 import 'services/api_service.dart';
 import 'services/server_service.dart';
+import 'services/cache_manager_service.dart';
 import 'router/app_router.dart';
 
 void main() async {
@@ -20,6 +21,9 @@ void main() async {
 
   // 初始化API服务
   await ApiService.instance.init();
+
+  // 初始化缓存管理器
+  await CacheManagerService.instance.initialize();
 
   // 设置横竖屏方向
   await SystemChrome.setPreferredOrientations([

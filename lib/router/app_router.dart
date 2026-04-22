@@ -6,6 +6,9 @@ import '../presentation/pages/shares/shares_page.dart';
 import '../presentation/pages/recycle_bin/recycle_bin_page.dart';
 import '../presentation/pages/webdav/webdav_page.dart';
 import '../presentation/pages/search/search_page.dart';
+import '../presentation/pages/settings/settings_page.dart';
+import '../presentation/pages/preview/image_preview_page.dart';
+import '../data/models/file_model.dart';
 
 /// 路由名称
 class RouteNames {
@@ -19,6 +22,7 @@ class RouteNames {
   static const String recycleBin = '/recycle-bin';
   static const String webdav = '/webdav';
   static const String search = '/search';
+  static const String imagePreview = '/image-preview';
 }
 
 /// 应用路由
@@ -65,6 +69,19 @@ class AppRouter {
         return MaterialPageRoute(
           settings: settings,
           builder: (context) => const SearchPage(),
+        );
+
+      case RouteNames.settings:
+        return MaterialPageRoute(
+          settings: settings,
+          builder: (context) => const SettingsPage(),
+        );
+
+      case RouteNames.imagePreview:
+        final file = settings.arguments as FileModel;
+        return MaterialPageRoute(
+          settings: settings,
+          builder: (context) => ImagePreviewPage(file: file),
         );
 
       default:

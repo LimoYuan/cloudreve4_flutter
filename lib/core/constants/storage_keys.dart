@@ -12,4 +12,7 @@ class StorageKeys {
 
   // 下载相关
   static const String downloadTasks = 'download_tasks';
+
+  // 缓存相关
+  static const String cacheSettings = 'cache_settings';
 }

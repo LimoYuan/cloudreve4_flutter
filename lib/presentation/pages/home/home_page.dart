@@ -19,6 +19,8 @@ import '../../widgets/upload_dialog.dart';
 import '../../widgets/file_operation_dialogs.dart';
 import '../../widgets/gesture_handler_mixin.dart';
 import '../../../router/app_router.dart';
+import '../../../services/cache_manager_service.dart';
+import '../../../core/utils/file_type_utils.dart';
 
 /// 主页
 class HomePage extends StatefulWidget {
@@ -123,7 +125,7 @@ class _HomePageState extends State<HomePage> with GestureHandlerMixin {
         IconButton(
           icon: const Icon(Icons.settings),
           onPressed: () {
-            // TODO: 实现设置功能
+            Navigator.of(context).pushNamed(RouteNames.settings);
           },
           tooltip: '设置',
         ),
@@ -157,7 +159,7 @@ class _HomePageState extends State<HomePage> with GestureHandlerMixin {
         Navigator.of(context).pushNamed(RouteNames.webdav);
       },
       onSettings: () {
-        // TODO: 导航到设置页面
+        Navigator.of(context).pushNamed(RouteNames.settings);
       },
       onLogout: () => _handleLogout(context),
     );
@@ -262,7 +264,7 @@ class _HomePageState extends State<HomePage> with GestureHandlerMixin {
             } else if (file.isFolder) {
               fileManager.enterFolder(file.relativePath);
             } else {
-              // TODO: 打开文件
+              _openFile(context, file);
             }
           },
           onSelect: () => fileManager.toggleSelection(file.path),
@@ -323,7 +325,7 @@ class _HomePageState extends State<HomePage> with GestureHandlerMixin {
             } else if (file.isFolder) {
               fileManager.enterFolder(file.relativePath);
             } else {
-              // TODO: 打开文件
+              _openFile(context, file);
             }
           },
           onSelect: () => fileManager.toggleSelection(file.path),
@@ -440,6 +442,21 @@ class _HomePageState extends State<HomePage> with GestureHandlerMixin {
       if (context.mounted) {
         Navigator.of(context).pushNamedAndRemoveUntil(RouteNames.login, (route) => false);
       }
+    }
+  }
+
+  void _openFile(BuildContext context, FileModel file) {
+    if (FileTypeUtils.isImage(file.name)) {
+      Navigator.of(context).pushNamed(
+        RouteNames.imagePreview,
+        arguments: file,
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('暂不支持预览 ${FileTypeUtils.getFileTypeDescription(file.name)}'),
+        ),
+      );
     }
   }
 

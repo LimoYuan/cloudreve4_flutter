@@ -23,17 +23,36 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _loadSettings() async {
-    final service = CacheManagerService.instance;
-    await service.initialize();
-    final settings = service.settings;
-    final cacheSize = await service.getCacheSize();
+    try {
+      final service = CacheManagerService.instance;
+      await service.initialize();
+      final settings = service.settings;
 
-    if (mounted) {
-      setState(() {
-        _settings = settings;
-        _currentCacheSize = cacheSize;
-        _isLoading = false;
+      if (mounted) {
+        setState(() {
+          _settings = settings;
+          _isLoading = false;
+        });
+      }
+
+      // 延迟加载缓存大小
+      Future.delayed(const Duration(milliseconds: 100), () async {
+        final cacheSize = await service.getCacheSize();
+        if (mounted) {
+          setState(() {
+            _currentCacheSize = cacheSize;
+          });
+        }
       });
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('加载设置失败: $e')),
+        );
+      }
     }
   }
 
@@ -311,8 +330,7 @@ class _SettingsPageState extends State<SettingsPage> {
               return ListTile(
                 leading: Radio<int>(
                   value: days,
-                  groupValue: _settings.cacheExpireDuration ~/
-                      (24 * 60 * 60 * 1000),
+                  groupValue: _settings.cacheExpireDuration ~/ (24 * 60 * 60 * 1000),
                   onChanged: (_) {
                     Navigator.of(sheetContext).pop(days);
                   },

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:media_kit/media_kit.dart';
 import 'config/app_config.dart';
 import 'config/theme_config.dart';
 import 'presentation/providers/auth_provider.dart';
@@ -15,6 +16,9 @@ import 'router/app_router.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // 初始化MediaKit
+  MediaKit.ensureInitialized();
 
   // 初始化服务器服务
   await ServerService.instance.init();

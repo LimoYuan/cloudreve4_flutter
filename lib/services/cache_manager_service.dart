@@ -22,8 +22,13 @@ class CacheManagerService {
 
   /// 初始化
   Future<void> initialize() async {
-    await loadSettings();
-    await _initializeManager();
+    try {
+      await loadSettings();
+      await _initializeManager();
+    } catch (e) {
+      // 忽略初始化错误，使用默认值
+      print('CacheManagerService initialize error: $e');
+    }
   }
 
   /// 初始化管理器
@@ -62,17 +67,22 @@ class CacheManagerService {
       return 0;
     }
 
-    int totalSize = 0;
-    await for (final entity in cacheDir.list(recursive: true, followLinks: false)) {
-      if (entity is File) {
-        try {
-          totalSize += await entity.length();
-        } catch (e) {
-          // 忽略无法读取的文件
+    try {
+      int totalSize = 0;
+      final entities = cacheDir.listSync(recursive: true, followLinks: false);
+      for (final entity in entities) {
+        if (entity is File) {
+          try {
+            totalSize += entity.lengthSync();
+          } catch (e) {
+            // 忽略无法读取的文件
+          }
         }
       }
+      return totalSize;
+    } catch (e) {
+      return 0;
     }
-    return totalSize;
   }
 
   /// 清空缓存

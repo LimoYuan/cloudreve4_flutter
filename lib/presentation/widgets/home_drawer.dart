@@ -83,8 +83,8 @@ class HomeDrawer extends StatelessWidget {
             leading: const Icon(Icons.settings),
             title: const Text('设置'),
             onTap: () {
-              onSettings();
               Navigator.of(context).pop();
+              onSettings();
             },
           ),
           ListTile(

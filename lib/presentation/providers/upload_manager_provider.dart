@@ -8,8 +8,9 @@ import '../widgets/upload_progress_dialog.dart';
 class UploadManagerProvider extends ChangeNotifier {
   final UploadService _uploadService = UploadService.instance;
   bool _isInitialized = false;
+  bool _shouldShowDialog = false;
 
-  bool get showUploadDialog => _uploadService.allTasks.isNotEmpty;
+  bool get showUploadDialog => _shouldShowDialog && _uploadService.allTasks.isNotEmpty;
   List<UploadTaskModel> get allTasks => _uploadService.allTasks;
   List<UploadTaskModel> get activeTasks => _uploadService.activeTasks;
 
@@ -19,6 +20,18 @@ class UploadManagerProvider extends ChangeNotifier {
     await _uploadService.initialize();
     _isInitialized = true;
     // debugPrint('UploadManagerProvider 初始化完成');
+  }
+
+  /// 标记应该显示对话框
+  void markShouldShowDialog() {
+    _shouldShowDialog = true;
+    notifyListeners();
+  }
+
+  /// 隐藏对话框
+  void hideDialog() {
+    _shouldShowDialog = false;
+    notifyListeners();
   }
 
   /// 开始上传

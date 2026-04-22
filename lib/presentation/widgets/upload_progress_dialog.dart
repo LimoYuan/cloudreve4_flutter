@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../data/models/upload_task_model.dart';
 import '../../services/upload_service.dart';
+import '../providers/upload_manager_provider.dart';
 import 'upload_progress_item.dart';
 
 /// 上传进度对话框
@@ -147,6 +148,11 @@ class UploadProgressDialog extends StatelessWidget {
           IconButton(
             icon: const Icon(Icons.close),
             onPressed: () {
+              final uploadManager = Provider.of<UploadManagerProvider>(
+                context,
+                listen: false,
+              );
+              uploadManager.hideDialog();
               Navigator.of(context).pop();
             },
             tooltip: '关闭',
@@ -193,6 +199,11 @@ class UploadProgressDialog extends StatelessWidget {
           const Spacer(),
           FilledButton(
             onPressed: () {
+              final uploadManager = Provider.of<UploadManagerProvider>(
+                context,
+                listen: false,
+              );
+              uploadManager.hideDialog();
               Navigator.of(context).pop();
             },
             child: const Text('关闭'),

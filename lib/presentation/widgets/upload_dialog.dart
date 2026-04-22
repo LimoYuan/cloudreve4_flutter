@@ -177,6 +177,9 @@ class _UploadDialogContent extends StatelessWidget {
         listen: false,
       );
 
+      // 标记应该显示上传对话框
+      uploadManager.markShouldShowDialog();
+
       await uploadManager.startUpload(files, fileManager.currentPath);
 
       if (context.mounted) {

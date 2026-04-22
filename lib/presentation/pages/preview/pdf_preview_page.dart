@@ -109,6 +109,7 @@ class _PdfPreviewPageState extends State<PdfPreviewPage> {
       color: Colors.grey.shade200,
       child: PdfViewer.uri(
         Uri.parse(_pdfUrl!),
+        initialPageNumber: 1,
         params: const PdfViewerParams(
           activeMatchTextColor: Colors.yellow,
           annotationRenderingMode: PdfAnnotationRenderingMode.annotationAndForms,

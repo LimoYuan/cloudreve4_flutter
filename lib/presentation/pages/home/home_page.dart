@@ -19,7 +19,6 @@ import '../../widgets/upload_dialog.dart';
 import '../../widgets/file_operation_dialogs.dart';
 import '../../widgets/gesture_handler_mixin.dart';
 import '../../../router/app_router.dart';
-import '../../../services/cache_manager_service.dart';
 import '../../../core/utils/file_type_utils.dart';
 
 /// 主页
@@ -449,6 +448,11 @@ class _HomePageState extends State<HomePage> with GestureHandlerMixin {
     if (FileTypeUtils.isImage(file.name)) {
       Navigator.of(context).pushNamed(
         RouteNames.imagePreview,
+        arguments: file,
+      );
+    } else if (FileTypeUtils.isPdf(file.name)) {
+      Navigator.of(context).pushNamed(
+        RouteNames.pdfPreview,
         arguments: file,
       );
     } else {

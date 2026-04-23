@@ -127,6 +127,10 @@ flutter:
   # To add assets to your application, add an assets section, like this:
   assets:
     - assets/images/app_logo.png
+  fonts:
+    - family: SourceCodePro
+      fonts:
+        - asset: assets/fonts/SourceCodePro-Regular.ttf
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

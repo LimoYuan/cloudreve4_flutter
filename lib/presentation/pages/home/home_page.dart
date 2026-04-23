@@ -465,6 +465,11 @@ class _HomePageState extends State<HomePage> with GestureHandlerMixin {
         RouteNames.audioPreview,
         arguments: file,
       );
+    } else if (FileTypeUtils.isTextCode(file.name)) {
+      Navigator.of(context).pushNamed(
+        RouteNames.documentPreview,
+        arguments: file,
+      );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

@@ -49,7 +49,7 @@ class FileTypeUtils {
     'json',
     'xml',
     'yaml',
-'yml',
+    'yml',
     'ini',
     'cfg',
     'conf',
@@ -92,38 +92,45 @@ class FileTypeUtils {
 
   /// 检测是否为图片
   static bool isImage(String fileName) {
-    final ext = _getExtension(fileName);
+    final ext = getExtension(fileName);
     return _imageExtensions.contains(ext);
   }
 
   /// 检测是否为PDF
   static bool isPdf(String fileName) {
-    final ext = _getExtension(fileName);
+    final ext = getExtension(fileName);
     return _pdfExtensions.contains(ext);
   }
 
   /// 检测是否为视频
   static bool isVideo(String fileName) {
-    final ext = _getExtension(fileName);
+    final ext = getExtension(fileName);
     return _videoExtensions.contains(ext);
   }
 
   /// 检测是否为音频
   static bool isAudio(String fileName) {
-    final ext = _getExtension(fileName);
+    final ext = getExtension(fileName);
     return _audioExtensions.contains(ext);
   }
 
   /// 检测是否为文档
   static bool isDocument(String fileName) {
-    final ext = _getExtension(fileName);
+    final ext = getExtension(fileName);
     return _documentExtensions.contains(ext) || _codeExtensions.contains(ext);
   }
 
   /// 检测是否为Markdown
   static bool isMarkdown(String fileName) {
-    final ext = _getExtension(fileName);
+    final ext = getExtension(fileName);
     return ext == 'md';
+  }
+
+  /// 检测是否为文本或代码文件（排除markdown）
+  static bool isTextCode(String fileName) {
+    final ext = getExtension(fileName);
+    return (_documentExtensions.contains(ext) && ext != 'md') ||
+           _codeExtensions.contains(ext);
   }
 
   /// 检测是否支持预览
@@ -136,7 +143,7 @@ class FileTypeUtils {
   }
 
   /// 获取文件扩展名
-  static String _getExtension(String fileName) {
+  static String getExtension(String fileName) {
     final parts = fileName.split('.');
     if (parts.length < 2) {
       return '';

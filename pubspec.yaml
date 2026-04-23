@@ -61,7 +61,7 @@ dependencies:
   media_kit_video: ^2.0.1 # For video rendering.
   media_kit_libs_video: ^1.0.7 # Native video dependencies.
   code_text_field: ^1.1.0
-  flutter_markdown_plus: ^1.0.7
+  markdown_widget: ^2.3.2+8
 
   # 文件选择
   file_picker: ^8.0.0

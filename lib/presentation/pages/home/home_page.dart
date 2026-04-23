@@ -465,6 +465,11 @@ class _HomePageState extends State<HomePage> with GestureHandlerMixin {
         RouteNames.audioPreview,
         arguments: file,
       );
+    } else if (FileTypeUtils.isMarkdown(file.name)) {
+      Navigator.of(context).pushNamed(
+        RouteNames.markdownPreview,
+        arguments: file,
+      );
     } else if (FileTypeUtils.isTextCode(file.name)) {
       Navigator.of(context).pushNamed(
         RouteNames.documentPreview,

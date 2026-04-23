@@ -371,14 +371,6 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
-  flutter_markdown_plus:
-    dependency: "direct main"
-    description:
-      name: flutter_markdown_plus
-      sha256: "039177906850278e8fb1cd364115ee0a46281135932fa8ecea8455522166d2de"
-      url: "https://mirrors.tuna.tsinghua.edu.cn/dart-pub/"
-    source: hosted
-    version: "1.0.7"
   flutter_plugin_android_lifecycle:
     dependency: transitive
     description:
@@ -613,6 +605,14 @@ packages:
       url: "https://mirrors.tuna.tsinghua.edu.cn/dart-pub/"
     source: hosted
     version: "7.3.1"
+  markdown_widget:
+    dependency: "direct main"
+    description:
+      name: markdown_widget
+      sha256: b52c13d3ee4d0e60c812e15b0593f142a3b8a2003cde1babb271d001a1dbdc1c
+      url: "https://mirrors.tuna.tsinghua.edu.cn/dart-pub/"
+    source: hosted
+    version: "2.3.2+8"
   matcher:
     dependency: transitive
     description:
@@ -1061,6 +1061,14 @@ packages:
       url: "https://mirrors.tuna.tsinghua.edu.cn/dart-pub/"
     source: hosted
     version: "2.0.3"
+  scroll_to_index:
+    dependency: transitive
+    description:
+      name: scroll_to_index
+      sha256: b707546e7500d9f070d63e5acf74fd437ec7eeeb68d3412ef7b0afada0b4f176
+      url: "https://mirrors.tuna.tsinghua.edu.cn/dart-pub/"
+    source: hosted
+    version: "3.0.1"
   shared_preferences:
     dependency: "direct main"
     description:
@@ -1394,6 +1402,14 @@ packages:
       url: "https://mirrors.tuna.tsinghua.edu.cn/dart-pub/"
     source: hosted
     version: "2.2.0"
+  visibility_detector:
+    dependency: transitive
+    description:
+      name: visibility_detector
+      sha256: dd5cc11e13494f432d15939c3aa8ae76844c42b723398643ce9addb88a5ed420
+      url: "https://mirrors.tuna.tsinghua.edu.cn/dart-pub/"
+    source: hosted
+    version: "0.4.0+2"
   vm_service:
     dependency: transitive
     description:

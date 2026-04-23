@@ -12,6 +12,7 @@ import '../presentation/pages/preview/pdf_preview_page.dart';
 import '../presentation/pages/preview/video_preview_page.dart';
 import '../presentation/pages/preview/audio_preview_page.dart';
 import '../presentation/pages/preview/document_preview_page.dart';
+import '../presentation/pages/preview/markdown_preview_page.dart';
 import '../data/models/file_model.dart';
 
 /// 路由名称
@@ -31,6 +32,7 @@ class RouteNames {
   static const String videoPreview = '/video-preview';
   static const String audioPreview = '/audio-preview';
   static const String documentPreview = '/document-preview';
+  static const String markdownPreview = '/markdown-preview';
 }
 
 /// 应用路由
@@ -118,6 +120,13 @@ class AppRouter {
         return MaterialPageRoute(
           settings: settings,
           builder: (context) => DocumentPreviewPage(file: file),
+        );
+
+      case RouteNames.markdownPreview:
+        final file = settings.arguments as FileModel;
+        return MaterialPageRoute(
+          settings: settings,
+          builder: (context) => MarkdownPreviewPage(file: file),
         );
 
       default:

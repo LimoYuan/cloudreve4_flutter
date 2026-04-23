@@ -106,27 +106,6 @@ class _VideoPreviewPageState extends State<VideoPreviewPage> {
     });
   }
 
-  void _showSpeedButton() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.speed),
-            const SizedBox(width: 8),
-            Text('当前倍速: $_playbackSpeed'),
-          ],
-        ),
-        duration: const Duration(seconds: 2),
-        action: SnackBarAction(
-          label: '切换',
-          textColor: const Color(0xFFE94560),
-          onPressed: _showSpeedMenu,
-        ),
-      ),
-    );
-  }
-
   @override
   void dispose() {
     player.dispose();
@@ -165,7 +144,6 @@ class _VideoPreviewPageState extends State<VideoPreviewPage> {
       body: GestureDetector(
         onSecondaryTap: _showSpeedMenu,
         onLongPress: _showSpeedMenu,
-        onTap: _showSpeedButton,
         child: Stack(
           children: [
             if (_isLoading)

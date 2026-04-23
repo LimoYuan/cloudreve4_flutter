@@ -48,6 +48,14 @@ android {
         versionName = flutter.versionName
     }
 
+    packaging {
+        resources {
+            // 如果遇到重复的 .so 文件，优先取第一个
+            pickFirst("lib/**/libmpv.so")
+            pickFirst("lib/**/libmediakitandroidhelper.so")
+        }
+    }
+
     buildTypes {
         release {
             // TODO: Add your own signing config for the release build.

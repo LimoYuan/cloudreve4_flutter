@@ -306,86 +306,96 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
   }
 
   Widget _buildPlaybackControls() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        // 上一首（暂无功能）
-        IconButton(
-          icon: const Icon(Icons.skip_previous),
-          iconSize: 36,
-          color: Colors.white,
-          onPressed: () {},
-        ),
-        const SizedBox(width: 24),
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isSmallScreen = screenWidth < 400;
 
-        // 快退10秒
-        IconButton(
-          icon: const Icon(Icons.replay_10),
-          iconSize: 42,
-          color: Colors.white,
-          onPressed: () {
-            final position = widget.player.state.position;
-            widget.player.seek(position - const Duration(seconds: 10));
-          },
-        ),
-        const SizedBox(width: 32),
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 8 : 16),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // 上一首（暂无功能）
+          Flexible(
+            child: IconButton(
+              icon: const Icon(Icons.skip_previous),
+              iconSize: isSmallScreen ? 28 : 36,
+              color: Colors.white,
+              onPressed: () {},
+            ),
+          ),
 
-        // 播放/暂停
-        StreamBuilder(
-          stream: widget.player.stream.playing,
-          builder: (context, snapshot) {
-            final playing = snapshot.data ?? false;
-            return Container(
-              width: 72,
-              height: 72,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: const Color(0xFFE94560),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFFE94560).withValues(alpha: 0.4),
-                    blurRadius: 20,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
-              ),
-              child: IconButton(
-                icon: Icon(playing ? Icons.pause : Icons.play_arrow),
-                iconSize: 36,
-                color: Colors.white,
-                onPressed: () {
-                  if (playing) {
-                    widget.player.pause();
-                  } else {
-                    widget.player.play();
-                  }
-                },
-              ),
-            );
-          },
-        ),
-        const SizedBox(width: 32),
+          // 快退10秒
+          Flexible(
+            child: IconButton(
+              icon: const Icon(Icons.replay_10),
+              iconSize: isSmallScreen ? 32 : 42,
+              color: Colors.white,
+              onPressed: () {
+                final position = widget.player.state.position;
+                widget.player.seek(position - const Duration(seconds: 10));
+              },
+            ),
+          ),
 
-        // 快进10秒
-        IconButton(
-          icon: const Icon(Icons.forward_10),
-          iconSize: 42,
-          color: Colors.white,
-          onPressed: () {
-            final position = widget.player.state.position;
-            widget.player.seek(position + const Duration(seconds: 10));
-          },
-        ),
-        const SizedBox(width: 24),
+          // 播放/暂停
+          StreamBuilder(
+            stream: widget.player.stream.playing,
+            builder: (context, snapshot) {
+              final playing = snapshot.data ?? false;
+              return Container(
+                width: isSmallScreen ? 56 : 72,
+                height: isSmallScreen ? 56 : 72,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: const Color(0xFFE94560),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFFE94560).withValues(alpha: 0.4),
+                      blurRadius: 20,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: IconButton(
+                  icon: Icon(playing ? Icons.pause : Icons.play_arrow),
+                  iconSize: isSmallScreen ? 28 : 36,
+                  color: Colors.white,
+                  onPressed: () {
+                    if (playing) {
+                      widget.player.pause();
+                    } else {
+                      widget.player.play();
+                    }
+                  },
+                ),
+              );
+            },
+          ),
 
-        // 下一首（暂无功能）
-        IconButton(
-          icon: const Icon(Icons.skip_next),
-          iconSize: 36,
-          color: Colors.white,
-          onPressed: () {},
-        ),
-      ],
+          // 快进10秒
+          Flexible(
+            child: IconButton(
+              icon: const Icon(Icons.forward_10),
+              iconSize: isSmallScreen ? 32 : 42,
+              color: Colors.white,
+              onPressed: () {
+                final position = widget.player.state.position;
+                widget.player.seek(position + const Duration(seconds: 10));
+              },
+            ),
+          ),
+
+          // 下一首（暂无功能）
+          Flexible(
+            child: IconButton(
+              icon: const Icon(Icons.skip_next),
+              iconSize: isSmallScreen ? 28 : 36,
+              color: Colors.white,
+              onPressed: () {},
+            ),
+          ),
+        ],
+      ),
     );
   }
 

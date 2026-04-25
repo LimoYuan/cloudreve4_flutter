@@ -17,6 +17,8 @@
 
     <!-- ✅ 如果你还需要在后台弹出通知显示进度，必须添加此权限 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 打开apk文件 -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- Android 9 (API 28) 强制HTTPS, 兼容需要添加 usesCleartextTraffic -->
     <application

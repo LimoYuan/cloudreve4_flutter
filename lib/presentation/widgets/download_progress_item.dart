@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:open_file/open_file.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import '../../data/models/download_task_model.dart';
 import '../../services/download_service.dart';
@@ -29,7 +30,10 @@ class DownloadProgressItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // 从 DownloadManagerProvider 获取最新的任务状态
-    final downloadManager = Provider.of<DownloadManagerProvider>(context, listen: true);
+    final downloadManager = Provider.of<DownloadManagerProvider>(
+      context,
+      listen: true,
+    );
     final latestTask = downloadManager.getTask(task.id) ?? task;
 
     final isDownloading = latestTask.status == DownloadStatus.downloading;
@@ -95,9 +99,7 @@ class DownloadProgressItem extends StatelessWidget {
                   ),
                   const SizedBox(width: 12),
                   Text(
-                    isPaused
-                        ? '已暂停'
-                        : latestTask.progressText,
+                    isPaused ? '已暂停' : latestTask.progressText,
                     style: const TextStyle(fontSize: 12),
                   ),
                 ],
@@ -115,10 +117,7 @@ class DownloadProgressItem extends StatelessWidget {
             ] else if (isFailed && latestTask.errorMessage != null) ...[
               Text(
                 latestTask.errorMessage!,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.red.shade700,
-                ),
+                style: TextStyle(fontSize: 12, color: Colors.red.shade700),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -134,10 +133,10 @@ class DownloadProgressItem extends StatelessWidget {
     );
   }
 
-    List<Widget> _buildActionButtons(
-      BuildContext context, 
-      DownloadTaskModel task
-    ) {
+  List<Widget> _buildActionButtons(
+    BuildContext context,
+    DownloadTaskModel task,
+  ) {
     switch (task.status) {
       case DownloadStatus.downloading:
         return [
@@ -191,6 +190,14 @@ class DownloadProgressItem extends StatelessWidget {
     }
   }
 
+  // 打开apk执行安装逻辑前检查
+  Future<void> checkInstallPermission() async {
+    if (await Permission.requestInstallPackages.isDenied) {
+      // 引导用户去设置页面授权
+      await Permission.requestInstallPackages.request();
+    }
+  }
+
   /// 打开已下载的文件
   Future<void> _openDownloadedFile(
     BuildContext context,
@@ -200,30 +207,40 @@ class DownloadProgressItem extends StatelessWidget {
     final file = File(task.savePath);
     if (!await file.exists()) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('文件不存在：${task.fileName}')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('文件不存在：${task.fileName}')));
       }
       return;
     }
 
     try {
+      
+      final ext = task.savePath.toString().split('.').last.toLowerCase();
+      if (ext == 'apk') {
+        await checkInstallPermission();
+      }
+
       OpenResult openResult = await OpenFile.open(task.savePath);
-        debugPrint('下载对话框打开文件结果：${openResult.type}');
+      debugPrint('下载对话框打开文件结果：${openResult.type}');
       if (openResult.type == ResultType.done) {
         debugPrint('成功打开文件：${task.fileName}');
       } else {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('无法打开文件：${task.fileName} 错误信息: ${openResult.message}')),
+            SnackBar(
+              content: Text(
+                '无法打开文件：${task.fileName} 错误信息: ${openResult.message}',
+              ),
+            ),
           );
         }
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('打开文件失败：$e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('打开文件失败：$e')));
       }
     }
   }

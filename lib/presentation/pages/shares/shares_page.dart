@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../data/models/share_model.dart';
 import '../../../services/share_service.dart';
-import '../../widgets/share_list_item.dart';
 
-/// 分享列表页面
+/// 分享列表页面 - 响应式布局
+/// 桌面端（宽度 > 800）：使用数据表格
+/// 移动端：使用精美卡片流
 class SharesPage extends StatefulWidget {
   const SharesPage({super.key});
 
@@ -19,8 +20,14 @@ class _SharesPageState extends State<SharesPage> {
   String? _errorMessage;
   String? _nextPageToken;
   late ScrollController _scrollController;
-  // 分享列表默认加载条数
   static const _sharesPageListSize = 20;
+
+  // 搜索关键字
+  String _searchQuery = '';
+  final TextEditingController _searchController = TextEditingController();
+
+  // 响应式布局断点
+  static const double _desktopBreakpoint = 800;
 
   @override
   void initState() {
@@ -32,6 +39,7 @@ class _SharesPageState extends State<SharesPage> {
   @override
   void dispose() {
     _scrollController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -54,7 +62,8 @@ class _SharesPageState extends State<SharesPage> {
         nextPageToken: isLoadMore ? _nextPageToken : null,
       );
 
-      final List<dynamic> sharesData = response['shares'] as List<dynamic>? ?? [];
+      final List<dynamic> sharesData =
+          response['shares'] as List<dynamic>? ?? [];
       final pagination = response['pagination'] as Map<String, dynamic>? ?? {};
       final newShares = sharesData
           .map((s) => ShareModel.fromJson(s as Map<String, dynamic>))
@@ -82,7 +91,6 @@ class _SharesPageState extends State<SharesPage> {
 
   Future<void> _loadMoreShares() async {
     if (!_hasMore || _isLoading) return;
-
     await _loadShares(isLoadMore: true);
   }
 
@@ -309,7 +317,6 @@ class _SharesPageState extends State<SharesPage> {
 
         final uri = '${shareInfo.sourceUri}/${share.name}';
 
-
         // 调用编辑分享
         final newUrl = await ShareService().editShare(
           id: shareId,
@@ -342,7 +349,7 @@ class _SharesPageState extends State<SharesPage> {
                     child: Text(
                       newUrl,
                       style: const TextStyle(fontSize: 12),
-                      maxLines: 11,
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -388,95 +395,470 @@ class _SharesPageState extends State<SharesPage> {
 
   @override
   Widget build(BuildContext context) {
+    final isDesktop = MediaQuery.of(context).size.width > _desktopBreakpoint;
+
     return Scaffold(
+      backgroundColor: isDesktop
+          ? const Color(0xFFF8F9FA)
+          : Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        title: const Text('我的分享'),
+        title: const Text('我的分享',
+            style: TextStyle(fontWeight: FontWeight.bold)),
+        elevation: 0,
+        centerTitle: !isDesktop,
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _refreshShares,
             tooltip: '刷新',
           ),
+          if (isDesktop) const SizedBox(width: 16),
         ],
       ),
-      body: _buildBody(context),
+      body: Column(
+        children: [
+          _buildHeaderBar(isDesktop),
+          Expanded(child: _buildBody(context, isDesktop)),
+        ],
+      ),
     );
   }
 
-  Widget _buildBody(BuildContext context) {
+  /// 顶部操作栏：搜索和统计
+  Widget _buildHeaderBar(bool isDesktop) {
+    return Container(
+      padding: EdgeInsets.symmetric(
+          horizontal: isDesktop ? 32 : 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        border: Border(bottom: BorderSide(color: Colors.grey.withValues(alpha: 0.1))),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Container(
+              height: 40,
+              decoration: BoxDecoration(
+                color: Colors.grey.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: TextField(
+                controller: _searchController,
+                decoration: const InputDecoration(
+                  hintText: '搜索分享内容...',
+                  prefixIcon: Icon(Icons.search, size: 20),
+                  border: InputBorder.none,
+                  contentPadding: EdgeInsets.symmetric(vertical: 8),
+                ),
+                onChanged: (value) {
+                  _searchQuery = value.toLowerCase();
+                  setState(() {});
+                },
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          if (isDesktop)
+            Text('共 ${_shares.length} 条分享',
+                style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+        ],
+      ),
+    );
+  }
+
+  /// 根据设备类型构建主体内容
+  Widget _buildBody(BuildContext context, bool isDesktop) {
+    // 过滤搜索结果
+    final filteredShares = _searchQuery.isEmpty
+        ? _shares
+        : _shares
+            .where((s) =>
+                s.name.toLowerCase().contains(_searchQuery) ||
+                s.url.toLowerCase().contains(_searchQuery))
+            .toList();
+
     if (_isLoading && _shares.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
 
     if (_errorMessage != null) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.error_outline, size: 64, color: Colors.red),
-            const SizedBox(height: 16),
-            Text(
-              '加载失败',
-              style: TextStyle(fontSize: 18, color: Colors.grey.shade600),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              _errorMessage!,
-              style: TextStyle(color: Colors.grey.shade500),
-            ),
-            const SizedBox(height: 24),
-            FilledButton.icon(
-              icon: const Icon(Icons.refresh),
-              label: const Text('重试'),
-              onPressed: _refreshShares,
-            ),
-          ],
-        ),
-      );
+      return _buildErrorState();
     }
 
-    if (_shares.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.share_outlined, size: 64, color: Colors.grey.shade400),
-            const SizedBox(height: 16),
-            Text(
-              '暂无分享',
-              style: TextStyle(fontSize: 18, color: Colors.grey.shade600),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '分享文件后，可以在这里管理',
-              style: TextStyle(color: Colors.grey.shade500),
-            ),
-          ],
-        ),
-      );
+    if (filteredShares.isEmpty) {
+      return _searchQuery.isEmpty ? _buildEmptyState() : _buildNoSearchResult();
     }
 
     return RefreshIndicator(
       onRefresh: () => _loadShares(isLoadMore: false),
-      child: ListView.separated(
-        controller: _scrollController,
-        itemCount: _shares.length + (_isLoading && _shares.isNotEmpty ? 1 : 0),
-        separatorBuilder: (_, _) => const Divider(height: 1),
-        itemBuilder: (context, index) {
-          if (index >= _shares.length) {
-            return const Padding(
-              padding: EdgeInsets.all(16),
-              child: Center(child: CircularProgressIndicator()),
-            );
-          }
+      child: isDesktop
+          ? _buildDesktopLayout(filteredShares)
+          : _buildMobileLayout(filteredShares),
+    );
+  }
 
-          final share = _shares[index];
-          return ShareListItem(
-            share: share,
-            onEdit: () => _editShare(share),
-            onDelete: () => _deleteShare(share),
-          );
-        },
+  /// 桌面端布局：数据表格
+  Widget _buildDesktopLayout(List<ShareModel> shares) {
+    return SingleChildScrollView(
+      controller: _scrollController,
+      padding: const EdgeInsets.all(32),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withValues(alpha: 0.02),
+                blurRadius: 10,
+                offset: const Offset(0, 4))
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: DataTable(
+            headingRowColor:
+                WidgetStateProperty.all(Colors.grey.shade50),
+            columnSpacing: 24,
+            columns: const [
+              DataColumn(
+                  label:
+                      Text('文件名', style: TextStyle(fontWeight: FontWeight.bold))),
+              DataColumn(
+                  label:
+                      Text('类型', style: TextStyle(fontWeight: FontWeight.bold))),
+              DataColumn(
+                  label: Text('浏览/下载',
+                      style: TextStyle(fontWeight: FontWeight.bold))),
+              DataColumn(
+                  label:
+                      Text('状态', style: TextStyle(fontWeight: FontWeight.bold))),
+              DataColumn(
+                  label:
+                      Text('创建时间', style: TextStyle(fontWeight: FontWeight.bold))),
+              DataColumn(
+                  label:
+                      Text('操作', style: TextStyle(fontWeight: FontWeight.bold))),
+            ],
+            rows: shares.map((share) {
+              return DataRow(
+                cells: [
+                  DataCell(
+                    Row(
+                      children: [
+                        Icon(_getShareIcon(share),
+                            size: 20, color: Colors.blue.shade400),
+                        const SizedBox(width: 12),
+                        SizedBox(
+                          width: 200,
+                          child: Text(share.name,
+                              overflow: TextOverflow.ellipsis),
+                        ),
+                      ],
+                    ),
+                  ),
+                  DataCell(Text(share.isFolder ? '文件夹' : '文件')),
+                  DataCell(Text('${share.visited} / ${share.downloaded ?? 0}')),
+                  DataCell(_buildStatusTag(share)),
+                  DataCell(Text(_formatDate(share.createdAt),
+                      style: const TextStyle(fontSize: 12))),
+                  DataCell(
+                    Row(
+                      children: [
+                        _buildActionButton(
+                          icon: Icons.edit_outlined,
+                          tooltip: '编辑',
+                          color: Colors.blue,
+                          onPressed: () => _editShare(share),
+                        ),
+                        _buildActionButton(
+                          icon: Icons.copy,
+                          tooltip: '复制链接',
+                          color: Colors.green,
+                          onPressed: () {
+                            Clipboard.setData(ClipboardData(text: share.url));
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('链接已复制')),
+                              );
+                            }
+                          },
+                        ),
+                        _buildActionButton(
+                          icon: Icons.delete_outline,
+                          tooltip: '删除',
+                          color: Colors.red,
+                          onPressed: () => _deleteShare(share),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              );
+            }).toList(),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 移动端布局：精美卡片流
+  Widget _buildMobileLayout(List<ShareModel> shares) {
+    return ListView.builder(
+      controller: _scrollController,
+      padding: const EdgeInsets.all(12),
+      itemCount: shares.length + (_isLoading ? 1 : 0),
+      itemBuilder: (context, index) {
+        if (index >= shares.length) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final share = shares[index];
+
+        return Card(
+          elevation: 0,
+          margin: const EdgeInsets.only(bottom: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: Colors.grey.withValues(alpha: 0.1)),
+          ),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: () => _editShare(share),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(_getShareIcon(share),
+                            color: Colors.blue.shade700, size: 20),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(share.name,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w600, fontSize: 15),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis),
+                            Text(
+                                share.isFolder ? '文件夹' : '文件',
+                                style: TextStyle(
+                                    color: Colors.grey.shade500, fontSize: 12)),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.more_vert, size: 20),
+                        onPressed: () => _showMobileActionMenu(share),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      _buildInfoChip(Icons.visibility, '${share.visited} 次'),
+                      _buildInfoChip(Icons.download, '${share.downloaded ?? 0} 次'),
+                      _buildStatusTag(share),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(_formatDate(share.createdAt),
+                      style: TextStyle(
+                          color: Colors.grey.shade400, fontSize: 11)),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// 构建状态标签
+  Widget _buildStatusTag(ShareModel share) {
+    final isExpired = share.expired;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: isExpired
+            ? Colors.red.withValues(alpha: 0.1)
+            : Colors.green.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        isExpired ? '已过期' : '正常',
+        style: TextStyle(
+          color: isExpired ? Colors.red : Colors.green,
+          fontSize: 11,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+
+  /// 构建信息芯片
+  Widget _buildInfoChip(IconData icon, String label) {
+    return Row(
+      children: [
+        Icon(icon, size: 14, color: Colors.grey),
+        const SizedBox(width: 4),
+        Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+      ],
+    );
+  }
+
+  /// 构建操作按钮
+  Widget _buildActionButton({
+    required IconData icon,
+    required String tooltip,
+    required Color color,
+    required VoidCallback onPressed,
+  }) {
+    return IconButton(
+      icon: Icon(icon, size: 18, color: color),
+      onPressed: onPressed,
+      tooltip: tooltip,
+      style: IconButton.styleFrom(
+        padding: const EdgeInsets.all(4),
+        minimumSize: const Size(32, 32),
+      ),
+    );
+  }
+
+  /// 获取分享图标
+  IconData _getShareIcon(ShareModel share) {
+    return share.isFolder ? Icons.folder : Icons.insert_drive_file_outlined;
+  }
+
+  /// 格式化日期
+  String _formatDate(DateTime date) {
+    final now = DateTime.now();
+    final diff = now.difference(date);
+
+    if (diff.inDays == 0) {
+      return '今天';
+    } else if (diff.inDays == 1) {
+      return '昨天';
+    } else if (diff.inDays < 7) {
+      return '${diff.inDays} 天前';
+    } else {
+      return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+    }
+  }
+
+  /// 移动端快捷菜单
+  void _showMobileActionMenu(ShareModel share) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.edit_outlined),
+              title: const Text('修改分享设置'),
+              onTap: () {
+                Navigator.pop(context);
+                _editShare(share);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.copy_all_outlined),
+              title: const Text('复制链接'),
+              onTap: () {
+                Navigator.pop(context);
+                Clipboard.setData(ClipboardData(text: share.url));
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('链接已复制')),
+                  );
+                }
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: Colors.red),
+              title: const Text('取消分享',
+                  style: TextStyle(color: Colors.red)),
+              onTap: () {
+                Navigator.pop(context);
+                _deleteShare(share);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 空状态
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.share_outlined,
+              size: 80, color: Colors.grey.shade300),
+          const SizedBox(height: 16),
+          const Text('还没有分享过文件',
+              style: TextStyle(fontSize: 16, color: Colors.grey)),
+        ],
+      ),
+    );
+  }
+
+  /// 无搜索结果
+  Widget _buildNoSearchResult() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.search_off, size: 64, color: Colors.grey.shade300),
+          const SizedBox(height: 16),
+          Text(
+            '没有找到 "$_searchQuery"',
+            style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 错误状态
+  Widget _buildErrorState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.error_outline, size: 64, color: Colors.red),
+          const SizedBox(height: 16),
+          Text(
+            '加载失败',
+            style: TextStyle(fontSize: 18, color: Colors.grey.shade600),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _errorMessage ?? '未知错误',
+            style: TextStyle(color: Colors.grey.shade500),
+          ),
+          const SizedBox(height: 24),
+          FilledButton.icon(
+            icon: const Icon(Icons.refresh),
+            label: const Text('重试'),
+            onPressed: _refreshShares,
+          ),
+        ],
       ),
     );
   }

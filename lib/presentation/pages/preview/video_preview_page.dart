@@ -135,6 +135,7 @@ class _VideoPreviewPageState extends State<VideoPreviewPage> {
         actions: [
           IconButton(
             icon: const Icon(Icons.speed),
+            iconSize: 20,
             onPressed: _showSpeedMenu,
             tooltip: '倍速',
             color: Colors.white,

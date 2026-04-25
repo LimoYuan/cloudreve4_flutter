@@ -19,6 +19,9 @@ migrate_working_dir/
 .idea/
 .frontend
 .frontend/
+
+# custom
+CLAUDE.md
 claude_project.md
 PROJECT_REQUIREMENTS.md
 DESIGN_OVERVIEW.md
@@ -27,6 +30,7 @@ DESIGN-copy.md
 *.txt
 *.json
 *.jsonl
+install.sh
 
 # The .vscode folder contains launch configuration and tasks you configure in
 # VS Code which you may wish to be included in version control, so this line

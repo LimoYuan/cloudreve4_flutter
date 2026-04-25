@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../../../data/models/cache_settings_model.dart';
 import '../../../services/cache_manager_service.dart';
 
@@ -15,11 +17,26 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _isLoading = true;
   int? _currentCacheSize;
   bool _isCleaning = false;
+  String _appVersion = '1.0.0-alpha';
 
   @override
   void initState() {
     super.initState();
     _loadSettings();
+    _loadAppVersion();
+  }
+
+  Future<void> _loadAppVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (mounted) {
+        setState(() {
+          _appVersion = info.version;
+        });
+      }
+    } catch (e) {
+      // 保持默认版本号
+    }
   }
 
   Future<void> _loadSettings() async {
@@ -226,9 +243,18 @@ class _SettingsPageState extends State<SettingsPage> {
           title: Text('应用名称'),
           subtitle: Text('Cloudreve V4.0'),
         ),
-        const ListTile(
-          title: Text('版本号'),
-          subtitle: Text('1.0.0'),
+        ListTile(
+          title: const Text('版本号'),
+          subtitle: Text(_appVersion),
+        ),
+        ListTile(
+          title: const Text('GitHub'),
+          subtitle: const Text('LimoYuan/cloudreve4_flutter'),
+          trailing: const Icon(Icons.open_in_new, size: 16),
+          onTap: () {
+            final uri = Uri.parse('https://github.com/LimoYuan/cloudreve4_flutter');
+            launchUrl(uri, mode: LaunchMode.externalApplication);
+          },
         ),
       ],
     );
@@ -265,6 +291,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Future<void> _showMaxCacheSizeDialog(BuildContext context) async {
     final availableSizes = CacheSettingsModel.availableSizes;
+    final currentValue = _settings.maxCacheSize ~/ (1024 * 1024);
 
     final selected = await showModalBottomSheet<int>(
       context: context,
@@ -279,22 +306,16 @@ class _SettingsPageState extends State<SettingsPage> {
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
-            ...availableSizes.map((size) {
-              final isSelected =
-                  _settings.maxCacheSize == size * 1024 * 1024;
-              return ListTile(
-                leading: Radio<int>(
-                  value: size,
-                  groupValue: _settings.maxCacheSize ~/ (1024 * 1024),
-                  onChanged: (_) {
-                    Navigator.of(sheetContext).pop(size);
-                  },
-                ),
+            for (final size in availableSizes)
+              ListTile(
                 title: Text('$size MB'),
-                selected: isSelected,
+                selected: currentValue == size,
+                leading: Icon(
+                  currentValue == size ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
                 onTap: () => Navigator.of(sheetContext).pop(size),
-              );
-            }).toList(),
+              ),
           ],
         ),
       ),
@@ -310,6 +331,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Future<void> _showCacheExpireDurationDialog(BuildContext context) async {
     final availableDurations = CacheSettingsModel.availableDurations;
+    final currentValue = _settings.cacheExpireDuration ~/ (24 * 60 * 60 * 1000);
 
     final selected = await showModalBottomSheet<int>(
       context: context,
@@ -324,22 +346,16 @@ class _SettingsPageState extends State<SettingsPage> {
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
-            ...availableDurations.map((days) {
-              final isSelected =
-                  _settings.cacheExpireDuration == days * 24 * 60 * 60 * 1000;
-              return ListTile(
-                leading: Radio<int>(
-                  value: days,
-                  groupValue: _settings.cacheExpireDuration ~/ (24 * 60 * 60 * 1000),
-                  onChanged: (_) {
-                    Navigator.of(sheetContext).pop(days);
-                  },
-                ),
+            for (final days in availableDurations)
+              ListTile(
                 title: Text('$days天'),
-                selected: isSelected,
+                selected: currentValue == days,
+                leading: Icon(
+                  currentValue == days ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
                 onTap: () => Navigator.of(sheetContext).pop(days),
-              );
-            }).toList(),
+              ),
           ],
         ),
       ),

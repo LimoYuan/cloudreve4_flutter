@@ -48,6 +48,7 @@ mixin GestureHandlerMixin<T extends StatefulWidget> on State<T> {
   Future<void> checkExitApp(BuildContext context) async {
     final now = DateTime.now();
     if (_lastSwipeTime != null && now.difference(_lastSwipeTime!).inSeconds < 2) {
+      _exitHintOverlay.remove();
       SystemNavigator.pop();
     } else {
       _lastSwipeTime = now;

@@ -41,6 +41,15 @@ class _HomePageState extends State<HomePage> with GestureHandlerMixin {
           context,
           listen: false,
         );
+
+        // 根据屏幕宽度设置默认视图类型
+        final screenWidth = MediaQuery.of(context).size.width;
+        if (screenWidth >= 1000) {
+          fileManager.setViewType(FileViewType.grid);
+        } else {
+          fileManager.setViewType(FileViewType.list);
+        }
+
         fileManager.loadFiles();
 
         final downloadManager = Provider.of<DownloadManagerProvider>(
@@ -77,6 +86,9 @@ class _HomePageState extends State<HomePage> with GestureHandlerMixin {
   }
 
   PreferredSizeWidget _buildAppBar(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isDesktop = screenWidth >= 1000;
+
     return AppBar(
       title: Consumer<AuthProvider>(
         builder: (context, authProvider, child) {
@@ -85,56 +97,161 @@ class _HomePageState extends State<HomePage> with GestureHandlerMixin {
           return Text(displayName);
         },
       ),
-      actions: [
-        IconButton(
-          icon: const Icon(Icons.search),
-          onPressed: () {
-            Navigator.of(context).pushNamed(RouteNames.search);
-          },
-          tooltip: '搜索',
-        ),
-        Consumer<FileManagerProvider>(
-          builder: (context, fileManager, child) {
-            final icon = fileManager.viewType == FileViewType.list
-                ? Icons.grid_view
-                : Icons.view_list;
-            return IconButton(
-              icon: Icon(icon),
-              onPressed: () {
-                fileManager.setViewType(
-                  fileManager.viewType == FileViewType.list
-                      ? FileViewType.grid
-                      : FileViewType.list,
-                );
-              },
-              tooltip: fileManager.viewType == FileViewType.list ? '网格视图' : '列表视图',
-            );
-          },
-        ),
-        IconButton(
-          icon: const Icon(Icons.cloud_upload),
-          onPressed: () => showUploadDialog(context),
-          tooltip: '上传',
-        ),
-        IconButton(
-          icon: const Icon(Icons.cloud_download),
-          onPressed: () => showDownloadDialog(context),
-          tooltip: '下载',
-        ),
-        IconButton(
-          icon: const Icon(Icons.settings),
-          onPressed: () {
-            Navigator.of(context).pushNamed(RouteNames.settings);
-          },
-          tooltip: '设置',
-        ),
-        IconButton(
-          icon: const Icon(Icons.logout),
-          onPressed: () => _handleLogout(context),
-          tooltip: '退出登录',
-        ),
-      ],
+      actions: isDesktop ? _buildDesktopActions() : _buildMobileActions(),
     );
+  }
+
+  /// 桌面端操作按钮（宽度 ≥ 1000）
+  List<Widget> _buildDesktopActions() {
+    return [
+      IconButton(
+        icon: const Icon(Icons.search),
+        onPressed: () {
+          Navigator.of(context).pushNamed(RouteNames.search);
+        },
+        tooltip: '搜索',
+      ),
+      Consumer<FileManagerProvider>(
+        builder: (context, fileManager, child) {
+          final icon = fileManager.viewType == FileViewType.list
+              ? Icons.grid_view
+              : Icons.view_list;
+          return IconButton(
+            icon: Icon(icon),
+            onPressed: () {
+              fileManager.setViewType(
+                fileManager.viewType == FileViewType.list
+                    ? FileViewType.grid
+                    : FileViewType.list,
+              );
+            },
+            tooltip: fileManager.viewType == FileViewType.list ? '网格视图' : '列表视图',
+          );
+        },
+      ),
+      IconButton(
+        icon: const Icon(Icons.cloud_upload),
+        onPressed: () => showUploadDialog(context),
+        tooltip: '上传',
+      ),
+      IconButton(
+        icon: const Icon(Icons.cloud_download),
+        onPressed: () => showDownloadDialog(context),
+        tooltip: '下载',
+      ),
+      IconButton(
+        icon: const Icon(Icons.settings),
+        onPressed: () {
+          Navigator.of(context).pushNamed(RouteNames.settings);
+        },
+        tooltip: '设置',
+      ),
+      IconButton(
+        icon: const Icon(Icons.logout),
+        onPressed: () => _handleLogout(context),
+        tooltip: '退出登录',
+      ),
+    ];
+  }
+
+  /// 移动端菜单按钮（宽度 < 1000）
+  List<Widget> _buildMobileActions() {
+    return [
+      Consumer<FileManagerProvider>(
+        builder: (context, fileManager, child) {
+          return PopupMenuButton<String>(
+            icon: const Icon(Icons.apps_rounded),
+            onSelected: (value) => _handleMenuAction(value),
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'search',
+                child: ListTile(
+                  leading: Icon(Icons.search),
+                  title: Text('搜索'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              PopupMenuItem(
+                value: 'view_toggle',
+                child: ListTile(
+                  leading: Icon(
+                    fileManager.viewType == FileViewType.list
+                        ? Icons.grid_view
+                        : Icons.view_list,
+                  ),
+                  title: Text(
+                    fileManager.viewType == FileViewType.list ? '网格视图' : '列表视图',
+                  ),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'upload',
+                child: ListTile(
+                  leading: Icon(Icons.cloud_upload),
+                  title: Text('上传'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'download',
+                child: ListTile(
+                  leading: Icon(Icons.cloud_download),
+                  title: Text('下载'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'settings',
+                child: ListTile(
+                  leading: Icon(Icons.settings),
+                  title: Text('设置'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuDivider(),
+              const PopupMenuItem(
+                value: 'logout',
+                child: ListTile(
+                  leading: Icon(Icons.logout, color: Colors.red),
+                  title: Text('退出登录', style: TextStyle(color: Colors.red)),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    ];
+  }
+
+  /// 处理菜单操作
+  void _handleMenuAction(String value) {
+    switch (value) {
+      case 'search':
+        Navigator.of(context).pushNamed(RouteNames.search);
+        break;
+      case 'view_toggle':
+        final fileManager = Provider.of<FileManagerProvider>(context, listen: false);
+        fileManager.setViewType(
+          fileManager.viewType == FileViewType.list
+              ? FileViewType.grid
+              : FileViewType.list,
+        );
+        break;
+      case 'upload':
+        showUploadDialog(context);
+        break;
+      case 'download':
+        showDownloadDialog(context);
+        break;
+      case 'settings':
+        Navigator.of(context).pushNamed(RouteNames.settings);
+        break;
+      case 'logout':
+        _handleLogout(context);
+        break;
+    }
   }
 
   Widget _buildDrawer(BuildContext context) {
@@ -214,6 +331,7 @@ class _HomePageState extends State<HomePage> with GestureHandlerMixin {
       return EmptyFolderView(currentPath: fileManager.currentPath);
     }
 
+    // 根据用户选择的视图类型显示
     if (fileManager.viewType == FileViewType.list) {
       return _buildListView(context, fileManager);
     }

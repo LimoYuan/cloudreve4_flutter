@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart' hide DateUtils;
 import '../../data/models/file_model.dart';
 import '../../core/utils/date_utils.dart';
+import '../../core/utils/file_utils.dart';
 import 'file_menu_helper.dart';
 
 /// 文件列表项
@@ -94,8 +95,8 @@ class FileListItem extends StatelessWidget {
       icon = Icons.folder_outlined;
       iconColor = Theme.of(context).colorScheme.primary;
     } else {
-      icon = Icons.insert_drive_file_outlined;
-      iconColor = Colors.grey.shade600;
+      icon = _getFileIcon(file.name);
+      iconColor = _getFileIconColor(file.name);
     }
 
     return Icon(
@@ -103,6 +104,50 @@ class FileListItem extends StatelessWidget {
       color: iconColor,
       size: 32,
     );
+  }
+
+  /// 获取文件图标
+  IconData _getFileIcon(String fileName) {
+    if (FileUtils.isImageFile(fileName)) {
+      return Icons.image;
+    } else if (FileUtils.isVideoFile(fileName)) {
+      return Icons.videocam;
+    } else if (FileUtils.isAudioFile(fileName)) {
+      return Icons.audiotrack;
+    } else if (FileUtils.isPdfFile(fileName)) {
+      return Icons.picture_as_pdf;
+    } else if (FileUtils.isTextFile(fileName)) {
+      return Icons.description;
+    } else if (FileUtils.isCodeFile(fileName)) {
+      return Icons.code;
+    } else if (FileUtils.isArchiveFile(fileName)) {
+      return Icons.folder_zip;
+    } else if (FileUtils.isDocumentFile(fileName)) {
+      return Icons.description_outlined;
+    }
+    return Icons.insert_drive_file_outlined;
+  }
+
+  /// 获取文件图标颜色
+  Color _getFileIconColor(String fileName) {
+    if (FileUtils.isImageFile(fileName)) {
+      return Colors.purple.shade600;
+    } else if (FileUtils.isVideoFile(fileName)) {
+      return Colors.orange.shade600;
+    } else if (FileUtils.isAudioFile(fileName)) {
+      return Colors.blue.shade600;
+    } else if (FileUtils.isPdfFile(fileName)) {
+      return Colors.red.shade600;
+    } else if (FileUtils.isTextFile(fileName)) {
+      return Colors.teal.shade600;
+    } else if (FileUtils.isCodeFile(fileName)) {
+      return Colors.cyan.shade700;
+    } else if (FileUtils.isArchiveFile(fileName)) {
+      return Colors.amber.shade600;
+    } else if (FileUtils.isDocumentFile(fileName)) {
+      return Colors.indigo.shade600;
+    }
+    return Colors.grey.shade600;
   }
 
   Future<void> _showMenu(BuildContext context) async {

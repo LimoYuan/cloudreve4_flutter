@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../data/models/share_model.dart';
 import '../../../services/share_service.dart';
+import '../../../core/utils/file_type_utils.dart';
 
 /// 分享列表页面 - 响应式布局
 /// 桌面端（宽度 > 800）：使用数据表格
@@ -546,7 +547,7 @@ class _SharesPageState extends State<SharesPage> {
                     Row(
                       children: [
                         Icon(_getShareIcon(share),
-                            size: 20, color: Colors.blue.shade400),
+                            size: 20, color: _getIconColor(share)),
                         const SizedBox(width: 12),
                         SizedBox(
                           width: 200,
@@ -633,11 +634,11 @@ class _SharesPageState extends State<SharesPage> {
                       Container(
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
-                          color: Colors.blue.withValues(alpha: 0.1),
+                          color: _getIconColor(share).withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Icon(_getShareIcon(share),
-                            color: Colors.blue.shade700, size: 20),
+                            color: _getIconColor(share), size: 20),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -737,7 +738,52 @@ class _SharesPageState extends State<SharesPage> {
 
   /// 获取分享图标
   IconData _getShareIcon(ShareModel share) {
-    return share.isFolder ? Icons.folder : Icons.insert_drive_file_outlined;
+    if (share.isFolder) {
+      return Icons.folder;
+    }
+
+    final name = share.name;
+
+    if (FileTypeUtils.isImage(name)) {
+      return Icons.image;
+    } else if (FileTypeUtils.isPdf(name)) {
+      return Icons.picture_as_pdf;
+    } else if (FileTypeUtils.isVideo(name)) {
+      return Icons.videocam;
+    } else if (FileTypeUtils.isAudio(name)) {
+      return Icons.audiotrack;
+    } else if (FileTypeUtils.isMarkdown(name)) {
+      return Icons.description;
+    } else if (FileTypeUtils.isTextCode(name)) {
+      return Icons.code;
+    }
+
+    return Icons.insert_drive_file_outlined;
+  }
+
+  /// 获取图标颜色
+  Color _getIconColor(ShareModel share) {
+    if (share.isFolder) {
+      return Colors.amber.shade600;
+    }
+
+    final name = share.name;
+
+    if (FileTypeUtils.isImage(name)) {
+      return Colors.purple.shade600;
+    } else if (FileTypeUtils.isPdf(name)) {
+      return Colors.red.shade600;
+    } else if (FileTypeUtils.isVideo(name)) {
+      return Colors.orange.shade600;
+    } else if (FileTypeUtils.isAudio(name)) {
+      return Colors.blue.shade600;
+    } else if (FileTypeUtils.isMarkdown(name)) {
+      return Colors.teal.shade600;
+    } else if (FileTypeUtils.isTextCode(name)) {
+      return Colors.cyan.shade700;
+    }
+
+    return Colors.grey.shade600;
   }
 
   /// 格式化日期

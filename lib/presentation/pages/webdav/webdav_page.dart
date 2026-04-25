@@ -7,7 +7,9 @@ import '../../../services/webdav_service.dart';
 import '../../../services/storage_service.dart';
 import '../../providers/auth_provider.dart';
 
-/// WebDAV 页面
+/// WebDAV 页面 - 响应式布局
+/// 桌面端（宽度 > 800）：使用数据表格
+/// 移动端：使用精美卡片流
 class WebdavPage extends StatefulWidget {
   const WebdavPage({super.key});
 
@@ -20,6 +22,13 @@ class _WebdavPageState extends State<WebdavPage> {
   bool _isLoading = false;
   String? _errorMessage;
 
+  // 搜索关键字
+  String _searchQuery = '';
+  final TextEditingController _searchController = TextEditingController();
+
+  // 响应式布局断点
+  static const double _desktopBreakpoint = 800;
+
   @override
   void initState() {
     super.initState();
@@ -31,204 +40,465 @@ class _WebdavPageState extends State<WebdavPage> {
   }
 
   @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final isDesktop = MediaQuery.of(context).size.width > _desktopBreakpoint;
+
     return Scaffold(
+      backgroundColor: isDesktop
+          ? const Color(0xFFF8F9FA)
+          : Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        title: const Text('WebDAV'),
+        title: const Text('WebDAV',
+            style: TextStyle(fontWeight: FontWeight.bold)),
+        elevation: 0,
+        centerTitle: !isDesktop,
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () => _loadAccounts(),
             tooltip: '刷新',
           ),
+          if (isDesktop) const SizedBox(width: 16),
         ],
       ),
-      body: _buildBody(context),
-      floatingActionButton: FloatingActionButton(
+      body: Column(
+        children: [
+          _buildHeaderBar(isDesktop),
+          Expanded(child: _buildBody(context, isDesktop)),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showCreateDialog(context),
-        child: const Icon(Icons.add),
+        label: const Text('添加账户'),
+        icon: const Icon(Icons.add),
       ),
     );
   }
 
-  Widget _buildBody(BuildContext context) {
+  /// 顶部操作栏：搜索和统计
+  Widget _buildHeaderBar(bool isDesktop) {
+    return Container(
+      padding: EdgeInsets.symmetric(
+          horizontal: isDesktop ? 32 : 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        border: Border(
+            bottom: BorderSide(color: Colors.grey.withValues(alpha: 0.1))),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Container(
+              height: 40,
+              decoration: BoxDecoration(
+                color: Colors.grey.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: TextField(
+                controller: _searchController,
+                decoration: const InputDecoration(
+                  hintText: '搜索 WebDAV 账户...',
+                  prefixIcon: Icon(Icons.search, size: 20),
+                  border: InputBorder.none,
+                  contentPadding: EdgeInsets.symmetric(vertical: 8),
+                ),
+                onChanged: (value) {
+                  _searchQuery = value.toLowerCase();
+                  setState(() {});
+                },
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          if (isDesktop)
+            Text('共 ${_accounts.length} 个账户',
+                style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+        ],
+      ),
+    );
+  }
+
+  /// 根据设备类型构建主体内容
+  Widget _buildBody(BuildContext context, bool isDesktop) {
+    // 过滤搜索结果
+    final filteredAccounts = _searchQuery.isEmpty
+        ? _accounts
+        : _accounts
+            .where((a) =>
+                a.name.toLowerCase().contains(_searchQuery) ||
+                a.uri.toLowerCase().contains(_searchQuery))
+            .toList();
+
     if (_isLoading && _accounts.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
 
     if (_errorMessage != null) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.error_outline, size: 64, color: Colors.red),
-            const SizedBox(height: 16),
-            Text(
-              _errorMessage!,
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey.shade600),
-            ),
-            const SizedBox(height: 16),
-            FilledButton(
-              onPressed: () => _loadAccounts(),
-              child: const Text('重试'),
-            ),
-          ],
-        ),
-      );
+      return _buildErrorState();
     }
 
-    if (_accounts.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.cloud_sync_outlined,
-              size: 64,
-              color: Colors.grey.shade400,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              '暂无 WebDAV 账户',
-              style: TextStyle(fontSize: 18, color: Colors.grey.shade600),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '点击 + 按钮添加 WebDAV 账户',
-              style: TextStyle(color: Colors.grey.shade500),
-            ),
-          ],
-        ),
-      );
+    if (filteredAccounts.isEmpty) {
+      return _searchQuery.isEmpty
+          ? _buildEmptyState()
+          : _buildNoSearchResult();
     }
 
     return RefreshIndicator(
       onRefresh: () => _loadAccounts(),
-      child: ListView.separated(
-        itemCount: _accounts.length,
-        separatorBuilder: (_, _) => const Divider(height: 1),
-        itemBuilder: (context, index) {
-          final account = _accounts[index];
-          return _buildAccountItem(context, account);
-        },
-      ),
+      child: isDesktop
+          ? _buildDesktopLayout(filteredAccounts)
+          : _buildMobileLayout(filteredAccounts),
     );
   }
 
-  Widget _buildAccountItem(BuildContext context, DavAccountModel account) {
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            Container(
-              width: 50,
-              height: 50,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Colors.blue.shade400, Colors.blue.shade600],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(Icons.cloud_sync, color: Colors.white, size: 28),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    account.name,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    account.uri,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.grey.shade600,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Icon(Icons.lock_outline, size: 14, color: Colors.grey.shade400),
-                      const SizedBox(width: 4),
-                      Text(
-                        _maskPassword(account.password),
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade500,
-                          fontFamily: 'monospace',
+  /// 桌面端布局：数据表格
+  Widget _buildDesktopLayout(List<DavAccountModel> accounts) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(32),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withValues(alpha: 0.02),
+                blurRadius: 10,
+                offset: const Offset(0, 4))
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: DataTable(
+            headingRowColor:
+                WidgetStateProperty.all(Colors.grey.shade50),
+            columnSpacing: 24,
+            columns: const [
+              DataColumn(
+                  label: Text('名称',
+                      style: TextStyle(fontWeight: FontWeight.bold))),
+              DataColumn(
+                  label: Text('URI',
+                      style: TextStyle(fontWeight: FontWeight.bold))),
+              DataColumn(
+                  label: Text('密码',
+                      style: TextStyle(fontWeight: FontWeight.bold))),
+              DataColumn(
+                  label: Text('创建时间',
+                      style: TextStyle(fontWeight: FontWeight.bold))),
+              DataColumn(
+                  label: Text('操作',
+                      style: TextStyle(fontWeight: FontWeight.bold))),
+            ],
+            rows: accounts.map((account) {
+              return DataRow(
+                cells: [
+                  DataCell(
+                    Row(
+                      children: [
+                        _buildAccountIcon(size: 20),
+                        const SizedBox(width: 12),
+                        SizedBox(
+                          width: 120,
+                          child: Text(account.name,
+                              overflow: TextOverflow.ellipsis),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
+                  ),
+                  DataCell(Text(account.uri,
+                      style: const TextStyle(fontSize: 12))),
+                  DataCell(Text(_maskPassword(account.password),
+                      style: const TextStyle(
+                          fontFamily: 'monospace', fontSize: 12))),
+                  DataCell(Text(_formatDate(account.createdAt),
+                      style: const TextStyle(fontSize: 12))),
+                  DataCell(
+                    Row(
+                      children: [
+                        _buildActionButton(
+                          icon: Icons.copy,
+                          tooltip: '复制凭据',
+                          color: Colors.blue,
+                          onPressed: () => _copyCredentials(context, account),
+                        ),
+                        _buildActionButton(
+                          icon: Icons.edit_outlined,
+                          tooltip: '编辑',
+                          color: Colors.orange,
+                          onPressed: () => _showEditDialog(context, account),
+                        ),
+                        _buildActionButton(
+                          icon: Icons.delete_outline,
+                          tooltip: '删除',
+                          color: Colors.red,
+                          onPressed: () => _showDeleteDialog(context, account),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildActionButton(
-                  icon: Icons.copy,
-                  onPressed: () => _copyCredentials(context, account),
-                  tooltip: '复制',
-                  color: Colors.blue.shade500,
-                ),
-                _buildActionButton(
-                  icon: Icons.edit,
-                  onPressed: () => _showEditDialog(context, account),
-                  tooltip: '编辑',
-                  color: Colors.orange.shade500,
-                ),
-                _buildActionButton(
-                  icon: Icons.delete,
-                  onPressed: () => _showDeleteDialog(context, account),
-                  tooltip: '删除',
-                  color: Colors.red.shade500,
-                ),
-              ],
-            ),
-          ],
+              );
+            }).toList(),
+          ),
         ),
       ),
     );
   }
 
+  /// 移动端布局：精美卡片流
+  Widget _buildMobileLayout(List<DavAccountModel> accounts) {
+    return ListView.builder(
+      padding: const EdgeInsets.all(12),
+      itemCount: accounts.length,
+      itemBuilder: (context, index) {
+        final account = accounts[index];
+
+        return Card(
+          elevation: 0,
+          margin: const EdgeInsets.only(bottom: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: Colors.grey.withValues(alpha: 0.1)),
+          ),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: () => _showMobileActionMenu(account),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      _buildAccountIcon(),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(account.name,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w600, fontSize: 15),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis),
+                            Text('WebDAV 账户',
+                                style: TextStyle(
+                                    color: Colors.grey.shade500, fontSize: 12)),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.more_vert, size: 20),
+                        onPressed: () => _showMobileActionMenu(account),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 24),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildInfoChip(Icons.link, account.uri),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _buildInfoChip(Icons.lock,
+                            _maskPassword(account.password)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(_formatDate(account.createdAt),
+                      style: TextStyle(
+                          color: Colors.grey.shade400, fontSize: 11)),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// 构建账户图标
+  Widget _buildAccountIcon({double size = 20}) {
+    return Container(
+      width: size + 16,
+      height: size + 16,
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF4285F4), Color(0xFF34A853)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Icon(Icons.cloud_sync, color: Colors.white, size: size - 2),
+    );
+  }
+
+  /// 构建信息芯片
+  Widget _buildInfoChip(IconData icon, String label) {
+    return Row(
+      children: [
+        Icon(icon, size: 14, color: Colors.grey),
+        const SizedBox(width: 4),
+        Expanded(
+          child: Text(label,
+              style: const TextStyle(fontSize: 12, color: Colors.grey),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis),
+        ),
+      ],
+    );
+  }
+
+  /// 构建操作按钮
+  Widget _buildActionButton({
+    required IconData icon,
+    required String tooltip,
+    required Color color,
+    required VoidCallback onPressed,
+  }) {
+    return IconButton(
+      icon: Icon(icon, size: 18, color: color),
+      onPressed: onPressed,
+      tooltip: tooltip,
+      style: IconButton.styleFrom(
+        padding: const EdgeInsets.all(4),
+        minimumSize: const Size(32, 32),
+      ),
+    );
+  }
+
+  /// 遮罩密码
   String _maskPassword(String password) {
     if (password.length <= 4) return '••••';
     return '••••${password.substring(password.length - 4)}';
   }
 
-  Widget _buildActionButton({
-    required IconData icon,
-    required VoidCallback onPressed,
-    required String tooltip,
-    required Color color,
-  }) {
-    return IconButton(
-      icon: Icon(icon, size: 20, color: color),
-      onPressed: onPressed,
-      tooltip: tooltip,
-      style: IconButton.styleFrom(
-        backgroundColor: color.withOpacity(0.1),
-        padding: const EdgeInsets.all(8),
-        minimumSize: const Size(36, 36),
+  /// 格式化日期
+  String _formatDate(DateTime date) {
+    final now = DateTime.now();
+    final diff = now.difference(date);
+
+    if (diff.inDays == 0) {
+      return '今天';
+    } else if (diff.inDays == 1) {
+      return '昨天';
+    } else if (diff.inDays < 7) {
+      return '${diff.inDays} 天前';
+    } else {
+      return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+    }
+  }
+
+  /// 移动端快捷菜单
+  void _showMobileActionMenu(DavAccountModel account) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.copy_all_outlined),
+              title: const Text('复制凭据'),
+              onTap: () {
+                Navigator.pop(context);
+                _copyCredentials(context, account);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.edit_outlined),
+              title: const Text('编辑账户'),
+              onTap: () {
+                Navigator.pop(context);
+                _showEditDialog(context, account);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: Colors.red),
+              title: const Text('删除账户',
+                  style: TextStyle(color: Colors.red)),
+              onTap: () {
+                Navigator.pop(context);
+                _showDeleteDialog(context, account);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 空状态
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.cloud_sync_outlined,
+              size: 80, color: Colors.grey.shade300),
+          const SizedBox(height: 16),
+          const Text('暂无 WebDAV 账户',
+              style: TextStyle(fontSize: 16, color: Colors.grey)),
+          const SizedBox(height: 8),
+          Text('点击下方按钮添加账户',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+        ],
+      ),
+    );
+  }
+
+  /// 无搜索结果
+  Widget _buildNoSearchResult() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.search_off, size: 64, color: Colors.grey.shade300),
+          const SizedBox(height: 16),
+          Text(
+            '没有找到 "$_searchQuery"',
+            style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 错误状态
+  Widget _buildErrorState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.error_outline, size: 64, color: Colors.red),
+          const SizedBox(height: 16),
+          Text(
+            '加载失败',
+            style: TextStyle(fontSize: 18, color: Colors.grey.shade600),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _errorMessage ?? '未知错误',
+            style: TextStyle(color: Colors.grey.shade500),
+          ),
+          const SizedBox(height: 24),
+          FilledButton.icon(
+            icon: const Icon(Icons.refresh),
+            label: const Text('重试'),
+            onPressed: _loadAccounts,
+          ),
+        ],
       ),
     );
   }
@@ -244,10 +514,9 @@ class _WebdavPageState extends State<WebdavPage> {
 
     try {
       final response = await WebdavService().listAccounts(pageSize: 50);
-      // 已经经过 api_service.dart -> _parseResponse 处理过的数据,
-      // 直接不使用, 不需要 response['data'] 去取
       final accountsData = response as Map<String, dynamic>?;
-      final accountsList = accountsData?['accounts'] as List<dynamic>? ?? [];
+      final accountsList =
+          accountsData?['accounts'] as List<dynamic>? ?? [];
       final accounts = accountsList
           .map((a) => DavAccountModel.fromJson(a as Map<String, dynamic>))
           .toList();
@@ -277,14 +546,10 @@ class _WebdavPageState extends State<WebdavPage> {
   }
 
   void _copyCredentials(BuildContext context, DavAccountModel account) async {
-    // 获取当前登录用户的邮箱 (在 async 之前获取)
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final username = authProvider.user?.email ?? account.id;
-
-    // 缓存 messenger
     final messenger = ScaffoldMessenger.of(context);
 
-    // 获取服务器地址
     final storageService = StorageService.instance;
     final servers = await storageService.servers;
     final lastLabel = await storageService.lastSelectedServerLabel;
@@ -296,7 +561,6 @@ class _WebdavPageState extends State<WebdavPage> {
         orElse: () => ServerModel(label: '', baseUrl: ''),
       );
       if (currentServer.baseUrl.isNotEmpty) {
-        // 去掉 baseUrl 末尾的 /api/v4
         final cleanBaseUrl = currentServer.baseUrl.replaceAll(
           RegExp(r'/api/v4/?$'),
           '',

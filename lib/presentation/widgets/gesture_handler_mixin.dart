@@ -8,14 +8,34 @@ mixin GestureHandlerMixin<T extends StatefulWidget> on State<T> {
   DateTime? _lastSwipeTime;
   final ExitHintOverlay _exitHintOverlay = ExitHintOverlay();
 
-  /// 处理左滑手势
+  /// 子类需要提供 Scaffold 的 key
+  GlobalKey<ScaffoldState>? get scaffoldKey => null;
+
+  /// 处理滑动手势
   void handleSwipe(
     BuildContext context,
     FileManagerProvider fileManager,
     DragEndDetails details,
   ) {
-    if (details.primaryVelocity == null) return;
-    if (details.primaryVelocity! < 0) {
+    if (details.primaryVelocity == null) {
+      debugPrint('Swipe velocity is null');
+      return;
+    }
+
+    // 调试输出
+    debugPrint('Swipe primaryVelocity: ${details.primaryVelocity}');
+
+    // primaryVelocity > 0: 从左往右滑 → 打开侧边栏
+    // primaryVelocity < 0: 从右往左滑 → 返回或退出
+
+    // 从左往右滑（velocity > 0）：打开侧边栏
+    if (details.primaryVelocity! > 0) {
+      debugPrint('Right swipe detected (velocity > 0), opening drawer');
+      scaffoldKey?.currentState?.openDrawer();
+    }
+    // 从右往左滑（velocity < 0）：返回或退出
+    else if (details.primaryVelocity! < 0) {
+      debugPrint('Left swipe detected (velocity < 0)');
       if (fileManager.currentPath == '/') {
         checkExitApp(context);
       } else {

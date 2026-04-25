@@ -62,6 +62,9 @@ class _HomePageState extends State<HomePage> with GestureHandlerMixin {
   }
 
   @override
+  GlobalKey<ScaffoldState>? get scaffoldKey => _scaffoldKey;
+
+  @override
   Widget build(BuildContext context) {
     return PopScope(
       canPop: false,

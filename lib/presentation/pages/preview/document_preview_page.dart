@@ -1,5 +1,4 @@
 import 'dart:ui';
-
 import 'package:cloudreve4_flutter/core/utils/language_preview.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -15,7 +14,6 @@ import '../../../core/utils/file_type_utils.dart';
 /// 文档预览页面
 class DocumentPreviewPage extends StatefulWidget {
   final FileModel file;
-
   const DocumentPreviewPage({super.key, required this.file});
 
   @override
@@ -32,6 +30,11 @@ class _DocumentPreviewPageState extends State<DocumentPreviewPage> {
   int _lineCount = 0;
   final ScrollController _customCodeScrollController = ScrollController();
 
+  // 状态管理
+  bool _showLineNumbers = true;
+  double _fontSize = 14.0; // 默认字体大小
+  bool _hasInitializedLayout = false;
+
   @override
   void initState() {
     super.initState();
@@ -45,43 +48,41 @@ class _DocumentPreviewPageState extends State<DocumentPreviewPage> {
     super.dispose();
   }
 
+  // 加载逻辑保持不变...
   Future<void> _loadFileContent() async {
     try {
       final response = await FileService().getDownloadUrls(
         uris: [widget.file.relativePath],
         download: true,
       );
-
       final urls = response['urls'] as List<dynamic>? ?? [];
-      if (urls.isEmpty) {
-        throw Exception('获取URL为空');
-      }
-
+      if (urls.isEmpty) throw Exception('获取URL为空');
       final urlData = urls[0] as Map<String, dynamic>;
       final url = urlData['url'] as String;
-
-      if (url.isEmpty) {
-        throw Exception('获取URL下载地址为空');
-      }
 
       final responseContent = await http.get(Uri.parse(url));
       if (responseContent.statusCode != 200) {
         throw Exception('下载文件失败: ${responseContent.statusCode}');
       }
 
-      setState(() {
-        _content = responseContent.body;
-        _lineCount = _countLines(_content);
-        _languageMode = _detectLanguageMode(widget.file.name);
-        _languageName = _getLanguageNameFromExtension(widget.file.name);
-        _initCodeController();
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _content = responseContent.body;
+          _lineCount = _countLines(_content);
+          _languageMode = _detectLanguageMode(widget.file.name);
+          _languageName = _getLanguageNameFromExtension(widget.file.name);
+          _initCodeController();
+          _isLoading = false;
+        });
+      }
     } catch (e) {
-      setState(() {
-        _error = e.toString();
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _isLoading = false;
+          throw Exception('获取文件内容失败: $_error');
+        });
+      }
     }
   }
 
@@ -89,26 +90,10 @@ class _DocumentPreviewPageState extends State<DocumentPreviewPage> {
     _codeController = CodeController(text: _content, language: _languageMode);
   }
 
-  int _countLines(String text) {
-    if (text.isEmpty) return 0;
-    return '\n'.allMatches(text).length + 1;
-  }
-
-  Future<void> _copyContent() async {
-    await Clipboard.setData(ClipboardData(text: _content));
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('已复制到剪贴板'),
-          duration: Duration(seconds: 2),
-        ),
-      );
-    }
-  }
+  int _countLines(String text) => text.isEmpty ? 0 : '\n'.allMatches(text).length + 1;
 
   Mode _detectLanguageMode(String fileName) {
     final ext = FileTypeUtils.getExtension(fileName);
-    // 从所有支持的语言中查找对应的语言模式
     final extLang = LanguagePreview.getExtNameMapping[ext] ?? ext.toUpperCase();
     return allLanguages[extLang.toLowerCase()] ?? allLanguages['plaintext']!;
   }
@@ -120,131 +105,146 @@ class _DocumentPreviewPageState extends State<DocumentPreviewPage> {
 
   @override
   Widget build(BuildContext context) {
-    double lineNumberWidth = _lineCount > 999
-        ? 80.0
-        : (_lineCount > 99 ? 80.0 : 60.0);
+    final double screenWidth = MediaQuery.of(context).size.width;
+    
+    // 自动初始化布局逻辑
+    if (!_hasInitializedLayout && !_isLoading) {
+      _showLineNumbers = screenWidth >= 600;
+      _hasInitializedLayout = true;
+    }
+
+    // --- 动态行号宽度计算 (核心修复) ---
+    double lineNumberWidth = 0;
+    if (_showLineNumbers) {
+      // 计算行数的位数，并根据当前字体大小分配宽度
+      int digits = _lineCount.toString().length;
+      // 这里的 0.7 是字体宽高的约数比例，20 是左右边距预留
+      lineNumberWidth = (digits * (_fontSize * 0.7)) + 15; 
+      if (lineNumberWidth < 35) lineNumberWidth = 35;
+    }
 
     return Scaffold(
-      backgroundColor: const Color(0xFF23241F),
+      backgroundColor: const Color(0xFF1E1E1E),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF23241F),
+        backgroundColor: const Color(0xFF1E1E1E),
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        actions: [
-          if (!_isLoading && _error == null)
-            IconButton(
-              icon: const Icon(Icons.copy, color: Colors.white),
-              tooltip: '复制内容',
-              onPressed: _copyContent,
-            ),
-        ],
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              widget.file.name,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
-            if (!_isLoading && _error == null)
-              Text(
-                '$_languageName · $_lineCount 行',
-                style: TextStyle(color: Colors.grey.shade400, fontSize: 12),
-              ),
+            Text(widget.file.name, style: const TextStyle(color: Colors.white, fontSize: 15)),
+            if (!_isLoading) 
+              Text('$_languageName · $_lineCount 行 · 字号: ${_fontSize.toInt()}', 
+                style: TextStyle(color: Colors.grey.shade400, fontSize: 11)),
           ],
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.copy, color: Colors.white),
+            onPressed: () => Clipboard.setData(ClipboardData(text: _content)),
+          ),
+        ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator(color: Colors.white))
-          : _error != null
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.error_outline, size: 64, color: Colors.red),
-                  const SizedBox(height: 16),
-                  Text(
-                    _error!,
-                    style: const TextStyle(color: Colors.white),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: _loadFileContent,
-                    child: const Text('重试'),
-                  ),
-                ],
-              ),
-            )
-          : Padding(
-              padding: const EdgeInsets.all(4),
-              child: Container(
-                clipBehavior: Clip.antiAlias,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF282C34),
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.3),
-                      blurRadius: 8,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: ScrollConfiguration(
-                  behavior: ScrollConfiguration.of(context).copyWith(
-                    dragDevices: {
-                      PointerDeviceKind.touch,
-                      PointerDeviceKind.mouse, // 开启鼠标拖拽滚动
-                    },
-                  ),
-                  child: CodeTheme(
-                    data: CodeThemeData(styles: {...atomOneDarkTheme}),
-                    child: Scrollbar(
-                      controller: _customCodeScrollController,
-                      thumbVisibility: true,
-                      child: SingleChildScrollView(
-                        controller: _customCodeScrollController,
-                        child: CodeField(
-                          controller: _codeController!,
-                          textStyle: const TextStyle(
-                            fontFamily: 'SourceCodePro',
-                            fontSize: 15,
-                          ),
+          : _buildCodeEditor(lineNumberWidth),
+      floatingActionButton: _buildExpandableFab(),
+    );
+  }
 
-                          minLines: null,
-                          maxLines: null,
-                          expands: false,
-                          enabled: false,
-                          readOnly: true,
-                          background: Colors.transparent,
-                          cursorColor: Colors.transparent,
-                          textSelectionTheme: TextSelectionThemeData(
-                            selectionColor: Colors.transparent,
-                            cursorColor: Colors.transparent,
-                          ),
-                          lineNumberStyle: LineNumberStyle(
-                            width: lineNumberWidth,
-                            textAlign: TextAlign.right,
-                            margin: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF282C34), // 强制设为你想要的暗色
-                          ),
-                        ),
-                      ),
+  /// 现在是一次性渲染的, 所以代码行数太多会有性能问题, 渲染会耗时较长, 而且会卡顿
+  Widget _buildCodeEditor(double lineNumberWidth) {
+      // 核心改进：根据当前字号，动态计算一个更宽松的行号宽度
+      // 13号字大概每个数字占 8-9 像素，我们按 10 像素算并加上边距
+      int digits = _lineCount.toString().length;
+      // 这里的 12.0 是根据 13-15号字体的平均宽度预留，45 是基础间距 (调试火葬场)
+      double stableWidth = _showLineNumbers 
+          ? (digits * (_fontSize * 0.75)) + 45 
+          : 0;
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          color: const Color(0xFF282C34),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: ScrollConfiguration(
+          behavior: ScrollConfiguration.of(context).copyWith(
+            dragDevices: {PointerDeviceKind.touch, PointerDeviceKind.mouse},
+          ),
+          child: CodeTheme(
+            data: CodeThemeData(styles: {...atomOneDarkTheme}),
+            child: Scrollbar(
+              controller: _customCodeScrollController,
+              child: SingleChildScrollView(
+                controller: _customCodeScrollController,
+                child: CodeField(
+                  controller: _codeController!,
+                  textStyle: TextStyle(
+                    fontFamily: 'SourceCodePro',
+                    fontSize: _fontSize,
+                    height: 1.5,
+                  ),
+                  enabled: false,
+                  readOnly: true,
+                  background: Colors.transparent,
+                  // 关键点 1：调整行号样式
+                  lineNumberStyle: LineNumberStyle(
+                    width: stableWidth,
+                    textAlign: TextAlign.right, // 回归右对齐，更符合代码习惯
+                    margin: _showLineNumbers ? 12 : 0, // 增加间距防止数字贴边触发换行
+                    textStyle: TextStyle(
+                      color: _showLineNumbers ? Colors.grey.shade600 : Colors.transparent,
+                      fontSize: _fontSize * 0.8,
+                      height: 1.5, // 必须和正文高度完全一致
+                      // 核心修复：通过强制单词不换行来防止数字断裂
+                      fontFeatures: const [FontFeature.tabularFigures()], // 使用等宽数字
                     ),
                   ),
                 ),
               ),
             ),
+          ),
+        ),
+      );
+    }
+
+  // 构建功能组合按钮
+  Widget _buildExpandableFab() {
+    if (_isLoading) return const SizedBox.shrink();
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // 增加字号
+        FloatingActionButton(
+          heroTag: 'font_up',
+          mini: true,
+          backgroundColor: Colors.grey.shade800,
+          onPressed: () => setState(() { if(_fontSize < 30) _fontSize++; }),
+          child: const Icon(Icons.add, color: Colors.white, size: 20),
+        ),
+        const SizedBox(height: 8),
+        // 减小字号
+        FloatingActionButton(
+          heroTag: 'font_down',
+          mini: true,
+          backgroundColor: Colors.grey.shade800,
+          onPressed: () => setState(() { if(_fontSize > 8) _fontSize--; }),
+          child: const Icon(Icons.remove, color: Colors.white, size: 20),
+        ),
+        const SizedBox(height: 8),
+        // 行号开关
+        FloatingActionButton(
+          heroTag: 'line_toggle',
+          mini: true,
+          backgroundColor: _showLineNumbers ? Colors.blue : Colors.grey.shade800,
+          onPressed: () => setState(() => _showLineNumbers = !_showLineNumbers),
+          child: Icon(
+            _showLineNumbers ? Icons.format_list_numbered : Icons.short_text,
+            color: Colors.white,
+            size: 20,
+          ),
+        ),
+      ],
     );
   }
 }

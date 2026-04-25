@@ -215,5 +215,7 @@ class LanguagePreview {
     'yml': 'YAML',
     'sh': 'Bash',
     'zsh': 'Zsh',
+    'crt': 'Plain Text',
+    'pem': 'Plain Text',
   };
 } 

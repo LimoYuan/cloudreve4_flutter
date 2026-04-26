@@ -23,10 +23,27 @@ fun getLocalProperty(key: String, defaultValue: Int): Int {
     return value?.toIntOrNull() ?: defaultValue
 }
 
+// 1. 加载 key.properties
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("key.properties")
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+}
+
 android {
     namespace = "com.limo.cloudreve4_flutter"
     compileSdk = getLocalProperty("flutter.compileSdkVersion", 34)
     ndkVersion = flutter.ndkVersion
+
+    // 2. 配置签名选项
+    signingConfigs {
+        create("release") {
+            keyAlias = keystoreProperties["keyAlias"] as String?
+            keyPassword = keystoreProperties["keyPassword"] as String?
+            storeFile = keystoreProperties["storeFile"]?.let { file(it) }
+            storePassword = keystoreProperties["storePassword"] as String?
+        }
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -58,9 +75,28 @@ android {
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // 1. 将原来的 getByName("debug") 替换为 getByName("release")
+            signingConfig = signingConfigs.getByName("release")
+            
+            // 2. 建议同时开启混淆，这能大幅减小网盘应用的体积并保护代码
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+    }
+
+    applicationVariants.all {
+        val variant = this
+        outputs.all {
+            val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
+            val appName = "cloudreve4_flutter"
+            val versionName = variant.versionName
+            val versionCode = variant.versionCode
+            val type = variant.name // release 或 debug
+
+            val abi = output.getFilter(com.android.build.OutputFile.ABI) ?: "universal"
+            
+            output.outputFileName = "${appName}_v${versionName}_${versionCode}_${abi}_release.apk"
         }
     }
 }

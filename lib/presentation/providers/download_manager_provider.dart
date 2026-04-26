@@ -6,6 +6,7 @@ import '../../core/constants/storage_keys.dart';
 import '../../data/models/download_task_model.dart';
 import '../../services/download_service.dart';
 import '../../services/storage_service.dart';
+import '../../core/utils/app_logger.dart';
 
 /// 下载管理Provider
 class DownloadManagerProvider extends ChangeNotifier {
@@ -35,7 +36,7 @@ class DownloadManagerProvider extends ChangeNotifier {
     await _loadTasks();
 
     _isInitialized = true;
-    debugPrint('DownloadManagerProvider 初始化完成');
+    AppLogger.d('DownloadManagerProvider 初始化完成');
   }
 
   /// 添加下载任务
@@ -84,9 +85,9 @@ class DownloadManagerProvider extends ChangeNotifier {
     notifyListeners();
 
     // 开始下载
-    debugPrint('准备开始下载任务: ${task.id}, 文件: ${task.fileName}, 下载状态: ${task.status}');
+    AppLogger.d('准备开始下载任务: ${task.id}, 文件: ${task.fileName}, 下载状态: ${task.status}');
     final flutterTaskId = await _downloadService.startDownload(task);
-    debugPrint('startDownload 返回: flutterTaskId=$flutterTaskId');
+    AppLogger.d('startDownload 返回: flutterTaskId=$flutterTaskId');
 
     if (flutterTaskId == null) {
       // 下载失败，更新任务状态
@@ -122,22 +123,22 @@ class DownloadManagerProvider extends ChangeNotifier {
 
   /// 处理 flutter_downloader 的回调
   void _handleDownloadCallback(String flutterTaskId, int status, int progress) async {
-    debugPrint('DownloadManagerProvider._handleDownloadCallback 被调用: flutterTaskId=$flutterTaskId, status=$status, progress=$progress');
-    debugPrint('当前任务数量: ${_tasks.length}');
+    AppLogger.d('DownloadManagerProvider._handleDownloadCallback 被调用: flutterTaskId=$flutterTaskId, status=$status, progress=$progress');
+    AppLogger.d('当前任务数量: ${_tasks.length}');
 
     // 查找对应的内部任务 ID
     final internalId = _downloadService.getInternalTaskId(flutterTaskId);
-    debugPrint('对应的内部任务 ID: $internalId');
+    AppLogger.d('对应的内部任务 ID: $internalId');
 
     if (internalId == null) {
-      debugPrint('未找到对应的任务: flutterTaskId=$flutterTaskId');
+      AppLogger.d('未找到对应的任务: flutterTaskId=$flutterTaskId');
       return;
     }
 
     // 获取当前任务
     final task = _tasks[internalId];
     if (task == null) {
-      debugPrint('任务不存在: internalId=$internalId');
+      AppLogger.d('任务不存在: internalId=$internalId');
       return;
     }
 
@@ -173,11 +174,11 @@ class DownloadManagerProvider extends ChangeNotifier {
         downloadStatus = DownloadStatus.paused;
         break;
       default:
-        debugPrint('未知状态: $status');
+        AppLogger.d('未知状态: $status');
         return;
     }
 
-    debugPrint('更新任务: internalId=$internalId, status=$downloadStatus, progress=$progress');
+    AppLogger.d('更新任务: internalId=$internalId, status=$downloadStatus, progress=$progress');
 
     // 更新任务
     final updatedTask = task.copyWith(
@@ -194,7 +195,7 @@ class DownloadManagerProvider extends ChangeNotifier {
       _tasks[internalId] = updatedTask;
     }
 
-    debugPrint('任务已更新: ${_tasks[internalId]!.status}');
+    AppLogger.d('任务已更新: ${_tasks[internalId]!.status}');
     await _saveTasks();
     notifyListeners();
   }
@@ -309,7 +310,7 @@ class DownloadManagerProvider extends ChangeNotifier {
     try {
       final tasksJson = await StorageService.instance.getString(StorageKeys.downloadTasks);
       if (tasksJson == null || tasksJson.isEmpty) {
-        debugPrint('没有保存的下载任务');
+        AppLogger.d('没有保存的下载任务');
         return;
       }
 
@@ -332,14 +333,14 @@ class DownloadManagerProvider extends ChangeNotifier {
             }
             final daysSinceCompletion = now.difference(task.completedAt!).inDays;
             if (daysSinceCompletion > 7) {
-              debugPrint('跳过超过7天的已完成任务: ${task.fileName}');
+              AppLogger.d('跳过超过7天的已完成任务: ${task.fileName}');
               continue;
             }
           }
 
           loadedTasks.add(task);
         } catch (e) {
-          debugPrint('解析下载任务失败: $e');
+          AppLogger.d('解析下载任务失败: $e');
         }
       }
 
@@ -348,7 +349,7 @@ class DownloadManagerProvider extends ChangeNotifier {
         _tasks[task.id] = task;
       }
 
-      debugPrint('从存储加载了 ${loadedTasks.length} 个下载任务');
+      AppLogger.d('从存储加载了 ${loadedTasks.length} 个下载任务');
 
       // 通知 UI 更新
       if (loadedTasks.isNotEmpty) {
@@ -359,12 +360,12 @@ class DownloadManagerProvider extends ChangeNotifier {
       for (final task in loadedTasks) {
         if (task.status == DownloadStatus.downloading ||
             task.status == DownloadStatus.waiting) {
-          debugPrint('恢复下载任务: ${task.fileName}');
+          AppLogger.d('恢复下载任务: ${task.fileName}');
           await _downloadService.startDownload(task);
         }
       }
     } catch (e) {
-      debugPrint('加载下载任务失败: $e');
+      AppLogger.d('加载下载任务失败: $e');
     }
   }
 
@@ -376,9 +377,9 @@ class DownloadManagerProvider extends ChangeNotifier {
           .toList();
       final tasksJson = jsonEncode(tasksList);
       await StorageService.instance.setString(StorageKeys.downloadTasks, tasksJson);
-      debugPrint('已保存 ${_tasks.length} 个下载任务到存储');
+      AppLogger.d('已保存 ${_tasks.length} 个下载任务到存储');
     } catch (e) {
-      debugPrint('保存下载任务失败: $e');
+      AppLogger.d('保存下载任务失败: $e');
     }
   }
 

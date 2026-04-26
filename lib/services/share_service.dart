@@ -1,7 +1,6 @@
-import 'package:flutter/material.dart';
-
 import 'api_service.dart';
 import '../data/models/share_model.dart';
+import '../core/utils/app_logger.dart';
 
 /// 分享服务
 class ShareService {
@@ -111,7 +110,7 @@ class ShareService {
       data['password'] = password;
     }
 
-    debugPrint('editShare response ---> : response');
+    AppLogger.d('editShare response ---> : response');
     final response = await ApiService.instance.post<Map<String, dynamic>>(
       '/share/$id',
       data: data,

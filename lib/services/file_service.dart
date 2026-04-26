@@ -1,6 +1,5 @@
-import 'package:flutter/material.dart';
-
 import 'api_service.dart';
+import '../core/utils/app_logger.dart';
 
 /// 文件服务
 class FileService {
@@ -212,7 +211,7 @@ class FileService {
     final response = await ApiService.instance
         .get<Map<String, dynamic>>('/file', queryParameters: params);
 
-    debugPrint('Search files ---------> : $response');
+    AppLogger.d('Search files ---------> : $response');
     return response;
   }
 }

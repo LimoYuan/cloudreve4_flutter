@@ -1,6 +1,7 @@
 import 'package:cloudreve4_flutter/data/models/file_model.dart';
 import 'package:cloudreve4_flutter/services/file_service.dart';
 import 'package:flutter/material.dart';
+import '../../core/utils/app_logger.dart';
 
 /// 文件夹选择器
 class FolderPicker extends StatefulWidget {
@@ -48,7 +49,7 @@ class _FolderPickerState extends State<FolderPicker> {
             .toList();
       });
     } catch (e) {
-      debugPrint('加载文件夹失败: $e');
+      AppLogger.d('加载文件夹失败: $e');
     } finally {
       setState(() {
         _isLoading = false;

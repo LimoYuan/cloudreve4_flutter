@@ -1,7 +1,6 @@
-import 'package:flutter/material.dart';
-
 import '../data/models/user_model.dart';
 import 'api_service.dart';
+import '../core/utils/app_logger.dart';
 
 /// 认证服务
 class AuthService {
@@ -42,7 +41,7 @@ class AuthService {
       noAuth: true,
     );
 
-    debugPrint('AuthService -> 登录响应: $response');
+    AppLogger.d('AuthService -> 登录响应: $response');
 
     return LoginResponseModel.fromJson(response);
   }

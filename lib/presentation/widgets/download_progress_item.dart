@@ -8,6 +8,7 @@ import '../../data/models/download_task_model.dart';
 import '../../services/download_service.dart';
 import '../providers/download_manager_provider.dart';
 import 'toast_helper.dart';
+import '../../core/utils/app_logger.dart';
 
 /// 下载任务列表项
 class DownloadProgressItem extends StatelessWidget {
@@ -220,9 +221,9 @@ class DownloadProgressItem extends StatelessWidget {
       }
 
       OpenResult openResult = await OpenFile.open(task.savePath);
-      debugPrint('下载对话框打开文件结果：${openResult.type}');
+      AppLogger.d('下载对话框打开文件结果：${openResult.type}');
       if (openResult.type == ResultType.done) {
-        debugPrint('成功打开文件：${task.fileName}');
+        AppLogger.d('成功打开文件：${task.fileName}');
       } else {
         if (context.mounted) {
           ToastHelper.error(

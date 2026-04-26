@@ -77,7 +77,6 @@ class FileModel {
     }
     final prefix = 'cloudreve://my';
     final relative = path.substring(prefix.length);
-    // debugPrint('Path: $path, relative ---------> : $relative');
     return relative.isEmpty ? '/' : relative;
   }
 }

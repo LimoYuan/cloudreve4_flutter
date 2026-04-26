@@ -1,7 +1,6 @@
-import 'package:flutter/material.dart';
-
 import '../data/models/dav_account_model.dart';
 import 'api_service.dart';
+import '../core/utils/app_logger.dart';
 
 /// WebDAV 服务
 class WebdavService {
@@ -61,7 +60,7 @@ class WebdavService {
 
     final response = await ApiService.instance
         .patch<Map<String, dynamic>>('/devices/dav/$id', data: data);
-    debugPrint('更新 WebDAV 账户成功: $response');
+    AppLogger.d('更新 WebDAV 账户成功: $response');
     // 已经经过 api_service.dart -> _parseResponse 处理过的数据, 
     // 直接不使用, 不需要 response['data'] 去取
     return DavAccountModel.fromJson(response);

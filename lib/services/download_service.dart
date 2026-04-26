@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../data/models/download_task_model.dart';
 import 'file_service.dart';
+import '../core/utils/app_logger.dart';
 
 /// 下载服务 - 单例模式
 @pragma('vm:entry-point')
@@ -19,7 +20,7 @@ class DownloadService {
   DownloadService._internal() {
     _port = ReceivePort();
     _port.listen((dynamic data) {
-      debugPrint('DownloadService ReceivePort 收到数据: $data');
+      AppLogger.d('DownloadService ReceivePort 收到数据: $data');
       final id = data[0] as String;
       final status = data[1] as int;
       final progress = data[2] as int;
@@ -103,17 +104,17 @@ class DownloadService {
     // 如果提供了回调处理器，设置它（即使已经初始化过）
     if (callbackHandler != null) {
       setCallbackHandler(callbackHandler);
-      debugPrint('回调处理器已更新');
+      AppLogger.d('回调处理器已更新');
     }
 
     if (_isInitialized) {
-      debugPrint('DownloadService 已经初始化');
+      AppLogger.d('DownloadService 已经初始化');
       return;
     }
 
     // 注册 ReceivePort 到 IsolateNameServer，让后台 isolate 可以找到它
     IsolateNameServer.registerPortWithName(_port.sendPort, 'download_service_port');
-    debugPrint('已注册 ReceivePort 到 IsolateNameServer');
+    AppLogger.d('已注册 ReceivePort 到 IsolateNameServer');
 
     await FlutterDownloader.initialize(
       debug: kDebugMode,
@@ -123,20 +124,20 @@ class DownloadService {
     FlutterDownloader.registerCallback(_staticCallback);
 
     _isInitialized = true;
-    debugPrint('DownloadService 初始化完成');
+    AppLogger.d('DownloadService 初始化完成');
   }
 
   /// 静态回调方法 - flutter_downloader 要求必须是静态或顶层函数
   @pragma('vm:entry-point')
   static void _staticCallback(String id, int status, int progress) {
-    debugPrint('flutter_downloader 静态回调: id=$id, status=$status, progress=$progress');
+    AppLogger.d('flutter_downloader 静态回调: id=$id, status=$status, progress=$progress');
     // 使用 IsolateNameServer 发送数据到主 isolate
     final sendPort = IsolateNameServer.lookupPortByName('download_service_port');
     if (sendPort != null) {
-      debugPrint('找到 SendPort，发送数据到主 isolate');
+      AppLogger.d('找到 SendPort，发送数据到主 isolate');
       sendPort.send([id, status, progress]);
     } else {
-      debugPrint('未找到 SendPort，无法发送数据到主 isolate');
+      AppLogger.d('未找到 SendPort，无法发送数据到主 isolate');
       // 尝试使用静态回调处理器
       _callbackHandler?.call(id, status, progress);
     }
@@ -197,12 +198,12 @@ class DownloadService {
       _flutterTaskIdToInternalId[flutterTaskId] = task.id;
       _internalIdToFlutterTaskId[task.id] = flutterTaskId;
 
-      debugPrint('下载任务已添加: flutterTaskId=$flutterTaskId, internalId=${task.id}');
+      AppLogger.d('下载任务已添加: flutterTaskId=$flutterTaskId, internalId=${task.id}');
 
       return flutterTaskId;
 
     } catch (e) {
-      debugPrint('下载失败: $e');
+      AppLogger.d('下载失败: $e');
       rethrow;
     }
   }
@@ -263,7 +264,7 @@ class DownloadService {
         await file.delete();
       }
     } catch (e) {
-      debugPrint('删除文件失败: $e');
+      AppLogger.d('删除文件失败: $e');
     }
   }
 

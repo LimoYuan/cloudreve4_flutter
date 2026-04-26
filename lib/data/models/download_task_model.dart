@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import '../../core/utils/app_logger.dart';
 
 /// 下载状态
 enum DownloadStatus {
@@ -30,9 +30,9 @@ class DownloadTaskModel {
     if (status == DownloadStatus.completed) {
       return '100%';
     }
-    debugPrint('DownloadTaskModel -> 已经初始化, status: $status');
+    AppLogger.d('DownloadTaskModel -> 已经初始化, status: $status');
     final percent = (progress * 100).toStringAsFixed(1);
-    debugPrint('DownloadTaskModel -> 已经初始化, percent: $percent');
+    AppLogger.d('DownloadTaskModel -> 已经初始化, percent: $percent');
     return '$percent%';
   }
   String get statusText {

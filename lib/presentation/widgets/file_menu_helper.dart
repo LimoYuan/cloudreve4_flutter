@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/utils/app_logger.dart';
 
 /// 文件菜单选项
 enum FileMenuAction {
@@ -28,7 +29,7 @@ Future<FileMenuAction?> showFileMenu({
 }) async {
   final renderBox = context.findRenderObject() as RenderBox?;
   if (renderBox == null) {
-    debugPrint('showFileMenu: renderBox is null');
+    AppLogger.d('showFileMenu: renderBox is null');
     return null;
   }
 
@@ -44,7 +45,7 @@ Future<FileMenuAction?> showFileMenu({
     offset.dy + size.height / 2,
   );
 
-  debugPrint('showFileMenu: widget offset: $offset, size: $size, center: $centerX');
+  AppLogger.d('showFileMenu: widget offset: $offset, size: $size, center: $centerX');
 
   final result = await showMenu<FileMenuAction>(
     context: context,
@@ -152,6 +153,6 @@ Future<FileMenuAction?> showFileMenu({
     ],
   );
 
-  debugPrint('showFileMenu: selected value: $result');
+  AppLogger.d('showFileMenu: selected value: $result');
   return result;
 }

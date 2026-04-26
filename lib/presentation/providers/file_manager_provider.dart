@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import '../../data/models/file_model.dart';
 import '../../services/file_service.dart';
+import '../../core/utils/app_logger.dart';
 
 /// 文件视图类型
 enum FileViewType { list, grid, gallery }
@@ -47,7 +48,7 @@ class FileManagerProvider extends ChangeNotifier {
       // response 是包含 files, parent, pagination 等字段的对象
       final List<dynamic> filesData = response['files'] as List<dynamic>? ?? [];
       final pagination = response['pagination'] as Map<String, dynamic>? ?? {};
-      debugPrint("获取files列表: $filesData");
+      AppLogger.d("获取files列表: $filesData");
       setState(() {
         _files = filesData
             .map((f) => FileModel.fromJson(f as Map<String, dynamic>))
@@ -135,7 +136,7 @@ class FileManagerProvider extends ChangeNotifier {
     if (_selectedFiles.isEmpty) return null;
 
     try {
-      debugPrint("删除文件: ${_selectedFiles.join(', ')}");
+      AppLogger.d("删除文件: ${_selectedFiles.join(', ')}");
       await FileService().deleteFiles(uris: _selectedFiles);
 
       // 从本地列表中移除已删除的文件

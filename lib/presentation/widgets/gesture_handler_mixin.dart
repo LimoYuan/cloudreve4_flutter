@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../providers/file_manager_provider.dart';
 import 'exit_hint_overlay.dart';
+import '../../core/utils/app_logger.dart';
 
 /// 手势处理 Mixin
 mixin GestureHandlerMixin<T extends StatefulWidget> on State<T> {
@@ -18,24 +19,24 @@ mixin GestureHandlerMixin<T extends StatefulWidget> on State<T> {
     DragEndDetails details,
   ) {
     if (details.primaryVelocity == null) {
-      debugPrint('Swipe velocity is null');
+      AppLogger.d('Swipe velocity is null');
       return;
     }
 
     // 调试输出
-    debugPrint('Swipe primaryVelocity: ${details.primaryVelocity}');
+    AppLogger.d('Swipe primaryVelocity: ${details.primaryVelocity}');
 
     // primaryVelocity > 0: 从左往右滑 → 打开侧边栏
     // primaryVelocity < 0: 从右往左滑 → 返回或退出
 
     // 从左往右滑（velocity > 0）：打开侧边栏
     if (details.primaryVelocity! > 0) {
-      debugPrint('Right swipe detected (velocity > 0), opening drawer');
+      AppLogger.d('Right swipe detected (velocity > 0), opening drawer');
       scaffoldKey?.currentState?.openDrawer();
     }
     // 从右往左滑（velocity < 0）：返回或退出
     else if (details.primaryVelocity! < 0) {
-      debugPrint('Left swipe detected (velocity < 0)');
+      AppLogger.d('Left swipe detected (velocity < 0)');
       if (fileManager.currentPath == '/') {
         checkExitApp(context);
       } else {

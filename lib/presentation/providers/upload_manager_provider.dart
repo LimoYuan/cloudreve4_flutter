@@ -19,7 +19,6 @@ class UploadManagerProvider extends ChangeNotifier {
     if (_isInitialized) return;
     await _uploadService.initialize();
     _isInitialized = true;
-    // debugPrint('UploadManagerProvider 初始化完成');
   }
 
   /// 标记应该显示对话框
@@ -60,7 +59,6 @@ class UploadManagerProvider extends ChangeNotifier {
         fileSize: await file.length(),
         targetPath: uri,
       );
-      // debugPrint('UploadTaskModel -> ${task.toJson()}');
       _uploadService.addTask(task);
 
       // 开始上传任务

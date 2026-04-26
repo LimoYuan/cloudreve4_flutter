@@ -6,6 +6,7 @@ import '../../services/server_service.dart';
 import '../../services/storage_service.dart';
 import '../../services/api_service.dart';
 import '../../core/exceptions/app_exception.dart';
+import '../../core/utils/app_logger.dart';
 
 /// 认证状态
 enum AuthState { loading, authenticated, unauthenticated, error }
@@ -68,7 +69,7 @@ class AuthProvider extends ChangeNotifier {
       _user = null;
       setState(AuthState.unauthenticated);
     } catch (e) {
-      debugPrint('AuthProvider 初始化失败: $e');
+      AppLogger.d('AuthProvider 初始化失败: $e');
       _user = null;
       setState(AuthState.unauthenticated);
     }
@@ -135,7 +136,7 @@ class AuthProvider extends ChangeNotifier {
         email: email,
         password: password,
       );
-      debugPrint('AuthProvider 登录成功: $response');
+      AppLogger.d('AuthProvider 登录成功: $response');
       // 保存登录信息到当前服务器（包含完整 user 和 token）
       await ServerService.instance.updateCurrentServerLogin(
         email: rememberMe ? email : null,
@@ -165,7 +166,7 @@ class AuthProvider extends ChangeNotifier {
           await AuthService.instance.logout();
         } catch (e) {
           // 登出 API 调用失败不影响本地清理
-          debugPrint('登出 API 调用失败: $e');
+          AppLogger.d('登出 API 调用失败: $e');
         }
       }
 
@@ -219,7 +220,7 @@ class AuthProvider extends ChangeNotifier {
 
       setUser(updatedUser);
     } catch (e) {
-      debugPrint('刷新 token 失败: $e');
+      AppLogger.d('刷新 token 失败: $e');
       _user = null;
       _errorMessage = e.toString();
       notifyListeners();

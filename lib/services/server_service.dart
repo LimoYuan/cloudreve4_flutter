@@ -1,8 +1,8 @@
-import 'package:flutter/foundation.dart';
 import '../config/api_config.dart';
 import '../data/models/server_model.dart';
 import '../data/models/user_model.dart';
 import 'storage_service.dart';
+import '../core/utils/app_logger.dart';
 
 /// 服务器服务 - 管理多个服务器配置
 class ServerService {
@@ -63,10 +63,10 @@ class ServerService {
         _currentServer = _servers.first;
       }
 
-      debugPrint('加载了 ${_servers.length} 个服务器配置');
-      debugPrint('当前服务器: ${_currentServer?.label}');
+      AppLogger.d('加载了 ${_servers.length} 个服务器配置');
+      AppLogger.d('当前服务器: ${_currentServer?.label}');
     } catch (e) {
-      debugPrint('加载服务器列表失败: $e');
+      AppLogger.d('加载服务器列表失败: $e');
       // 加载失败时使用默认服务器
       _servers = [
         ServerModel(
@@ -82,9 +82,9 @@ class ServerService {
   Future<void> _saveServers() async {
     try {
       await StorageService.instance.setServers(_servers);
-      debugPrint('已保存 ${_servers.length} 个服务器配置');
+      AppLogger.d('已保存 ${_servers.length} 个服务器配置');
     } catch (e) {
-      debugPrint('保存服务器列表失败: $e');
+      AppLogger.d('保存服务器列表失败: $e');
     }
   }
 
@@ -151,7 +151,7 @@ class ServerService {
     final server = _servers.firstWhere((s) => s.label == label);
     _currentServer = server;
     await _saveLastSelected();
-    debugPrint('已选择服务器: ${server.label}');
+    AppLogger.d('已选择服务器: ${server.label}');
   }
 
   /// 更新当前服务器的服务登录信息

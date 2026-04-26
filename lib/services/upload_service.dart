@@ -6,6 +6,7 @@ import '../core/constants/storage_keys.dart';
 import '../data/models/upload_task_model.dart';
 import 'storage_service.dart';
 import 'api_service.dart';
+import '../core/utils/app_logger.dart';
 
 /// 上传服务 - 单例模式
 class UploadService extends ChangeNotifier {
@@ -29,7 +30,7 @@ class UploadService extends ChangeNotifier {
     if (!_progressControllers.containsKey(task.id)) {
       _progressControllers[task.id] = StreamController<double>.broadcast();
     }
-    debugPrint('UploadTaskModel -> addTask > ${task.toJson()}');
+    AppLogger.d('UploadTaskModel -> addTask > ${task.toJson()}');
     _saveTasks();
     notifyListeners();
   }
@@ -130,7 +131,7 @@ class UploadService extends ChangeNotifier {
         StorageKeys.uploadTasks,
       );
       if (tasksJson == null || tasksJson.isEmpty) {
-        debugPrint('没有保存的上传任务');
+        AppLogger.d('没有保存的上传任务');
         return;
       }
 
@@ -146,7 +147,7 @@ class UploadService extends ChangeNotifier {
 
           // 检查文件是否存在
           if (!await task.file.exists()) {
-            debugPrint('上传任务文件不存在，跳过: ${task.fileName}');
+            AppLogger.d('上传任务文件不存在，跳过: ${task.fileName}');
             continue;
           }
 
@@ -164,7 +165,7 @@ class UploadService extends ChangeNotifier {
                 .difference(task.completedAt!)
                 .inDays;
             if (daysSinceCompletion > 7) {
-              debugPrint('跳过超过7天的已完成任务: ${task.fileName}');
+              AppLogger.d('跳过超过7天的已完成任务: ${task.fileName}');
               continue;
             }
           }
@@ -185,7 +186,7 @@ class UploadService extends ChangeNotifier {
             loadedTasks.add(task);
           }
         } catch (e) {
-          debugPrint('解析上传任务失败: $e');
+          AppLogger.d('解析上传任务失败: $e');
         }
       }
 
@@ -197,14 +198,14 @@ class UploadService extends ChangeNotifier {
         }
       }
 
-      debugPrint('从存储加载了 ${loadedTasks.length} 个上传任务');
+      AppLogger.d('从存储加载了 ${loadedTasks.length} 个上传任务');
 
       // 通知 UI 更新
       if (loadedTasks.isNotEmpty) {
         notifyListeners();
       }
     } catch (e) {
-      debugPrint('加载上传任务失败: $e');
+      AppLogger.d('加载上传任务失败: $e');
     }
   }
 
@@ -217,9 +218,9 @@ class UploadService extends ChangeNotifier {
         StorageKeys.uploadTasks,
         tasksJson,
       );
-      debugPrint('已保存 ${_tasks.length} 个上传任务到存储');
+      AppLogger.d('已保存 ${_tasks.length} 个上传任务到存储');
     } catch (e) {
-      debugPrint('保存上传任务失败: $e');
+      AppLogger.d('保存上传任务失败: $e');
     }
   }
 
@@ -258,15 +259,15 @@ class UploadService extends ChangeNotifier {
 
   /// 开始上传
   Future<void> startUpload(UploadTaskModel task) async {
-    debugPrint('UploadService.startUpload: 开始上传任务 ${task.fileName}');
+    AppLogger.d('UploadService.startUpload: 开始上传任务 ${task.fileName}');
     final cancelToken = CancelToken();
     _cancelTokens[task.id] = cancelToken;
 
     try {
       // 步骤1：创建上传会话
-      debugPrint('UploadService.startUpload: 创建上传会话...');
+      AppLogger.d('UploadService.startUpload: 创建上传会话...');
       final session = await _createUploadSession(task);
-      debugPrint(
+      AppLogger.d(
         'UploadService.startUpload: 上传会话创建成功，sessionId=${session.sessionId}, chunkSize=${session.chunkSize}',
       );
 
@@ -293,7 +294,7 @@ class UploadService extends ChangeNotifier {
 
       _emitProgress(task.id, 1.0);
     } catch (e) {
-      debugPrint('Upload failed for ${task.fileName}: $e');
+      AppLogger.d('Upload failed for ${task.fileName}: $e');
 
       final isCancelled =
           e is DioException && e.type == DioExceptionType.cancel;
@@ -337,7 +338,7 @@ class UploadService extends ChangeNotifier {
     final session = task.session!;
     final file = task.file;
 
-    debugPrint('开始上传 -> ${task.fileName}');
+    AppLogger.d('开始上传 -> ${task.fileName}');
 
     // 读取文件
     final fileBytes = await file.readAsBytes();
@@ -380,7 +381,7 @@ class UploadService extends ChangeNotifier {
       final end = (start + chunkSize).clamp(0, fileBytes.length);
       final chunkData = fileBytes.sublist(start, end);
 
-      debugPrint('Uploading chunk ${i + 1}/$totalChunks for ${task.fileName}');
+      AppLogger.d('Uploading chunk ${i + 1}/$totalChunks for ${task.fileName}');
 
       if (session.isRelayUpload) {
         // 上传到 Cloudreve 服务器

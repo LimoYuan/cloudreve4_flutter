@@ -1,9 +1,9 @@
 import 'dart:async';
 
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart';
 import '../config/api_config.dart';
 import '../core/exceptions/app_exception.dart';
+import '../core/utils/app_logger.dart';
 
 /// API响应
 class ApiResponse<T> {
@@ -103,7 +103,7 @@ class ApiService {
   /// 动态设置 API baseUrl
   Future<void> setBaseUrl(String baseUrl) async {
     _dio.options.baseUrl = baseUrl;
-    debugPrint('ApiService baseUrl 已更新为: $baseUrl');
+    AppLogger.d('ApiService baseUrl 已更新为: $baseUrl');
   }
 
   /// 请求拦截器
@@ -126,7 +126,7 @@ class ApiService {
   Interceptor _responseInterceptor() {
     return InterceptorsWrapper(
       onResponse: (response, handler) {
-        debugPrint(
+        AppLogger.d(
           'API Response: ${response.statusCode} - ${response.requestOptions.uri}',
         );
 
@@ -134,15 +134,15 @@ class ApiService {
         if (response.data is Map<String, dynamic>) {
           final data = response.data as Map<String, dynamic>;
           final code = data['code'] as int?;
-          debugPrint('_responseInterceptor -> JSON code: $code');
+          AppLogger.d('_responseInterceptor -> JSON code: $code');
           if (code == 401) {
             // HTTP 200 但 JSON code 是 401，需要处理未授权
             final isNoAuth =
                 response.requestOptions.extra['noAuth'] as bool? ?? false;
-            debugPrint('_responseInterceptor -> isNoAuth: $isNoAuth');
+            AppLogger.d('_responseInterceptor -> isNoAuth: $isNoAuth');
             if (!isNoAuth) {
               // 直接在响应拦截器中处理 401
-              debugPrint('_responseInterceptor -> 触发 401 处理');
+              AppLogger.d('_responseInterceptor -> 触发 401 处理');
               // 异步处理，不阻塞响应
               _handle401InResponse(response.requestOptions);
             }
@@ -166,13 +166,13 @@ class ApiService {
 
     _isRefreshing = true;
     try {
-      debugPrint('_handle401InResponse -> 开始刷新 token');
+      AppLogger.d('_handle401InResponse -> 开始刷新 token');
       if (refreshTokenCallback != null) {
         await refreshTokenCallback!();
       }
-      debugPrint('_handle401InResponse -> token 刷新完成');
+      AppLogger.d('_handle401InResponse -> token 刷新完成');
     } catch (e) {
-      debugPrint('_handle401InResponse -> 刷新失败: $e');
+      AppLogger.d('_handle401InResponse -> 刷新失败: $e');
       if (clearAuthCallback != null) {
         await clearAuthCallback!();
       }
@@ -185,8 +185,8 @@ class ApiService {
   Interceptor _errorInterceptor() {
     return InterceptorsWrapper(
       onError: (error, handler) async {
-        debugPrint("_errorInterceptor -> 获取files列表: response");
-        debugPrint('API Error: ${error.requestOptions.uri} - ${error.message}');
+        AppLogger.d("_errorInterceptor -> 获取files列表: response");
+        AppLogger.d('API Error: ${error.requestOptions.uri} - ${error.message}');
 
         // 检查是否是 401 错误（HTTP 401 或 JSON code: 401）
         bool is401Error = error.response?.statusCode == 401;
@@ -219,7 +219,7 @@ class ApiService {
         final statusCode = error.response?.statusCode;
         final responseData = error.response?.data;
 
-        debugPrint('Error Response Data: $responseData');
+        AppLogger.d('Error Response Data: $responseData');
 
         if (responseData is Map<String, dynamic>) {
           final response = ApiResponse.fromJson(responseData);
@@ -284,7 +284,7 @@ class ApiService {
       error.requestOptions.headers.remove('Authorization');
       return await _dio.fetch(error.requestOptions);
     } catch (e) {
-      debugPrint('Refresh token failed: $e');
+      AppLogger.d('Refresh token failed: $e');
       _isRefreshing = false;
 
       // 刷新失败，清除认证数据
@@ -333,8 +333,8 @@ class ApiService {
     Map<String, dynamic>? headers,
     bool isNoData = false,
   }) async {
-    debugPrint('API POST Request: $path');
-    debugPrint('Request Data: $data');
+    AppLogger.d('API POST Request: $path');
+    AppLogger.d('Request Data: $data');
 
     final response = await _dio.post<T>(
       path,
@@ -343,7 +343,7 @@ class ApiService {
       options: Options(extra: {'noAuth': noAuth}, headers: headers),
     );
 
-    debugPrint('Response Data: ${response.data}');
+    AppLogger.d('Response Data: ${response.data}');
     
     var isActivEmail = 0;
     if (response.statusCode == 200) {
@@ -367,7 +367,7 @@ class ApiService {
     Map<String, dynamic>? headers,
     ProgressCallback? onSendProgress,
   }) async {
-    debugPrint('API POST Request with progress: $path');
+    AppLogger.d('API POST Request with progress: $path');
 
     final response = await _dio.post<T>(
       path,
@@ -377,7 +377,7 @@ class ApiService {
       onSendProgress: onSendProgress,
     );
 
-    debugPrint('Response Data: ${response.data}');
+    AppLogger.d('Response Data: ${response.data}');
 
     return _parseResponse<T>(response);
   }

@@ -98,7 +98,18 @@ class _LoginPageState extends State<LoginPage> {
         email: _emailController.text.trim(),
         password: _passwordController.text,
         rememberMe: _rememberMe,
+      ).timeout(
+        const Duration(seconds: 5),
+        onTimeout: () {
+          throw Exception('请求超时');
+        },
       );
+
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
 
       if (success && mounted) {
         _focusNode.unfocus();
@@ -108,15 +119,53 @@ class _LoginPageState extends State<LoginPage> {
         if (mounted) {
           navigator.pushReplacementNamed(RouteNames.home);
         }
+      } else if (mounted) {
+        final errorMessage = authProvider.errorMessage;
+        if (errorMessage != null && errorMessage.isNotEmpty) {
+          final errorMsg = _parseErrorMessage(errorMessage);
+          ToastHelper.failure(errorMsg);
+        } else {
+          ToastHelper.failure('登录失败');
+        }
       }
     } catch (e) {
       if (mounted) {
         setState(() {
           _isLoading = false;
         });
-        ToastHelper.failure('登录失败: ${e.toString()}');
+        final errorMsg = _parseErrorMessage(e.toString());
+        ToastHelper.failure(errorMsg);
       }
     }
+  }
+
+  String _parseErrorMessage(String error) {
+    if (error.startsWith('Exception(') || error.startsWith('AppException(')) {
+      final startIdx = error.indexOf('(');
+      final endIdx = error.lastIndexOf(')');
+      if (startIdx != -1 && endIdx != -1 && endIdx > startIdx) {
+        return error.substring(startIdx + 1, endIdx).trim();
+      }
+    }
+    if (error.contains(':')) {
+      final parts = error.split(':');
+      if (parts.length > 1) {
+        final msg = parts.sublist(1).join(':').trim();
+        if (msg.isNotEmpty) {
+          return '登录失败: $msg';
+        }
+      }
+    }
+    if (error.contains('"') && error.split('"').length >= 2) {
+      final parts = error.split('"');
+      if (parts.length >= 2) {
+        final msg = parts[1].trim();
+        if (msg.isNotEmpty && msg != 'login') {
+          return '登录失败: $msg';
+        }
+      }
+    }
+    return error.isEmpty ? '登录失败: 未知原因' : '登录失败: $error';
   }
 
   @override

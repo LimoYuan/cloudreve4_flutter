@@ -100,6 +100,12 @@ class ApiService {
     _initialized = true;
   }
 
+  /// 动态设置 API baseUrl
+  Future<void> setBaseUrl(String baseUrl) async {
+    _dio.options.baseUrl = baseUrl;
+    debugPrint('ApiService baseUrl 已更新为: $baseUrl');
+  }
+
   /// 请求拦截器
   Interceptor _requestInterceptor() {
     return InterceptorsWrapper(

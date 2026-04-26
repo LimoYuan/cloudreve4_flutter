@@ -9,7 +9,13 @@
       "Bash(python3 -c ' *)",
       "Bash(git checkout *)",
       "Bash(awk '/void _showShareDialog/,/^  \\\\}\\\\\\)/{print NR\": $0}' /home/aeno/Documents/cloudreve4_flutter/lib/presentation/pages/home/home_page.dart)",
-      "Bash(grep -A \"^+.*onShare\\\\|^+.*_showShareDialog\")"
+      "Bash(grep -A \"^+.*onShare\\\\|^+.*_showShareDialog\")",
+      "Bash(awk 'NR<142 || NR>178' /home/aeno/Documents/cloudreve4_flutter/lib/presentation/pages/auth/login_page.dart)",
+      "Bash(cat /tmp/parse_error.txt)",
+      "Bash(awk 'NR>178' /home/aeno/Documents/cloudreve4_flutter/lib/presentation/pages/auth/login_page.dart)",
+      "Bash(mv /tmp/login_part1.txt /home/aeno/Documents/cloudreve4_flutter/lib/presentation/pages/auth/login_page.dart)",
+      "Bash(head -798 /home/aeno/Documents/cloudreve4_flutter/lib/presentation/pages/auth/login_page.dart)",
+      "Bash(tail -n +835 /home/aeno/Documents/cloudreve4_flutter/lib/presentation/pages/auth/login_page.dart)"
     ],
     "additionalDirectories": [
       "/home/aeno/Documents/cloudreve4_flutter4_flutter/lib/presentation/widgets"

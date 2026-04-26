@@ -65,9 +65,11 @@ class AuthProvider extends ChangeNotifier {
         }
       }
 
+      _user = null;
       setState(AuthState.unauthenticated);
     } catch (e) {
       debugPrint('AuthProvider 初始化失败: $e');
+      _user = null;
       setState(AuthState.unauthenticated);
     }
   }
@@ -101,10 +103,10 @@ class AuthProvider extends ChangeNotifier {
 
   /// 设置 API baseUrl
   Future<void> _setApiBaseUrl(String baseUrl) async {
-    // 这里需要通过某种方式设置 API 的 baseUrl
-    // 暂时使用 StorageService 的 customBaseUrl 机制
+    // 同时更新存储和 ApiService 的 baseUrl
     final storageService = StorageService.instance;
     await storageService.setCustomBaseUrl(baseUrl);
+    await ApiService.instance.setBaseUrl(baseUrl);
   }
 
   /// 密码登录
@@ -120,11 +122,12 @@ class AuthProvider extends ChangeNotifier {
       final server = ServerService.instance.currentServer;
       if (server == null) {
         _errorMessage = '请先选择服务器';
+        _user = null;
         setState(AuthState.error);
         return false;
       }
 
-      // 设置 API 的 baseUrl
+      // 每次登录时都重新设置 API 的 baseUrl，确保使用最新的服务器地址
       await _setApiBaseUrl(server.baseUrl);
 
       // 执行登录
@@ -147,6 +150,7 @@ class AuthProvider extends ChangeNotifier {
       return true;
     } catch (e) {
       _errorMessage = e.toString();
+      _user = null;
       setState(AuthState.error);
       return false;
     }
@@ -157,7 +161,12 @@ class AuthProvider extends ChangeNotifier {
     try {
       // 调用登出 API（需要 token）
       if (token?.refreshToken != null) {
-        await AuthService.instance.logout();
+        try {
+          await AuthService.instance.logout();
+        } catch (e) {
+          // 登出 API 调用失败不影响本地清理
+          debugPrint('登出 API 调用失败: $e');
+        }
       }
 
       // 清除当前服务器的登录信息
@@ -166,8 +175,10 @@ class AuthProvider extends ChangeNotifier {
       _clearUserData();
       setState(AuthState.unauthenticated);
     } catch (e) {
+      // 即使出错也要清除本地状态
+      _clearUserData();
+      setState(AuthState.unauthenticated);
       _errorMessage = e.toString();
-      setState(AuthState.error);
     }
   }
 
@@ -209,6 +220,9 @@ class AuthProvider extends ChangeNotifier {
       setUser(updatedUser);
     } catch (e) {
       debugPrint('刷新 token 失败: $e');
+      _user = null;
+      _errorMessage = e.toString();
+      notifyListeners();
       rethrow;
     }
   }
@@ -235,6 +249,7 @@ class AuthProvider extends ChangeNotifier {
   void _clearUserData() {
     _user = null;
     _errorMessage = null;
+    _hasRefreshTokenExpired = false;
     notifyListeners();
   }
 

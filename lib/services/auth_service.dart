@@ -194,18 +194,26 @@ class LoginResponseModel {
   LoginResponseModel({required this.user});
 
   factory LoginResponseModel.fromJson(Map<String, dynamic> json) {
-    // debugPrint('AuthProvider 登录成功: ${json}');
-    final Map<String, dynamic> data;
-    
-    if (json['data'] != null) {
-      data = json['data'] as Map<String, dynamic>;
-    } else {
-      data = json;
+    // 检查是否为错误响应（包含 code 和 msg 但没有 data 或 user）
+    final code = json['code'] as int?;
+    final msg = json['msg'] as String?;
+    final Map<String, dynamic>? data = json['data'] as Map<String, dynamic>?;
+
+    // 如果 code 不是 0，说明是错误响应
+    if (code != null && code != 0) {
+      throw Exception(msg ?? '登录失败');
     }
 
+    // 如果没有 data 且也没有 user，说明是错误响应
+    if (data == null && json['user'] == null) {
+      throw Exception(msg ?? '登录失败');
+    }
+
+    final Map<String, dynamic> userData = data ?? json;
+    final userJson = userData['user'] as Map<String, dynamic>;
+
     // 将 token 合并到 user 中
-    final userJson = data['user'] as Map<String, dynamic>;
-    userJson['token'] = data['token'];
+    userJson['token'] = userData['token'];
 
     return LoginResponseModel(user: UserModel.fromJson(userJson));
   }

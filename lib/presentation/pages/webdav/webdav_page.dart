@@ -51,9 +51,7 @@ class _WebdavPageState extends State<WebdavPage> {
     final isDesktop = MediaQuery.of(context).size.width > _desktopBreakpoint;
 
     return Scaffold(
-      backgroundColor: isDesktop
-          ? const Color(0xFFF8F9FA)
-          : Theme.of(context).scaffoldBackgroundColor,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: const Text('WebDAV',
             style: TextStyle(fontWeight: FontWeight.bold)),
@@ -160,95 +158,109 @@ class _WebdavPageState extends State<WebdavPage> {
 
   /// 桌面端布局：数据表格
   Widget _buildDesktopLayout(List<DavAccountModel> accounts) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(32),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-                color: Colors.black.withValues(alpha: 0.02),
-                blurRadius: 10,
-                offset: const Offset(0, 4))
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: DataTable(
-            headingRowColor:
-                WidgetStateProperty.all(Colors.grey.shade50),
-            columnSpacing: 24,
-            columns: const [
-              DataColumn(
-                  label: Text('名称',
-                      style: TextStyle(fontWeight: FontWeight.bold))),
-              DataColumn(
-                  label: Text('URI',
-                      style: TextStyle(fontWeight: FontWeight.bold))),
-              DataColumn(
-                  label: Text('密码',
-                      style: TextStyle(fontWeight: FontWeight.bold))),
-              DataColumn(
-                  label: Text('创建时间',
-                      style: TextStyle(fontWeight: FontWeight.bold))),
-              DataColumn(
-                  label: Text('操作',
-                      style: TextStyle(fontWeight: FontWeight.bold))),
-            ],
-            rows: accounts.map((account) {
-              return DataRow(
-                cells: [
-                  DataCell(
-                    Row(
-                      children: [
-                        _buildAccountIcon(size: 20),
-                        const SizedBox(width: 12),
-                        SizedBox(
-                          width: 120,
-                          child: Text(account.name,
-                              overflow: TextOverflow.ellipsis),
-                        ),
-                      ],
-                    ),
-                  ),
-                  DataCell(Text(account.uri,
-                      style: const TextStyle(fontSize: 12))),
-                  DataCell(Text(_maskPassword(account.password),
-                      style: const TextStyle(
-                          fontFamily: 'monospace', fontSize: 12))),
-                  DataCell(Text(_formatDate(account.createdAt),
-                      style: const TextStyle(fontSize: 12))),
-                  DataCell(
-                    Row(
-                      children: [
-                        _buildActionButton(
-                          icon: Icons.copy,
-                          tooltip: '复制凭据',
-                          color: Colors.blue,
-                          onPressed: () => _copyCredentials(context, account),
-                        ),
-                        _buildActionButton(
-                          icon: Icons.edit_outlined,
-                          tooltip: '编辑',
-                          color: Colors.orange,
-                          onPressed: () => _showEditDialog(context, account),
-                        ),
-                        _buildActionButton(
-                          icon: Icons.delete_outline,
-                          tooltip: '删除',
-                          color: Colors.red,
-                          onPressed: () => _showDeleteDialog(context, account),
-                        ),
-                      ],
-                    ),
-                  ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final screenWidth = constraints.maxWidth;
+        final contentWidth = screenWidth * 0.8;
+        final horizontalPadding = (screenWidth - contentWidth) / 2;
+
+        return SingleChildScrollView(
+          padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 32),
+          child: SizedBox(
+            width: contentWidth,
+            child: Container(
+              decoration: BoxDecoration(
+                color: Theme.of(context).cardColor,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.withValues(alpha: 0.1)),
+                boxShadow: [
+                  BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.03),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2))
                 ],
-              );
-            }).toList(),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: DataTable(
+                  headingRowColor:
+                      WidgetStateProperty.all(Theme.of(context).colorScheme.surfaceContainerHighest),
+                  columnSpacing: 24,
+                  columns: const [
+                    DataColumn(
+                        label: Text('名称',
+                            style: TextStyle(fontWeight: FontWeight.bold))),
+                    DataColumn(
+                        label: Text('URI',
+                            style: TextStyle(fontWeight: FontWeight.bold))),
+                    DataColumn(
+                        label: Text('密码',
+                            style: TextStyle(fontWeight: FontWeight.bold))),
+                    DataColumn(
+                        label: Text('创建时间',
+                            style: TextStyle(fontWeight: FontWeight.bold))),
+                    DataColumn(
+                        label: Text('操作',
+                            style: TextStyle(fontWeight: FontWeight.bold))),
+                  ],
+                  rows: accounts.map((account) {
+                    return DataRow(
+                      cells: [
+                        DataCell(
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 200),
+                            child: Row(
+                              children: [
+                                _buildAccountIcon(size: 20),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(account.name,
+                                      overflow: TextOverflow.ellipsis),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        DataCell(Text(account.uri,
+                            style: const TextStyle(fontSize: 12))),
+                        DataCell(Text(_maskPassword(account.password),
+                            style: const TextStyle(
+                                fontFamily: 'monospace', fontSize: 12))),
+                        DataCell(Text(_formatDate(account.createdAt),
+                            style: const TextStyle(fontSize: 12))),
+                        DataCell(
+                          Row(
+                            children: [
+                              _buildActionButton(
+                                icon: Icons.copy,
+                                tooltip: '复制凭据',
+                                color: Colors.blue,
+                                onPressed: () => _copyCredentials(context, account),
+                              ),
+                              _buildActionButton(
+                                icon: Icons.edit_outlined,
+                                tooltip: '编辑',
+                                color: Colors.orange,
+                                onPressed: () => _showEditDialog(context, account),
+                              ),
+                              _buildActionButton(
+                                icon: Icons.delete_outline,
+                                tooltip: '删除',
+                                color: Colors.red,
+                                onPressed: () => _showDeleteDialog(context, account),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    );
+                  }).toList(),
+                ),
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:media_kit/media_kit.dart';
+import 'package:oktoast/oktoast.dart';
 import 'config/app_config.dart';
 import 'config/theme_config.dart';
 import 'presentation/providers/auth_provider.dart';
@@ -13,6 +14,7 @@ import 'services/api_service.dart';
 import 'services/server_service.dart';
 import 'services/cache_manager_service.dart';
 import 'router/app_router.dart';
+import 'presentation/widgets/toast_helper.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -71,18 +73,20 @@ class AppView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: AppConfig.appName,
-      debugShowCheckedModeBanner: false,
-      theme: ThemeConfig.lightTheme,
-      darkTheme: ThemeConfig.darkTheme,
-      themeMode: ThemeMode.system,
-      onGenerateRoute: AppRouter.generateRoute,
-      initialRoute: RouteNames.splash,
-      builder: (context, child) {
-        // 添加全局错误处理
-        return ErrorHandler(child: child!);
-      },
+    return OKToast(
+      child: MaterialApp(
+        title: AppConfig.appName,
+        debugShowCheckedModeBanner: false,
+        theme: ThemeConfig.lightTheme,
+        darkTheme: ThemeConfig.darkTheme,
+        themeMode: ThemeMode.system,
+        onGenerateRoute: AppRouter.generateRoute,
+        initialRoute: RouteNames.splash,
+        builder: (context, child) {
+          // 添加全局错误处理
+          return ErrorHandler(child: child!);
+        },
+      ),
     );
   }
 }
@@ -100,25 +104,15 @@ class ErrorHandler extends StatelessWidget {
         // 检查是否有待处理的登录过期错误
         if (authProvider.hasRefreshTokenExpired) {
           WidgetsBinding.instance.addPostFrameCallback((_) async {
-            final scaffoldMessenger = ScaffoldMessenger.of(context);
             final navigator = Navigator.of(context);
 
-            // 显示 SnackBar
-            scaffoldMessenger.showSnackBar(
-              const SnackBar(
-                content: Text('登录已过期，请重新登录'),
-                backgroundColor: Colors.red,
-                duration: Duration(seconds: 2),
-              ),
-            );
+            ToastHelper.failure('登录已过期，请重新登录');
 
-            // 跳转到登录页
             navigator.pushNamedAndRemoveUntil(
               RouteNames.login,
               (route) => false,
             );
 
-            // 清除标志
             authProvider.clearRefreshTokenExpired();
           });
         }

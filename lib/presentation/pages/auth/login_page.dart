@@ -7,6 +7,7 @@ import '../../../services/server_service.dart';
 import '../../../router/app_router.dart';
 import 'forgot_password_page.dart';
 import 'register_page.dart';
+import '../../widgets/toast_helper.dart';
 
 /// 登录页
 class LoginPage extends StatefulWidget {
@@ -86,7 +87,6 @@ class _LoginPageState extends State<LoginPage> {
     }
 
     final navigator = Navigator.of(context);
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
 
     setState(() {
@@ -101,19 +101,9 @@ class _LoginPageState extends State<LoginPage> {
       );
 
       if (success && mounted) {
-        // 关闭键盘
         _focusNode.unfocus();
+        ToastHelper.success('登录成功');
 
-        // 显示成功提示
-        scaffoldMessenger.showSnackBar(
-          const SnackBar(
-            content: Text('登录成功'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 1),
-          ),
-        );
-
-        // 1秒后跳转到主页
         await Future.delayed(const Duration(seconds: 1));
         if (mounted) {
           navigator.pushReplacementNamed(RouteNames.home);
@@ -124,14 +114,7 @@ class _LoginPageState extends State<LoginPage> {
         setState(() {
           _isLoading = false;
         });
-        // 显示错误提示
-        scaffoldMessenger.showSnackBar(
-          SnackBar(
-            content: Text('登录失败: ${e.toString()}'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 2),
-          ),
-        );
+        ToastHelper.failure('登录失败: ${e.toString()}');
       }
     }
   }
@@ -595,15 +578,11 @@ class _ServerManagementSheetState extends State<ServerManagementSheet> {
         );
         setState(() {});
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('服务器已添加')),
-          );
+          ToastHelper.success('服务器已添加');
         }
       } catch (e) {
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('添加失败: $e')),
-          );
+          ToastHelper.failure('添加失败: $e');
         }
       }
     }
@@ -669,15 +648,11 @@ class _ServerManagementSheetState extends State<ServerManagementSheet> {
         );
         setState(() {});
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('服务器已更新')),
-          );
+          ToastHelper.success('服务器已更新');
         }
       } catch (e) {
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('更新失败: $e')),
-          );
+          ToastHelper.failure('更新失败: $e');
         }
       }
     }
@@ -713,15 +688,11 @@ class _ServerManagementSheetState extends State<ServerManagementSheet> {
         await ServerService.instance.deleteServer(server.label);
         setState(() {});
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('服务器已删除')),
-          );
+          ToastHelper.success('服务器已删除');
         }
       } catch (e) {
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('删除失败: $e')),
-          );
+          ToastHelper.failure('删除失败: $e');
         }
       }
     }

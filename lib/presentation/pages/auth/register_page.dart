@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/validators/string_validator.dart';
 import '../../../services/auth_service.dart';
+import '../../widgets/toast_helper.dart';
 
 /// 注册页
 class RegisterPage extends StatefulWidget {
@@ -53,15 +54,10 @@ class _RegisterPageState extends State<RegisterPage> {
       );
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              response.requiresEmailActivation
-                  ? '注册成功，请查收邮箱进行验证'
-                  : '注册成功',
-            ),
-            backgroundColor: Colors.green,
-          ),
+        ToastHelper.success(
+          response.requiresEmailActivation
+              ? '注册成功，请查收邮箱进行验证'
+              : '注册成功',
         );
         Navigator.of(context).pop();
       }

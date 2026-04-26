@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../../data/models/download_task_model.dart';
 import '../../services/download_service.dart';
 import '../providers/download_manager_provider.dart';
+import 'toast_helper.dart';
 
 /// 下载任务列表项
 class DownloadProgressItem extends StatelessWidget {
@@ -203,13 +204,10 @@ class DownloadProgressItem extends StatelessWidget {
     BuildContext context,
     DownloadTaskModel task,
   ) async {
-    // 检查文件是否存在
     final file = File(task.savePath);
     if (!await file.exists()) {
       if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('文件不存在：${task.fileName}')));
+        ToastHelper.error('文件不存在：${task.fileName}');
       }
       return;
     }
@@ -227,20 +225,14 @@ class DownloadProgressItem extends StatelessWidget {
         debugPrint('成功打开文件：${task.fileName}');
       } else {
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                '无法打开文件：${task.fileName} 错误信息: ${openResult.message}',
-              ),
-            ),
+          ToastHelper.error(
+            '无法打开文件：${task.fileName} 错误信息: ${openResult.message}',
           );
         }
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('打开文件失败：$e')));
+        ToastHelper.error('打开文件失败：$e');
       }
     }
   }

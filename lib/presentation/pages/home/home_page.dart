@@ -18,6 +18,7 @@ import '../../widgets/home_drawer.dart';
 import '../../widgets/upload_dialog.dart';
 import '../../widgets/file_operation_dialogs.dart';
 import '../../widgets/gesture_handler_mixin.dart';
+import '../../widgets/toast_helper.dart';
 import '../../../router/app_router.dart';
 import '../../../core/utils/file_type_utils.dart';
 
@@ -597,11 +598,7 @@ class _HomePageState extends State<HomePage> with GestureHandlerMixin {
         arguments: file,
       );
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('暂不支持预览 ${FileTypeUtils.getFileTypeDescription(file.name)}'),
-        ),
-      );
+      ToastHelper.info('暂不支持预览 ${FileTypeUtils.getFileTypeDescription(file.name)}');
     }
   }
 
@@ -623,9 +620,7 @@ class _HomePageState extends State<HomePage> with GestureHandlerMixin {
 
     if (task != null) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('文件已在下载列表中')),
-        );
+        ToastHelper.info('文件已在下载列表中');
       }
       return;
     }
@@ -652,17 +647,13 @@ class _HomePageState extends State<HomePage> with GestureHandlerMixin {
           await launchUrl(uri, mode: LaunchMode.platformDefault);
         } else {
           if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('无法打开链接: $uri')),
-            );
+            ToastHelper.error('无法打开链接: $uri');
           }
         }
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('获取下载链接失败: $e')),
-        );
+        ToastHelper.failure('获取下载链接失败: $e');
       }
     }
   }

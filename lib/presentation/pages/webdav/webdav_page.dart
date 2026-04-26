@@ -6,6 +6,7 @@ import '../../../data/models/server_model.dart';
 import '../../../services/webdav_service.dart';
 import '../../../services/storage_service.dart';
 import '../../providers/auth_provider.dart';
+import '../../widgets/toast_helper.dart';
 
 /// WebDAV 页面 - 响应式布局
 /// 桌面端（宽度 > 800）：使用数据表格
@@ -505,7 +506,6 @@ class _WebdavPageState extends State<WebdavPage> {
 
   Future<void> _loadAccounts() async {
     if (!mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
 
     setState(() {
       _isLoading = true;
@@ -528,9 +528,7 @@ class _WebdavPageState extends State<WebdavPage> {
         _isLoading = false;
       });
 
-      messenger.showSnackBar(
-        const SnackBar(content: Text('刷新成功'), backgroundColor: Colors.green),
-      );
+      ToastHelper.success('刷新成功');
     } catch (e) {
       if (!mounted) return;
 
@@ -539,16 +537,13 @@ class _WebdavPageState extends State<WebdavPage> {
         _errorMessage = e.toString();
       });
 
-      messenger.showSnackBar(
-        SnackBar(content: Text('刷新失败: $e'), backgroundColor: Colors.red),
-      );
+      ToastHelper.failure('刷新失败: $e');
     }
   }
 
   void _copyCredentials(BuildContext context, DavAccountModel account) async {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final username = authProvider.user?.email ?? account.id;
-    final messenger = ScaffoldMessenger.of(context);
 
     final storageService = StorageService.instance;
     final servers = await storageService.servers;
@@ -573,17 +568,11 @@ class _WebdavPageState extends State<WebdavPage> {
     Clipboard.setData(ClipboardData(text: credentials));
 
     if (mounted) {
-      messenger.showSnackBar(
-        const SnackBar(
-          content: Text('凭据已复制到剪贴板'),
-          backgroundColor: Colors.green,
-        ),
-      );
+      ToastHelper.success('凭据已复制到剪贴板');
     }
   }
 
   Future<void> _showCreateDialog(BuildContext context) async {
-    final messenger = ScaffoldMessenger.of(context);
     final nameController = TextEditingController();
     final uriController = TextEditingController();
     final proxyController = TextEditingController(text: 'false');
@@ -668,12 +657,7 @@ class _WebdavPageState extends State<WebdavPage> {
       final readonly = readonlyController.text.trim().toLowerCase() == 'true';
 
       if (name.isEmpty || uri.isEmpty) {
-        messenger.showSnackBar(
-          const SnackBar(
-            content: Text('请填写名称和URI'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        ToastHelper.error('请填写名称和URI');
         return;
       }
 
@@ -696,9 +680,7 @@ class _WebdavPageState extends State<WebdavPage> {
           _isLoading = false;
         });
 
-        messenger.showSnackBar(
-          const SnackBar(content: Text('创建成功'), backgroundColor: Colors.green),
-        );
+        ToastHelper.success('创建成功');
       } catch (e) {
         if (!mounted) return;
 
@@ -706,9 +688,7 @@ class _WebdavPageState extends State<WebdavPage> {
           _isLoading = false;
         });
 
-        messenger.showSnackBar(
-          SnackBar(content: Text('创建失败: $e'), backgroundColor: Colors.red),
-        );
+        ToastHelper.failure('创建失败: $e');
       }
     }
   }
@@ -717,7 +697,6 @@ class _WebdavPageState extends State<WebdavPage> {
     BuildContext context,
     DavAccountModel account,
   ) async {
-    final messenger = ScaffoldMessenger.of(context);
     final nameController = TextEditingController(text: account.name);
     final uriController = TextEditingController(text: account.uri);
 
@@ -770,12 +749,7 @@ class _WebdavPageState extends State<WebdavPage> {
       final uri = uriController.text.trim();
 
       if (name.isEmpty || uri.isEmpty) {
-        messenger.showSnackBar(
-          const SnackBar(
-            content: Text('请填写名称和URI'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        ToastHelper.error('请填写名称和URI');
         return;
       }
 
@@ -800,9 +774,7 @@ class _WebdavPageState extends State<WebdavPage> {
           _isLoading = false;
         });
 
-        messenger.showSnackBar(
-          const SnackBar(content: Text('更新成功'), backgroundColor: Colors.green),
-        );
+        ToastHelper.success('更新成功');
       } catch (e) {
         if (!mounted) return;
 
@@ -810,9 +782,7 @@ class _WebdavPageState extends State<WebdavPage> {
           _isLoading = false;
         });
 
-        messenger.showSnackBar(
-          SnackBar(content: Text('更新失败: $e'), backgroundColor: Colors.red),
-        );
+        ToastHelper.failure('更新失败: $e');
       }
     }
   }
@@ -821,7 +791,6 @@ class _WebdavPageState extends State<WebdavPage> {
     BuildContext context,
     DavAccountModel account,
   ) async {
-    final messenger = ScaffoldMessenger.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -858,9 +827,7 @@ class _WebdavPageState extends State<WebdavPage> {
           _isLoading = false;
         });
 
-        messenger.showSnackBar(
-          const SnackBar(content: Text('删除成功'), backgroundColor: Colors.green),
-        );
+        ToastHelper.success('删除成功');
       } catch (e) {
         if (!mounted) return;
 
@@ -868,9 +835,7 @@ class _WebdavPageState extends State<WebdavPage> {
           _isLoading = false;
         });
 
-        messenger.showSnackBar(
-          SnackBar(content: Text('删除失败: $e'), backgroundColor: Colors.red),
-        );
+        ToastHelper.failure('删除失败: $e');
       }
     }
   }

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../providers/file_manager_provider.dart';
 import 'folder_picker.dart';
+import 'toast_helper.dart';
 
 /// 文件操作对话框工具类
 class FileOperationDialogs {
@@ -43,19 +44,9 @@ class FileOperationDialogs {
     if (confirmed == true && controller.text.isNotEmpty) {
       final error = await fileManager.createFolder(controller.text);
       if (error != null && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('创建文件夹失败: $error'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        ToastHelper.failure('创建文件夹失败: $error');
       } else if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('文件夹创建成功'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        ToastHelper.success('文件夹创建成功');
       }
     }
   }
@@ -126,19 +117,9 @@ class FileOperationDialogs {
     if (confirmed == true) {
       final error = await fileManager.deleteSelectedFiles();
       if (error != null && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('删除失败: $error'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        ToastHelper.failure('删除失败: $error');
       } else if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('删除成功'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        ToastHelper.success('删除成功');
       }
     }
   }
@@ -173,22 +154,12 @@ class FileOperationDialogs {
         await FileService().deleteFiles(uris: [file.path]);
 
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('删除成功'),
-              backgroundColor: Colors.green,
-            ),
-          );
+          ToastHelper.success('删除成功');
           await fileManager.loadFiles();
         }
       } catch (e) {
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('删除失败: $e'),
-              backgroundColor: Colors.red,
-            ),
-          );
+          ToastHelper.failure('删除失败: $e');
         }
       }
     }
@@ -221,22 +192,12 @@ class FileOperationDialogs {
                 );
 
                 if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(copy ? '复制成功' : '移动成功'),
-                      backgroundColor: Colors.green,
-                    ),
-                  );
+                  ToastHelper.success(copy ? '复制成功' : '移动成功');
                   await fileManager.loadFiles();
                 }
               } catch (e) {
                 if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('${copy ? '复制' : '移动'}失败: $e'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
+                  ToastHelper.failure('${copy ? '复制' : '移动'}失败: $e');
                 }
               }
             },
@@ -352,54 +313,42 @@ class FileOperationDialogs {
         );
 
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Row(
-                children: [
-                  const Icon(Icons.check_circle, color: Colors.white),
-                  const SizedBox(width: 8),
-                  const Text('分享创建成功'),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      shareUrl,
-                      style: const TextStyle(fontSize: 12),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+          ToastHelper.success('分享创建成功');
+          if (context.mounted) {
+            showDialog(
+              context: context,
+              builder: (dialogContext) => AlertDialog(
+                title: const Text('分享链接'),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(shareUrl, style: const TextStyle(fontSize: 12)),
+                    const SizedBox(height: 16),
+                    FilledButton.icon(
+                      icon: const Icon(Icons.copy, size: 16),
+                      label: const Text('复制到剪贴板'),
+                      onPressed: () {
+                        Clipboard.setData(ClipboardData(text: shareUrl));
+                        Navigator.of(dialogContext).pop();
+                        ToastHelper.success('已复制到剪贴板');
+                      },
                     ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.copy, size: 16),
-                    onPressed: () {
-                      Clipboard.setData(
-                        ClipboardData(text: shareUrl),
-                      );
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('已复制到剪贴板'),
-                        ),
-                      );
-                    },
-                    style: IconButton.styleFrom(
-                      padding: EdgeInsets.zero,
-                      visualDensity: VisualDensity.compact,
-                    ),
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    child: const Text('关闭'),
                   ),
                 ],
               ),
-              backgroundColor: Colors.green,
-              duration: const Duration(seconds: 5),
-            ),
-          );
+            );
+          }
         }
       } catch (e) {
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('分享创建失败: $e'),
-              backgroundColor: Colors.red,
-            ),
-          );
+          ToastHelper.failure('分享创建失败: $e');
         }
       }
     }

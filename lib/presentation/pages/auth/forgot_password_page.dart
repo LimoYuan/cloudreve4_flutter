@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/validators/string_validator.dart';
 import '../../../services/auth_service.dart';
+import '../../widgets/toast_helper.dart';
 
 /// 忘记密码页
 class ForgotPasswordPage extends StatefulWidget {
@@ -38,12 +39,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
       );
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('重置密码邮件已发送，请查收邮箱'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        ToastHelper.success('重置密码邮件已发送，请查收邮箱');
         Navigator.of(context).pop();
       }
     } catch (e) {

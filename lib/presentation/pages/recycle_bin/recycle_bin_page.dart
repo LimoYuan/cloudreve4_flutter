@@ -4,6 +4,7 @@ import '../../../services/file_service.dart';
 import '../../widgets/file_grid_item.dart';
 import '../../widgets/file_list_item.dart';
 import '../../widgets/gesture_handler_mixin.dart';
+import '../../widgets/toast_helper.dart';
 
 /// 回收站页面
 class RecycleBinPage extends StatefulWidget {
@@ -276,7 +277,6 @@ class _RecycleBinPageState extends State<RecycleBinPage>
 
   Future<void> _refreshFiles(BuildContext context) async {
     if (!mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
 
     setState(() {
       _isLoading = true;
@@ -296,12 +296,7 @@ class _RecycleBinPageState extends State<RecycleBinPage>
       });
 
       if (mounted) {
-        messenger.showSnackBar(
-          const SnackBar(
-            content: Text('刷新成功'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        ToastHelper.success('刷新成功');
       }
     } catch (e) {
       setState(() {
@@ -310,12 +305,7 @@ class _RecycleBinPageState extends State<RecycleBinPage>
       });
 
       if (mounted) {
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text('刷新失败: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        ToastHelper.failure('刷新失败: ${e.toString()}');
       }
     }
   }
@@ -401,22 +391,12 @@ class _RecycleBinPageState extends State<RecycleBinPage>
       await FileService().restoreFiles(uris: uris);
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('恢复成功'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        ToastHelper.success('恢复成功');
         await _loadFiles();
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('恢复失败: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        ToastHelper.failure('恢复失败: $e');
       }
     }
   }
@@ -487,22 +467,12 @@ class _RecycleBinPageState extends State<RecycleBinPage>
       );
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('删除成功'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        ToastHelper.success('删除成功');
         await _loadFiles();
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('删除失败: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        ToastHelper.failure('删除失败: $e');
       }
     }
   }

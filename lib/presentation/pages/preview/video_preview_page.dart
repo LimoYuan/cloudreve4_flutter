@@ -70,7 +70,6 @@ class _VideoPreviewPageState extends State<VideoPreviewPage> {
       _playbackSpeed = speed;
     });
     player.setRate(speed);
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
   }
 
   void _showSpeedMenu() {

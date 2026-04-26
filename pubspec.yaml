@@ -86,6 +86,7 @@ dependencies:
   intl: ^0.20.2
   json_annotation: ^4.8.1
   package_info_plus: ^9.0.1
+  oktoast: ^3.4.0
 
 dev_dependencies:
   flutter_test:

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import '../../../data/models/share_model.dart';
 import '../../../services/share_service.dart';
 import '../../../core/utils/file_type_utils.dart';
+import '../../widgets/toast_helper.dart';
 
 /// 分享列表页面 - 响应式布局
 /// 桌面端（宽度 > 800）：使用数据表格
@@ -99,12 +100,11 @@ class _SharesPageState extends State<SharesPage> {
     final success = await _loadShares(isLoadMore: false);
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(success ? '刷新成功' : '刷新失败'),
-          backgroundColor: success ? Colors.green : Colors.red,
-        ),
-      );
+      if (success) {
+        ToastHelper.success('刷新成功');
+      } else {
+        ToastHelper.failure('刷新失败');
+      }
     }
   }
 
@@ -140,12 +140,7 @@ class _SharesPageState extends State<SharesPage> {
         });
 
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('删除成功'),
-              backgroundColor: Colors.green,
-            ),
-          );
+          ToastHelper.success('删除成功');
         }
       } catch (e) {
         setState(() {
@@ -153,12 +148,7 @@ class _SharesPageState extends State<SharesPage> {
         });
 
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('删除失败: $e'),
-              backgroundColor: Colors.red,
-            ),
-          );
+          ToastHelper.failure('删除失败: $e');
         }
       }
     }
@@ -170,12 +160,7 @@ class _SharesPageState extends State<SharesPage> {
     final parts = share.url.split('/');
     if (parts.length < 5) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('分享链接格式错误'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        ToastHelper.error('分享链接格式错误');
       }
       return;
     }
@@ -196,11 +181,7 @@ class _SharesPageState extends State<SharesPage> {
               onPressed: () {
                 Clipboard.setData(ClipboardData(text: share.url));
                 Navigator.of(dialogContext).pop();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('分享链接已复制'),
-                  ),
-                );
+                ToastHelper.success('分享链接已复制');
               },
               tooltip: '复制分享链接',
             ),
@@ -219,11 +200,7 @@ class _SharesPageState extends State<SharesPage> {
                     icon: const Icon(Icons.copy, size: 18),
                     onPressed: () {
                       Clipboard.setData(ClipboardData(text: share.name));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('文件名已复制'),
-                        ),
-                      );
+                      ToastHelper.success('文件名已复制');
                     },
                     tooltip: '复制文件名',
                     style: IconButton.styleFrom(
@@ -306,12 +283,7 @@ class _SharesPageState extends State<SharesPage> {
           });
 
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('无法获取文件信息'),
-                backgroundColor: Colors.red,
-              ),
-            );
+            ToastHelper.error('无法获取文件信息');
           }
           return;
         }
@@ -338,42 +310,34 @@ class _SharesPageState extends State<SharesPage> {
         }
 
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Row(
+          ToastHelper.success('修改成功');
+          showDialog(
+            context: context,
+            builder: (dialogContext) => AlertDialog(
+              title: const Text('分享链接'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.check_circle, color: Colors.white),
-                  const SizedBox(width: 8),
-                  const Text('修改成功'),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      newUrl,
-                      style: const TextStyle(fontSize: 12),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  IconButton(
+                  Text(newUrl, style: const TextStyle(fontSize: 12)),
+                  const SizedBox(height: 16),
+                  FilledButton.icon(
                     icon: const Icon(Icons.copy, size: 16),
+                    label: const Text('复制到剪贴板'),
                     onPressed: () {
                       Clipboard.setData(ClipboardData(text: newUrl));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('已复制到剪贴板'),
-                        ),
-                      );
+                      Navigator.of(dialogContext).pop();
+                      ToastHelper.success('已复制到剪贴板');
                     },
-                    style: IconButton.styleFrom(
-                      padding: EdgeInsets.zero,
-                      minimumSize: const Size(24, 24),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
                   ),
                 ],
               ),
-              backgroundColor: Colors.green,
-              duration: const Duration(seconds: 5),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('关闭'),
+                ),
+              ],
             ),
           );
         }
@@ -383,12 +347,7 @@ class _SharesPageState extends State<SharesPage> {
         });
 
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('修改失败: $e'),
-              backgroundColor: Colors.red,
-            ),
-          );
+          ToastHelper.failure('修改失败: $e');
         }
       }
     }
@@ -578,9 +537,7 @@ class _SharesPageState extends State<SharesPage> {
                           onPressed: () {
                             Clipboard.setData(ClipboardData(text: share.url));
                             if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('链接已复制')),
-                              );
+                              ToastHelper.success('链接已复制');
                             }
                           },
                         ),
@@ -827,9 +784,7 @@ class _SharesPageState extends State<SharesPage> {
                 Navigator.pop(context);
                 Clipboard.setData(ClipboardData(text: share.url));
                 if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('链接已复制')),
-                  );
+                  ToastHelper.success('链接已复制');
                 }
               },
             ),

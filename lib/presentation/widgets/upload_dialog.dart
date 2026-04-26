@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/upload_manager_provider.dart';
 import '../providers/file_manager_provider.dart';
+import 'toast_helper.dart';
 
 /// 显示上传对话框
 void showUploadDialog(BuildContext context) {
@@ -147,9 +148,7 @@ class _UploadDialogContent extends StatelessWidget {
 
       if (!context.mounted) return;
       if (result == null || result.files.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('未选择文件')),
-        );
+        ToastHelper.warning('未选择文件');
         return;
       }
 
@@ -162,9 +161,7 @@ class _UploadDialogContent extends StatelessWidget {
 
       if (files.isEmpty) {
         if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('无法获取文件路径')),
-        );
+        ToastHelper.error('无法获取文件路径');
         return;
       }
 
@@ -187,9 +184,7 @@ class _UploadDialogContent extends StatelessWidget {
       }
     } catch (e) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('选择文件失败: $e')),
-      );
+      ToastHelper.failure('选择文件失败: $e');
     }
   }
 }

@@ -3,6 +3,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../../../data/models/cache_settings_model.dart';
 import '../../../services/cache_manager_service.dart';
+import '../../widgets/toast_helper.dart';
 
 /// 设置页面
 class SettingsPage extends StatefulWidget {
@@ -66,9 +67,7 @@ class _SettingsPageState extends State<SettingsPage> {
         setState(() {
           _isLoading = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('加载设置失败: $e')),
-        );
+        ToastHelper.error('加载设置失败: $e');
       }
     }
   }
@@ -78,9 +77,7 @@ class _SettingsPageState extends State<SettingsPage> {
     await service.saveSettings(_settings);
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('设置已保存')),
-      );
+      ToastHelper.success('设置已保存');
     }
   }
 
@@ -121,18 +118,14 @@ class _SettingsPageState extends State<SettingsPage> {
             _currentCacheSize = newCacheSize;
             _isCleaning = false;
           });
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('缓存已清空')),
-          );
+          ToastHelper.success('缓存已清空');
         }
       } catch (e) {
         if (mounted) {
           setState(() {
             _isCleaning = false;
           });
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('清空缓存失败: $e')),
-          );
+          ToastHelper.failure('清空缓存失败: $e');
         }
       }
     }

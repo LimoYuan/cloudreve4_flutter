@@ -6,6 +6,7 @@ import 'package:photo_view/photo_view.dart';
 import '../../../data/models/file_model.dart';
 import '../../../services/file_service.dart';
 import '../../../services/cache_manager_service.dart';
+import '../../widgets/toast_helper.dart';
 
 /// 图片预览页面
 class ImagePreviewPage extends StatefulWidget {
@@ -138,9 +139,7 @@ class _ImagePreviewPageState extends State<ImagePreviewPage> {
   }
 
   void _bingoHahah() {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('彩蛋彩蛋彩蛋蛋, 对下联')));
+    ToastHelper.info('彩蛋彩蛋彩蛋蛋, 对下联');
   }
 
   Listener _buildPhotoView() {

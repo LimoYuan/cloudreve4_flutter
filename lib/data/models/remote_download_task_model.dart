@@ -1,5 +1,3 @@
-import 'package:cloudreve4_flutter/core/utils/app_logger.dart';
-
 /// 离线下载任务状态
 enum RemoteDownloadStatus {
   queued,
@@ -70,7 +68,7 @@ class DownloadFileInfo {
 /// 下载详情（aria2 返回的信息）
 class DownloadInfo {
   final String name;
-  final String state; // downloading, completed, seeding, paused
+  final String state;
   final int total;
   final int downloaded;
   final int downloadSpeed;
@@ -78,6 +76,7 @@ class DownloadInfo {
   final int uploadSpeed;
   final String hash;
   final List<DownloadFileInfo> files;
+  final int numPieces;
 
   const DownloadInfo({
     required this.name,
@@ -89,6 +88,7 @@ class DownloadInfo {
     required this.uploadSpeed,
     required this.hash,
     required this.files,
+    this.numPieces = 0,
   });
 
   double get progress => total > 0 ? downloaded / total : 0.0;
@@ -96,7 +96,9 @@ class DownloadInfo {
   String get speedText {
     if (downloadSpeed <= 0) return '';
     if (downloadSpeed < 1024) return '$downloadSpeed B/s';
-    if (downloadSpeed < 1024 * 1024) return '${(downloadSpeed / 1024).toStringAsFixed(1)} KB/s';
+    if (downloadSpeed < 1024 * 1024) {
+      return '${(downloadSpeed / 1024).toStringAsFixed(1)} KB/s';
+    }
     return '${(downloadSpeed / (1024 * 1024)).toStringAsFixed(1)} MB/s';
   }
 
@@ -111,7 +113,40 @@ class DownloadInfo {
       uploaded: (json['uploaded'] as num?)?.toInt() ?? 0,
       uploadSpeed: (json['upload_speed'] as num?)?.toInt() ?? 0,
       hash: json['hash'] as String? ?? '',
-      files: filesList.map((f) => DownloadFileInfo.fromJson(f as Map<String, dynamic>)).toList(),
+      files: filesList
+          .map((f) => DownloadFileInfo.fromJson(f as Map<String, dynamic>))
+          .toList(),
+      numPieces: (json['num_pieces'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+/// 处理节点信息
+class TaskNode {
+  final String id;
+  final String name;
+  final String type;
+
+  const TaskNode({
+    required this.id,
+    required this.name,
+    required this.type,
+  });
+
+  String get displayName {
+    switch (type) {
+      case 'master':
+        return '$name（本机）';
+      default:
+        return name;
+    }
+  }
+
+  factory TaskNode.fromJson(Map<String, dynamic> json) {
+    return TaskNode(
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      type: json['type'] as String? ?? '',
     );
   }
 }
@@ -142,7 +177,8 @@ class TaskSummary {
       src: json['props']?['src'] as String? ?? '',
       srcStr: json['props']?['src_str'] as String? ?? '',
       download: json['props']?['download'] != null
-          ? DownloadInfo.fromJson(json['props']!['download'] as Map<String, dynamic>)
+          ? DownloadInfo.fromJson(
+              json['props']!['download'] as Map<String, dynamic>)
           : null,
     );
   }
@@ -157,7 +193,10 @@ class RemoteDownloadTaskModel {
   final DateTime updatedAt;
   final int duration;
   final String? error;
+  final TaskNode? node;
   final TaskSummary? summary;
+  final int resumeTime;
+  final int retryCount;
 
   const RemoteDownloadTaskModel({
     required this.id,
@@ -167,7 +206,10 @@ class RemoteDownloadTaskModel {
     required this.updatedAt,
     required this.duration,
     this.error,
+    this.node,
     this.summary,
+    this.resumeTime = 0,
+    this.retryCount = 0,
   });
 
   String getFileNameFromUrl(String url) {
@@ -182,6 +224,7 @@ class RemoteDownloadTaskModel {
       return '';
     }
   }
+
   /// 显示名称：优先使用 download.name，其次 srcStr，最后 id
   String get displayName {
     final dlName = summary?.download?.name;
@@ -189,12 +232,47 @@ class RemoteDownloadTaskModel {
       return dlName;
     } else {
       final srcStr = summary?.srcStr;
-      if (srcStr == null || srcStr.isNotEmpty) return id;
+      if (srcStr == null || srcStr.isEmpty) return id;
 
       final fileName = getFileNameFromUrl(srcStr);
       if (fileName.isEmpty) return id;
       return fileName;
     }
+  }
+
+  /// 格式化耗时（duration 单位为毫秒）
+  String get durationText {
+    final seconds = duration ~/ 1000;
+    if (seconds <= 0) return '-';
+    if (seconds < 60) return '$seconds 秒';
+    if (seconds < 3600) return '${seconds ~/ 60} 分 ${seconds % 60} 秒';
+    final hours = seconds ~/ 3600;
+    final minutes = (seconds % 3600) ~/ 60;
+    return '$hours 小时 $minutes 分';
+  }
+
+  /// 输入源显示文本
+  String get srcDisplayText {
+    final srcStr = summary?.srcStr;
+    if (srcStr != null && srcStr.isNotEmpty) return srcStr;
+    final src = summary?.src;
+    if (src!.isNotEmpty) {
+      // 从 cloudreve URI 提取文件名
+      final parts = src.split('/');
+      return parts.isNotEmpty ? parts.last : src;
+    }
+    return '-';
+  }
+
+  /// 输出目标显示文本（从 cloudreve URI 转换为相对路径）
+  String get dstDisplayText {
+    final dst = summary?.dst ?? '';
+    if (dst.isEmpty) return '-';
+    if (dst.startsWith('cloudreve://my')) {
+      final relative = dst.replaceFirst('cloudreve://my', '');
+      return relative.isEmpty ? '/' : relative;
+    }
+    return dst;
   }
 
   factory RemoteDownloadTaskModel.fromJson(Map<String, dynamic> json) {
@@ -203,16 +281,21 @@ class RemoteDownloadTaskModel {
       status: RemoteDownloadStatus.fromString(json['status'] as String),
       type: json['type'] as String? ?? '',
       createdAt: json['created_at'] != null
-          ? DateTime.parse(json['created_at'] as String)
+          ? DateTime.parse(json['created_at'] as String).toLocal()
           : DateTime.now(),
       updatedAt: json['updated_at'] != null
-          ? DateTime.parse(json['updated_at'] as String)
+          ? DateTime.parse(json['updated_at'] as String).toLocal()
           : DateTime.now(),
       duration: (json['duration'] as num?)?.toInt() ?? 0,
       error: json['error'] as String?,
+      node: json['node'] != null
+          ? TaskNode.fromJson(json['node'] as Map<String, dynamic>)
+          : null,
       summary: json['summary'] != null
           ? TaskSummary.fromJson(json['summary'] as Map<String, dynamic>)
           : null,
+      resumeTime: (json['resume_time'] as num?)?.toInt() ?? 0,
+      retryCount: (json['retry_count'] as num?)?.toInt() ?? 0,
     );
   }
 }

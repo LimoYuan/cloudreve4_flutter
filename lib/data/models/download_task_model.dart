@@ -18,14 +18,22 @@ class DownloadTaskModel {
   final String? downloadUrl;   // 实际下载URL
   final int fileSize;
   final String savePath;
+  final String? backgroundTaskId; // background_downloader 的 task ID
   DownloadStatus status;
   int downloadedBytes;
+  int speed; // 下载速度，字节/秒
   final DateTime createdAt;
   DateTime? completedAt;
   String? errorMessage;
 
   double get progress => fileSize > 0 ? downloadedBytes / fileSize : 0.0;
   int get remainingBytes => fileSize - downloadedBytes;
+  String get speedText {
+    if (speed <= 0) return '';
+    if (speed < 1024) return '$speed B/s';
+    if (speed < 1024 * 1024) return '${(speed / 1024).toStringAsFixed(1)} KB/s';
+    return '${(speed / (1024 * 1024)).toStringAsFixed(1)} MB/s';
+  }
   String get progressText {
     if (status == DownloadStatus.completed) {
       return '100%';
@@ -59,8 +67,10 @@ class DownloadTaskModel {
     this.downloadUrl,
     required this.fileSize,
     required this.savePath,
+    this.backgroundTaskId,
     this.status = DownloadStatus.waiting,
     this.downloadedBytes = 0,
+    this.speed = 0,
     DateTime? createdAt,
     this.completedAt,
     this.errorMessage,
@@ -73,8 +83,10 @@ class DownloadTaskModel {
     String? downloadUrl,
     int? fileSize,
     String? savePath,
+    String? backgroundTaskId,
     DownloadStatus? status,
     int? downloadedBytes,
+    int? speed,
     DateTime? createdAt,
     DateTime? completedAt,
     String? errorMessage,
@@ -86,8 +98,10 @@ class DownloadTaskModel {
       downloadUrl: downloadUrl ?? this.downloadUrl,
       fileSize: fileSize ?? this.fileSize,
       savePath: savePath ?? this.savePath,
+      backgroundTaskId: backgroundTaskId ?? this.backgroundTaskId,
       status: status ?? this.status,
       downloadedBytes: downloadedBytes ?? this.downloadedBytes,
+      speed: speed ?? this.speed,
       createdAt: createdAt ?? this.createdAt,
       completedAt: completedAt ?? this.completedAt,
       errorMessage: errorMessage ?? this.errorMessage,
@@ -102,8 +116,10 @@ class DownloadTaskModel {
       'downloadUrl': downloadUrl,
       'fileSize': fileSize,
       'savePath': savePath,
+      'backgroundTaskId': backgroundTaskId,
       'status': status.index,
       'downloadedBytes': downloadedBytes,
+      'speed': speed,
       'createdAt': createdAt.toIso8601String(),
       'completedAt': completedAt?.toIso8601String(),
       'errorMessage': errorMessage,
@@ -118,8 +134,10 @@ class DownloadTaskModel {
       downloadUrl: json['downloadUrl'] as String?,
       fileSize: json['fileSize'] as int,
       savePath: json['savePath'] as String,
+      backgroundTaskId: json['backgroundTaskId'] as String?,
       status: DownloadStatus.values[json['status'] as int? ?? 0],
       downloadedBytes: json['downloadedBytes'] as int? ?? 0,
+      speed: json['speed'] as int? ?? 0,
       createdAt: json['createdAt'] != null
           ? DateTime.parse(json['createdAt'] as String)
           : null,

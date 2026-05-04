@@ -14,6 +14,10 @@ class DownloadManagerProvider extends ChangeNotifier {
   final Map<String, DownloadTaskModel> _tasks = {};
   bool _isInitialized = false;
 
+  // 速度追踪：记录每个任务的上次进度更新时间和字节数
+  final Map<String, DateTime> _lastProgressTime = {};
+  final Map<String, int> _lastProgressBytes = {};
+
   /// 获取所有下载任务
   List<DownloadTaskModel> get tasks => _tasks.values.toList()
     ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
@@ -180,16 +184,40 @@ class DownloadManagerProvider extends ChangeNotifier {
 
     AppLogger.d('更新任务: internalId=$internalId, status=$downloadStatus, progress=$progress');
 
+    // 计算下载字节数和速度
+    final downloadedBytes = (task.fileSize * progress / 100).toInt();
+    int speed = 0;
+    final now = DateTime.now();
+    final lastTime = _lastProgressTime[internalId];
+    final lastBytes = _lastProgressBytes[internalId] ?? 0;
+
+    if (downloadStatus == DownloadStatus.downloading && lastTime != null) {
+      final elapsed = now.difference(lastTime).inMilliseconds;
+      if (elapsed > 0) {
+        speed = ((downloadedBytes - lastBytes) * 1000 / elapsed).round();
+      }
+    }
+
+    if (downloadStatus == DownloadStatus.downloading) {
+      _lastProgressTime[internalId] = now;
+      _lastProgressBytes[internalId] = downloadedBytes;
+    } else {
+      _lastProgressTime.remove(internalId);
+      _lastProgressBytes.remove(internalId);
+    }
+
     // 更新任务
     final updatedTask = task.copyWith(
       status: downloadStatus,
-      downloadedBytes: (task.fileSize * progress / 100).toInt(),
+      downloadedBytes: downloadedBytes,
+      speed: speed,
     );
 
     // 如果下载完成，设置完成时间
     if (downloadStatus == DownloadStatus.completed) {
       _tasks[internalId] = updatedTask.copyWith(
         completedAt: DateTime.now(),
+        speed: 0,
       );
     } else {
       _tasks[internalId] = updatedTask;
@@ -215,7 +243,9 @@ class DownloadManagerProvider extends ChangeNotifier {
     final task = _tasks[taskId];
     if (task != null) {
       if (task.status == DownloadStatus.downloading) {
-        _tasks[taskId] = task.copyWith(status: DownloadStatus.paused);
+        _tasks[taskId] = task.copyWith(status: DownloadStatus.paused, speed: 0);
+        _lastProgressTime.remove(taskId);
+        _lastProgressBytes.remove(taskId);
         await _saveTasks();
         notifyListeners();
       }
@@ -269,10 +299,13 @@ class DownloadManagerProvider extends ChangeNotifier {
       // 重置任务状态
       _tasks[taskId] = task.copyWith(
         downloadedBytes: 0,
+        speed: 0,
         status: DownloadStatus.waiting,
         errorMessage: null,
         completedAt: null,
       );
+      _lastProgressTime.remove(taskId);
+      _lastProgressBytes.remove(taskId);
       await _saveTasks();
       notifyListeners();
 

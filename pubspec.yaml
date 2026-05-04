@@ -90,6 +90,7 @@ dependencies:
   logger: ^2.7.0
   image_picker: ^1.2.2
   qr_flutter: ^4.1.0
+  background_downloader: 9.5.4
 
 dev_dependencies:
   flutter_test:

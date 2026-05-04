@@ -114,6 +114,16 @@ class DownloadProgressItem extends StatelessWidget {
                     '${DownloadService.getReadableFileSize(latestTask.fileSize)}',
                     style: const TextStyle(fontSize: 12),
                   ),
+                  if (latestTask.speedText.isNotEmpty) ...[
+                    const SizedBox(width: 12),
+                    Text(
+                      latestTask.speedText,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ] else if (isFailed && latestTask.errorMessage != null) ...[

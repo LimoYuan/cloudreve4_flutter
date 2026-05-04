@@ -8,13 +8,12 @@ function build_linux_release() {
     PROJECT_DIR=$(pwd)
     FLUTTER_BUNDLE="$PROJECT_DIR/build/linux/x64/release/bundle"
     PKG_DIR="$PROJECT_DIR/dist/debian"
+    # 获取版本号
     Version=$(grep '^version:' pubspec.yaml | cut -d ' ' -f 2 | tr -d '\r')
 
     # 2. 编译 Linux 版本
     echo "正在编译 Flutter Linux Release 版本..."
     flutter build linux -v --release
-
-    # 获取版本号
 
     # 3. 创建临时目录结构
     if [ -d "$PKG_DIR" ]; then

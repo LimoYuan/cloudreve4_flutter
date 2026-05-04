@@ -22,6 +22,7 @@ class DocumentPreviewPage extends StatefulWidget {
 
 class _DocumentPreviewPageState extends State<DocumentPreviewPage> {
   CodeController? _codeController;
+  static const _backgroundColor = Color(0xFF292d3e);
   String _content = '';
   bool _isLoading = true;
   String? _error;
@@ -124,17 +125,20 @@ class _DocumentPreviewPageState extends State<DocumentPreviewPage> {
     }
 
     return Scaffold(
-      backgroundColor: const Color(0xFF1E1E1E),
+      backgroundColor: _backgroundColor,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF1E1E1E),
+        backgroundColor: _backgroundColor,
         elevation: 0,
+        iconTheme: const IconThemeData(
+          color: Colors.white,
+        ),
         title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          // crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(widget.file.name, style: const TextStyle(color: Colors.white, fontSize: 15)),
+            Text(widget.file.name, style: const TextStyle(color: Colors.white, fontSize: 15), textAlign: TextAlign.center,),
             if (!_isLoading) 
               Text('$_languageName · $_lineCount 行 · 字号: ${_fontSize.toInt()}', 
-                style: TextStyle(color: Colors.grey.shade400, fontSize: 11)),
+                style: TextStyle(color: Colors.grey.shade400, fontSize: 12), textAlign: TextAlign.center,),
           ],
         ),
         actions: [
@@ -156,15 +160,15 @@ class _DocumentPreviewPageState extends State<DocumentPreviewPage> {
       // 核心改进：根据当前字号，动态计算一个更宽松的行号宽度
       // 13号字大概每个数字占 8-9 像素，我们按 10 像素算并加上边距
       int digits = _lineCount.toString().length;
-      // 这里的 12.0 是根据 13-15号字体的平均宽度预留，45 是基础间距 (调试火葬场)
+      // 这里的 12.0 是根据 13-15号字体的平均宽度预留，46 是基础间距 (调试火葬场)
       double stableWidth = _showLineNumbers 
-          ? (digits * (_fontSize * 0.75)) + 45 
+          ? (digits * (_fontSize * 0.75)) + 46
           : 0;
       return Container(
-        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
         clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
-          color: const Color(0xFF282C34),
+          color: _backgroundColor,
           borderRadius: BorderRadius.circular(12),
         ),
         child: ScrollConfiguration(

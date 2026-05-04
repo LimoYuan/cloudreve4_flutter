@@ -122,13 +122,13 @@ class _VideoPreviewPageState extends State<VideoPreviewPage> {
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(color: Colors.white),
         ),
-        backgroundColor: Colors.black,
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.of(context).pop(),
           color: Colors.white,
         ),
+        backgroundColor: Colors.black,
         iconTheme: const IconThemeData(color: Colors.white),
         toolbarHeight: 30,
         actions: [
@@ -181,7 +181,9 @@ class _VideoPreviewPageState extends State<VideoPreviewPage> {
                 ),
               )
             else
-              Video(controller: controller),
+              ExcludeSemantics(
+                child: Video(controller: controller),
+              )
           ],
         ),
       ),

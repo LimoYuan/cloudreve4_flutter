@@ -55,7 +55,7 @@ class UploadManagerProvider extends ChangeNotifier {
       final task = UploadTaskModel(
         id: DateTime.now().millisecondsSinceEpoch.toString() + file.path,
         file: file,
-        fileName: file.path.split('/').last,
+        fileName: file.uri.pathSegments.last,
         fileSize: await file.length(),
         targetPath: uri,
       );

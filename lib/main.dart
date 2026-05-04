@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -14,6 +15,7 @@ import 'services/upload_service.dart';
 import 'services/api_service.dart';
 import 'services/server_service.dart';
 import 'services/cache_manager_service.dart';
+import 'services/desktop_service.dart';
 import 'router/app_router.dart';
 import 'presentation/widgets/toast_helper.dart';
 
@@ -22,6 +24,11 @@ void main() async {
 
   // 初始化MediaKit
   MediaKit.ensureInitialized();
+
+  // 桌面端初始化窗口管理和系统托盘
+  if (Platform.isWindows || Platform.isLinux) {
+    await DesktopService.instance.initialize();
+  }
 
   // 初始化服务器服务
   await ServerService.instance.init();
@@ -32,11 +39,13 @@ void main() async {
   // 初始化缓存管理器
   await CacheManagerService.instance.initialize();
 
-  // 设置横竖屏方向
-  await SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-    DeviceOrientation.portraitDown,
-  ]);
+  // 设置横竖屏方向（仅移动端）
+  if (Platform.isAndroid || Platform.isIOS) {
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+  }
 
   // 设置状态栏样式
   SystemChrome.setSystemUIOverlayStyle(

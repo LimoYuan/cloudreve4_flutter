@@ -56,7 +56,7 @@ Version: ${Version}
 Section: utils
 Priority: optional
 Architecture: amd64
-Depends: libsqlite3-0, libmpv-dev, libmpv2, libgtk-3-0, libglib2.0-0, libcanberra-gtk-module, libcanberra-gtk3-module, libpango-1.0-0, libcairo2, libasound2, libpulse0
+Depends: libsqlite3-0, libmpv-dev, libmpv2, libgtk-3-0, libglib2.0-0, libcanberra-gtk-module, libcanberra-gtk3-module, libpango-1.0-0, libcairo2, libasound2, libpulse0, libayatana-appindicator3-dev
 Maintainer: Aeno yuan705791627@gmail.com
 Description: A GUI client built using Cloudreve V4 and Flutter.
 EOE

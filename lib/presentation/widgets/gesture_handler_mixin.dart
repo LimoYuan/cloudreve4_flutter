@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:window_manager/window_manager.dart';
 import '../providers/file_manager_provider.dart';
 import 'exit_hint_overlay.dart';
 import '../../core/utils/app_logger.dart';
+import '../../services/desktop_service.dart';
 
 /// 手势处理 Mixin
 mixin GestureHandlerMixin<T extends StatefulWidget> on State<T> {
@@ -70,7 +72,11 @@ mixin GestureHandlerMixin<T extends StatefulWidget> on State<T> {
     final now = DateTime.now();
     if (_lastSwipeTime != null && now.difference(_lastSwipeTime!).inSeconds < 2) {
       _exitHintOverlay.remove();
-      SystemNavigator.pop();
+      if (DesktopService.isDesktopPlatform) {
+        await windowManager.hide();
+      } else {
+        SystemNavigator.pop();
+      }
     } else {
       _lastSwipeTime = now;
       _exitHintOverlay.show(context);

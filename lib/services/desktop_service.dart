@@ -40,7 +40,12 @@ class DesktopService with TrayListener, WindowListener {
     final iconPath = await _getTrayIconPath();
     AppLogger.d('DesktopService: tray icon path: $iconPath');
     await trayManager.setIcon(iconPath);
-    await trayManager.setToolTip(AppConfig.appName);
+    
+    try {
+      await trayManager.setToolTip(AppConfig.appName);
+    } catch (e) {
+      AppLogger.e('DesktopService: tray icon error: $e');
+    }
 
     final menu = Menu(items: [
       MenuItem(key: 'show', label: '显示主窗口'),

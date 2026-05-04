@@ -1,9 +1,18 @@
 import 'package:flutter/material.dart';
+import 'dart:io';
+
+String? getPlatformFont() {
+  if (Platform.isWindows) return 'Microsoft YaHei';
+  if (Platform.isMacOS) return 'PingFang SC';
+  // Linux 和 Android 通常不需要手动指定，系统默认支持得很好
+  return null; 
+}
 
 /// 主题配置
 class ThemeConfig {
   /// 亮色主题
   static ThemeData get lightTheme => ThemeData(
+        fontFamily: getPlatformFont(),
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
           seedColor: Colors.blue,
@@ -75,6 +84,7 @@ class ThemeConfig {
 
   /// 暗色主题
   static ThemeData get darkTheme => ThemeData(
+        fontFamily: getPlatformFont(),
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
           seedColor: Colors.blue,

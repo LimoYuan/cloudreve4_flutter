@@ -4,11 +4,12 @@ import 'package:provider/provider.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:oktoast/oktoast.dart';
 import 'config/app_config.dart';
-import 'config/theme_config.dart';
 import 'presentation/providers/auth_provider.dart';
 import 'presentation/providers/file_manager_provider.dart';
 import 'presentation/providers/upload_manager_provider.dart';
 import 'presentation/providers/download_manager_provider.dart';
+import 'presentation/providers/user_setting_provider.dart';
+import 'presentation/providers/theme_provider.dart';
 import 'services/upload_service.dart';
 import 'services/api_service.dart';
 import 'services/server_service.dart';
@@ -57,11 +58,13 @@ class CloudreveApp extends StatelessWidget {
     return
         MultiProvider(
           providers: [
-            ChangeNotifierProvider(create: (_) => AuthProvider()),
+            ChangeNotifierProvider(create: (_) => ThemeProvider()..init()),
+            ChangeNotifierProvider(create: (_) => AuthProvider()..init()),
             ChangeNotifierProvider(create: (_) => FileManagerProvider()),
             ChangeNotifierProvider(create: (_) => UploadService()),
             ChangeNotifierProvider(create: (_) => UploadManagerProvider()..initialize()),
             ChangeNotifierProvider(create: (_) => DownloadManagerProvider()..initialize()),
+            ChangeNotifierProvider(create: (_) => UserSettingProvider()),
           ],
           child: const AppView(),
         );
@@ -73,13 +76,20 @@ class AppView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final themeProvider = context.watch<ThemeProvider>();
+    final flutterThemeMode = switch (themeProvider.themeMode) {
+      AppThemeMode.light => ThemeMode.light,
+      AppThemeMode.dark => ThemeMode.dark,
+      AppThemeMode.system => ThemeMode.system,
+    };
+
     return OKToast(
       child: MaterialApp(
         title: AppConfig.appName,
         debugShowCheckedModeBanner: false,
-        theme: ThemeConfig.lightTheme,
-        darkTheme: ThemeConfig.darkTheme,
-        themeMode: ThemeMode.system,
+        theme: themeProvider.buildLightTheme(),
+        darkTheme: themeProvider.buildDarkTheme(),
+        themeMode: flutterThemeMode,
         onGenerateRoute: AppRouter.generateRoute,
         initialRoute: RouteNames.splash,
         builder: (context, child) {

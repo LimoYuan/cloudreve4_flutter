@@ -1,3 +1,4 @@
+import 'package:cloudreve4_flutter/presentation/widgets/toast_helper.dart';
 import 'package:flutter/foundation.dart';
 import '../../data/models/server_model.dart';
 import '../../data/models/user_model.dart';
@@ -206,6 +207,7 @@ class AuthProvider extends ChangeNotifier {
     try {
       final currentToken = token;
       if (currentToken == null || currentToken.isRefreshTokenExpired) {
+        ToastHelper.failure('已注销或Refresh token 已过期，需要重新登录');
         throw Exception('Refresh token 已过期，需要重新登录');
       }
 
@@ -220,6 +222,7 @@ class AuthProvider extends ChangeNotifier {
 
       setUser(updatedUser);
     } catch (e) {
+      ToastHelper.error('刷新 token 失败: $e');
       AppLogger.d('刷新 token 失败: $e');
       _user = null;
       _errorMessage = e.toString();

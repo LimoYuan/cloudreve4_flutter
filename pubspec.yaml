@@ -88,6 +88,8 @@ dependencies:
   package_info_plus: ^9.0.1
   oktoast: ^3.4.0
   logger: ^2.7.0
+  image_picker: ^1.2.2
+  qr_flutter: ^4.1.0
 
 dev_dependencies:
   flutter_test:

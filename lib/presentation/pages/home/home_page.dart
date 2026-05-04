@@ -278,6 +278,9 @@ class _HomePageState extends State<HomePage> with GestureHandlerMixin {
       onWebdav: () {
         Navigator.of(context).pushNamed(RouteNames.webdav);
       },
+      onRemoteDownload: () {
+        Navigator.of(context).pushNamed(RouteNames.remoteDownload);
+      },
       onSettings: () {
         Navigator.of(context).pushNamed(RouteNames.settings);
       },

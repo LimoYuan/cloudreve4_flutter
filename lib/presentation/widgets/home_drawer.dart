@@ -9,6 +9,7 @@ class HomeDrawer extends StatelessWidget {
   final VoidCallback onMyShares;
   final VoidCallback onRecycleBin;
   final VoidCallback onWebdav;
+  final VoidCallback onRemoteDownload;
   final VoidCallback onSettings;
   final VoidCallback onLogout;
 
@@ -19,6 +20,7 @@ class HomeDrawer extends StatelessWidget {
     required this.onMyShares,
     required this.onRecycleBin,
     required this.onWebdav,
+    required this.onRemoteDownload,
     required this.onSettings,
     required this.onLogout,
   });
@@ -68,6 +70,14 @@ class HomeDrawer extends StatelessWidget {
             onTap: () {
               Navigator.of(context).pop();
               onWebdav();
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.download_for_offline),
+            title: const Text('离线下载'),
+            onTap: () {
+              Navigator.of(context).pop();
+              onRemoteDownload();
             },
           ),
           ListTile(

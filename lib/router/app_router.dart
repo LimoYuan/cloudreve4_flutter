@@ -5,6 +5,7 @@ import '../presentation/pages/splash/splash_page.dart';
 import '../presentation/pages/shares/shares_page.dart';
 import '../presentation/pages/recycle_bin/recycle_bin_page.dart';
 import '../presentation/pages/webdav/webdav_page.dart';
+import '../presentation/pages/remote_download/remote_download_page.dart';
 import '../presentation/pages/search/search_page.dart';
 import '../presentation/pages/settings/settings_page.dart';
 import '../presentation/pages/preview/image_preview_page.dart';
@@ -26,6 +27,7 @@ class RouteNames {
   static const String fileDetail = '/file-detail';
   static const String recycleBin = '/recycle-bin';
   static const String webdav = '/webdav';
+  static const String remoteDownload = '/remote-download';
   static const String search = '/search';
   static const String imagePreview = '/image-preview';
   static const String pdfPreview = '/pdf-preview';
@@ -73,6 +75,12 @@ class AppRouter {
         return MaterialPageRoute(
           settings: settings,
           builder: (context) => const WebdavPage(),
+        );
+
+      case RouteNames.remoteDownload:
+        return MaterialPageRoute(
+          settings: settings,
+          builder: (context) => const RemoteDownloadPage(),
         );
 
       case RouteNames.search:

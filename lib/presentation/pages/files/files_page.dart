@@ -1,6 +1,7 @@
 import 'package:cloudreve4_flutter/data/models/file_model.dart';
 import 'package:cloudreve4_flutter/services/file_service.dart';
 import 'package:flutter/material.dart';
+import 'package:lucide_icons/lucide_icons.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../providers/file_manager_provider.dart';
@@ -65,14 +66,98 @@ class _FilesPageState extends State<FilesPage> {
     return AppBar(
       title: Consumer<FileManagerProvider>(
         builder: (context, fileManager, child) {
-          if (fileManager.currentPath == '/') {
-            return const Text('文件');
+          if (isDesktop) {
+            if (fileManager.currentPath == '/') {
+              return const Text('文件');
+            }
+            final segments = fileManager.currentPath.split('/').where((s) => s.isNotEmpty).toList();
+            return Text(segments.isNotEmpty ? segments.last : '文件');
           }
-          final segments = fileManager.currentPath.split('/').where((s) => s.isNotEmpty).toList();
-          return Text(segments.isNotEmpty ? segments.last : '文件');
+          // 窄屏端：面包屑移入 AppBar
+          return _buildMobileBreadcrumb(context, fileManager);
         },
       ),
       actions: isDesktop ? _buildDesktopActions() : _buildMobileActions(),
+    );
+  }
+
+  /// 窄屏端 AppBar 内的紧凑面包屑
+  Widget _buildMobileBreadcrumb(BuildContext context, FileManagerProvider fileManager) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final pathParts = fileManager.currentPath.split('/');
+    pathParts.removeWhere((part) => part.isEmpty);
+
+    return SizedBox(
+      height: 40,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        children: [
+          _buildBreadcrumbChip(
+            context,
+            label: '文件',
+            icon: LucideIcons.home,
+            color: colorScheme.primary,
+            onTap: () => fileManager.currentPath != '/' ? fileManager.enterFolder('/') : null,
+          ),
+          for (int i = 0; i < pathParts.length; i++) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 2),
+              child: Icon(LucideIcons.chevronRight, size: 14, color: theme.hintColor.withValues(alpha: 0.5)),
+            ),
+            _buildBreadcrumbChip(
+              context,
+              label: pathParts[i],
+              icon: null,
+              color: colorScheme.primary,
+              isLast: i == pathParts.length - 1,
+              onTap: () {
+                final targetPath = '/${pathParts.sublist(0, i + 1).join('/')}';
+                if (targetPath != fileManager.currentPath) fileManager.enterFolder(targetPath);
+              },
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBreadcrumbChip(
+    BuildContext context, {
+    required String label,
+    required IconData? icon,
+    required Color color,
+    bool isLast = false,
+    VoidCallback? onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        height: 28,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        decoration: BoxDecoration(
+          color: isLast ? color.withValues(alpha: 0.15) : color.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[
+              Icon(icon, size: 14, color: color),
+              const SizedBox(width: 3),
+            ],
+            Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontWeight: isLast ? FontWeight.w600 : FontWeight.w500,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -351,6 +436,9 @@ class _FilesPageState extends State<FilesPage> {
   }
 
   Widget _buildBottomBar(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isDesktop = screenWidth >= 1000;
+
     return Consumer<FileManagerProvider>(
       builder: (context, fileManager, child) {
         if (fileManager.hasSelection) {
@@ -373,6 +461,9 @@ class _FilesPageState extends State<FilesPage> {
                 ),
           );
         }
+
+        // 窄屏端面包屑已在 AppBar 中，底部不显示
+        if (!isDesktop) return const SizedBox.shrink();
 
         return FileBreadcrumb(
           currentPath: fileManager.currentPath,

@@ -1307,6 +1307,7 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
   Future<void> _showCreateDialog(BuildContext context) async {
     final isDesktop = MediaQuery.of(context).size.width > _desktopBreakpoint;
     String selectedDst = '/';
+    bool folderSelected = false;
     final srcController = TextEditingController();
 
     final confirmed = await showDialog<bool>(
@@ -1314,12 +1315,78 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
           title: const Text('新建离线下载'),
-          content: SizedBox(
-            width: isDesktop ? 500 : MediaQuery.of(ctx).size.width - 48,
-            height: MediaQuery.of(ctx).size.height * 0.7,
+          content: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: isDesktop ? 500 : MediaQuery.of(ctx).size.width - 48,
+              maxHeight: MediaQuery.of(ctx).size.height * 0.75,
+            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // 上方：目录选择区域
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('选择保存目录',
+                      style: TextStyle(
+                          fontSize: 13,
+                          color: Theme.of(ctx).colorScheme.onSurfaceVariant)),
+                ),
+                const SizedBox(height: 8),
+                if (folderSelected) ...[
+                  // 已选择：显示路径 + 修改按钮
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Theme.of(ctx).colorScheme.outlineVariant),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.folder, size: 18, color: Theme.of(ctx).colorScheme.primary),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Text(
+                              selectedDst == '/' ? '/ (根目录)' : selectedDst,
+                              style: const TextStyle(fontSize: 14),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        TextButton(
+                          onPressed: () => setDialogState(() => folderSelected = false),
+                          child: const Text('修改'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ] else ...[
+                  // 未选择：显示目录选择器
+                  Container(
+                    constraints: BoxConstraints(
+                      maxHeight: MediaQuery.of(ctx).size.height * 0.45,
+                    ),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Theme.of(ctx).colorScheme.outlineVariant),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: FolderPicker(
+                      currentPath: selectedDst,
+                      maxVisibleItems: isDesktop ? null : 3,
+                      onFolderSelected: (path) {
+                        setDialogState(() {
+                          selectedDst = path;
+                          folderSelected = true;
+                        });
+                        },
+                      ),
+                    ),
+                  ],
+
+                const SizedBox(height: 16),
+                // 下方：下载链接
                 TextField(
                   controller: srcController,
                   decoration: const InputDecoration(
@@ -1329,34 +1396,6 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
                     alignLabelWithHint: true,
                   ),
                   maxLines: 3,
-                ),
-                const SizedBox(height: 16),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text('选择保存目录',
-                      style: TextStyle(
-                          fontSize: 13,
-                          color: Theme.of(ctx)
-                              .colorScheme
-                              .onSurfaceVariant)),
-                ),
-                const SizedBox(height: 8),
-                Expanded(
-                  child: Container(
-                    decoration: BoxDecoration(
-                      border: Border.all(
-                          color: Theme.of(ctx)
-                              .colorScheme
-                              .outlineVariant),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: FolderPicker(
-                      currentPath: selectedDst,
-                      onFolderSelected: (path) {
-                        setDialogState(() => selectedDst = path);
-                      },
-                    ),
-                  ),
                 ),
               ],
             ),

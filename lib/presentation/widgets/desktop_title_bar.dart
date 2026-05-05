@@ -1,7 +1,3 @@
-// 建议在 presentation/widgets/ 目录下新建这个组件
-import 'dart:io';
-
-import 'package:cloudreve4_flutter/presentation/providers/theme_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -10,7 +6,6 @@ class DesktopTitleBar extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context) {
-    ThemeProvider themeProvider = ThemeProvider();
     return WindowCaption(
       brightness: Theme.of(context).brightness,
       backgroundColor: Colors.transparent, // 透明背景，露出下面的组件颜色

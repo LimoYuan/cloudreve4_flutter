@@ -5,7 +5,6 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../../../data/models/user_model.dart';
 import '../../../data/models/user_setting_model.dart';
 import '../../../services/user_setting_service.dart';
-import '../../../services/storage_service.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/user_setting_provider.dart';
 import '../../widgets/toast_helper.dart';

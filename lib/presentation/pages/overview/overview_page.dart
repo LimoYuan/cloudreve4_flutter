@@ -1,4 +1,3 @@
-import 'package:cloudreve4_flutter/presentation/providers/navigation_provider.dart';
 import 'package:cloudreve4_flutter/presentation/providers/user_setting_provider.dart';
 import 'package:cloudreve4_flutter/router/app_router.dart';
 import 'package:flutter/material.dart';

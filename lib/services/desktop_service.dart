@@ -25,14 +25,31 @@ class DesktopService with TrayListener, WindowListener {
   Future<void> initialize() async {
     if (!isDesktopPlatform || _initialized) return;
 
-    // 窗口管理器
+    // 1. 初始化窗口管理器
     await windowManager.ensureInitialized();
     windowManager.addListener(this);
 
-    await windowManager.setSize(const Size(1280, 720));
-    await windowManager.setMinimumSize(const Size(400, 300));
-    await windowManager.setTitle(AppConfig.appName);
-    await windowManager.setPreventClose(true);
+    // 2. 窗口选项设置
+    WindowOptions windowOptions = const WindowOptions(
+      size: Size(1280, 720),
+      center: true,
+      backgroundColor: Colors.transparent,
+      skipTaskbar: false,
+      titleBarStyle: TitleBarStyle.normal,
+    );
+
+    // 3. 等待窗口准备就绪后执行居中和显示
+    await windowManager.waitUntilReadyToShow(windowOptions, () async {
+      await windowManager.setTitle(AppConfig.appName);
+      await windowManager.setMinimumSize(const Size(400, 300));
+      await windowManager.setPreventClose(true);
+
+      // 如果设置了 center: true 仍未生效（某些 Linux 环境），可以手动补刀：
+      // await windowManager.center();
+
+      await windowManager.show();
+      await windowManager.focus();
+    });
 
     // 托盘管理器
     trayManager.addListener(this);
@@ -78,7 +95,7 @@ class DesktopService with TrayListener, WindowListener {
 
   @override
   void onTrayIconMouseDown() {
-    _showWindow();
+    showWindow();
   }
 
   @override
@@ -93,7 +110,7 @@ class DesktopService with TrayListener, WindowListener {
   void onTrayMenuItemClick(MenuItem menuItem) {
     switch (menuItem.key) {
       case 'show':
-        _showWindow();
+        showWindow();
         break;
       case 'quit':
         _quitApp();
@@ -147,15 +164,33 @@ class DesktopService with TrayListener, WindowListener {
 
   // ========== Private ==========
 
-  Future<void> _showWindow() async {
+  Future<void> showWindow() async {
     await windowManager.show();
     await windowManager.focus();
   }
 
   Future<void> _quitApp() async {
-    AppLogger.d('DesktopService: quitting app');
-    windowManager.removeListener(this);
-    trayManager.removeListener(this);
-    await windowManager.destroy();
+    try {
+      AppLogger.d('DesktopService: Cleaning up before exit...');
+
+      // 彻底解绑
+      windowManager.removeListener(this);
+      trayManager.removeListener(this);
+
+      // 彻底销毁托盘（防止残留僵尸图标）
+      await trayManager.destroy();
+
+      // 允许关闭并销毁窗口
+      await windowManager.setPreventClose(false);
+
+      // 给系统一点点时间（50ms）处理最后的事件队列
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      await windowManager.destroy();
+    } catch (e) {
+      AppLogger.e('Exit error: $e');
+    } finally {
+      exit(0);
+    }
   }
 }

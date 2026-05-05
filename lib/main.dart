@@ -1,6 +1,9 @@
+import 'dart:convert';
 import 'dart:io';
+import 'package:cloudreve4_flutter/core/utils/app_logger.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_single_instance/flutter_single_instance.dart';
 import 'package:provider/provider.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:oktoast/oktoast.dart';
@@ -21,6 +24,45 @@ import 'presentation/widgets/toast_helper.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // 初始化日志
+  await AppLogger.init();
+  AppLogger.i("应用启动，日志系统就绪");
+
+  // 实例化 FlutterSingleInstance 获取单实例句柄
+  final singleInstance = FlutterSingleInstance();
+  final addr = FlutterSingleInstance.address as InternetAddress;
+  // 检查是否是第一个实例
+  final bool isFirstInstance = await singleInstance.isFirstInstance();
+
+  if (!isFirstInstance) {
+    AppLogger.i("程序已经在运行, 尝试唤醒...");
+    // 如果已经有实例在运行，通过focus回调发送消息给"第一个已启动的实例"
+    // 第一个实例的 listen 会收到一个字符串
+    await singleInstance.focus({"action": "bring_to_front_showWindow"});
+    // 退出当前新启动的进程
+    exit(0);
+  }
+  final String processName = await singleInstance.getProcessName(pid) ?? "Unknown";
+  final File? pidFile = await singleInstance.getPidFile(processName);
+  int port = FlutterSingleInstance.port;
+
+  if (await pidFile!.exists()) {
+    try {
+      final content = await pidFile.readAsString();
+      final Map<String, dynamic> data = jsonDecode(content);
+      port = data['port'] ?? 0;
+    } catch (e) {
+      AppLogger.e("Get FlutterSingleInstance port has error: ${e.toString()}");
+    }
+  }
+
+  AppLogger.i("processName: $processName \npid: $pid \npidFile: ${pidFile.path.toString()} \nSingleInstance RPC address:port: ${addr.address}:$port");
+
+  FlutterSingleInstance.onFocus = (metadata) async {
+    AppLogger.i("收到唤醒信号: $metadata");
+    await DesktopService.instance.showWindow();
+  };
 
   // 初始化MediaKit
   MediaKit.ensureInitialized();

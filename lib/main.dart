@@ -1,15 +1,18 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:cloudreve4_flutter/core/utils/app_logger.dart';
+import 'package:cloudreve4_flutter/presentation/widgets/desktop_title_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_single_instance/flutter_single_instance.dart';
 import 'package:provider/provider.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:oktoast/oktoast.dart';
+import 'package:window_manager/window_manager.dart';
 import 'config/app_config.dart';
 import 'presentation/providers/auth_provider.dart';
 import 'presentation/providers/file_manager_provider.dart';
+import 'presentation/providers/navigation_provider.dart';
 import 'presentation/providers/upload_manager_provider.dart';
 import 'presentation/providers/download_manager_provider.dart';
 import 'presentation/providers/user_setting_provider.dart';
@@ -112,6 +115,7 @@ class CloudreveApp extends StatelessWidget {
             ChangeNotifierProvider(create: (_) => ThemeProvider()..init()),
             ChangeNotifierProvider(create: (_) => AuthProvider()..init()),
             ChangeNotifierProvider(create: (_) => FileManagerProvider()),
+            ChangeNotifierProvider(create: (_) => NavigationProvider()),
             ChangeNotifierProvider(create: (_) => UploadService()),
             ChangeNotifierProvider(create: (_) => UploadManagerProvider()..initialize()),
             ChangeNotifierProvider(create: (_) => DownloadManagerProvider()..initialize()),
@@ -144,10 +148,51 @@ class AppView extends StatelessWidget {
         onGenerateRoute: AppRouter.generateRoute,
         initialRoute: RouteNames.splash,
         builder: (context, child) {
+          if (child == null) return const SizedBox.shrink();
+          Widget currentWidget = child;
+          if (Platform.isWindows || Platform.isLinux) {
+            currentWidget = Material(
+              // 必须在这里设置颜色，否则窗口会透过去
+              color: themeProvider.isDark ? Colors.black.withValues(alpha: 0.92) : Colors.white.withValues(alpha: 0.92),
+              child: Column(
+                children: [
+                  // 关键点 1：必须包裹 SizedBox 并指定明确高度
+                  const SizedBox(
+                    height: 32,
+                    child: DragToMoveArea(
+                      child: DesktopTitleBar(),
+                    ),
+                  ),
+                  // 关键点 2：Expanded 确保子页面占满剩余空间
+                  Expanded(
+                    child: currentWidget,
+                  ),
+                ],
+              ),
+            );
+            // 添加全局错误处理
+            currentWidget = FilterQualityWidget(child: currentWidget);
+          }
           // 添加全局错误处理
-          return ErrorHandler(child: child!);
+          return ErrorHandler(child: currentWidget);
         },
       ),
+    );
+  }
+}
+
+// 定义一个简单的包装类，确保子组件在绘制时使用高画质滤镜走抗锯齿逻辑
+// ImageFiltered 会强制渲染引擎进行重绘计算，解决 Windows 上部分 UI 边缘生硬的问题
+class FilterQualityWidget extends StatelessWidget {
+  final Widget child;
+  const FilterQualityWidget({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return ImageFiltered(
+      // 在 Windows 上，此滤镜能强制 Skia 引擎重新计算像素边缘
+      imageFilter: ColorFilter.mode(Colors.transparent, BlendMode.multiply),
+      child: child,
     );
   }
 }

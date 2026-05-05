@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../services/storage_service.dart';
 
@@ -13,7 +12,10 @@ enum AppThemeMode {
 /// 主题Provider - 管理主题模式和主题色
 class ThemeProvider extends ChangeNotifier {
   AppThemeMode _themeMode = AppThemeMode.system;
-  Color _seedColor = Colors.blue;
+  Color _seedColor = const Color(0xFF3B82F6);
+
+  static const Color lightScaffoldBg = Color(0xFFF8FAFC);
+  static const Color darkScaffoldBg = Color(0xFF0F172A);
 
   AppThemeMode get themeMode => _themeMode;
   Color get seedColor => _seedColor;
@@ -96,23 +98,61 @@ class ThemeProvider extends ChangeNotifier {
   }
 
   ThemeData _buildTheme(Brightness brightness) {
-    final fontName = _getPlatformFont();
+    final isLight = brightness == Brightness.light;
+    final colorScheme = ColorScheme.fromSeed(
+      seedColor: _seedColor,
+      brightness: brightness,
+    );
+
+    final bodyColor = isLight ? Colors.black87 : Colors.white;
+    final displayColor = isLight ? Colors.black87 : Colors.white;
+
+    final baseTextTheme = ThemeData(brightness: brightness).textTheme;
+    var textTheme = baseTextTheme.apply(
+      bodyColor: bodyColor,
+      displayColor: displayColor,
+      fontFamily: _getPlatformFont(),
+    );
+
+    if (_getPlatformFont() == 'NotoSansSC') {
+      textTheme = textTheme.copyWith(
+        bodyLarge: textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w500),
+        bodyMedium: textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
+        bodySmall: textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w500),
+        titleLarge: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+        titleMedium: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w500),
+        titleSmall: textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w500),
+        labelLarge: textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700),
+      );
+    }
+
     return ThemeData(
-      fontFamily: fontName,
+      textTheme: textTheme,
       useMaterial3: true,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: _seedColor,
-        brightness: brightness,
-      ),
-      appBarTheme: const AppBarTheme(
+      colorScheme: colorScheme,
+      scaffoldBackgroundColor: isLight ? lightScaffoldBg : darkScaffoldBg,
+      appBarTheme: AppBarTheme(
         centerTitle: true,
         elevation: 0,
+        scrolledUnderElevation: 0,
+        backgroundColor: isLight
+            ? lightScaffoldBg.withValues(alpha: 0.85)
+            : darkScaffoldBg.withValues(alpha: 0.85),
+        surfaceTintColor: Colors.transparent,
+        foregroundColor: isLight ? Colors.black87 : Colors.white,
       ),
       cardTheme: CardThemeData(
-        elevation: 1,
+        elevation: 0,
+        shadowColor: Colors.black12,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
+          side: BorderSide(
+            color: isLight
+                ? Colors.black.withValues(alpha: 0.06)
+                : Colors.white.withValues(alpha: 0.08),
+          ),
         ),
+        color: isLight ? Colors.white : const Color(0xFF1E293B),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
@@ -166,13 +206,22 @@ class ThemeProvider extends ChangeNotifier {
           ),
         ),
       ),
+      navigationBarTheme: NavigationBarThemeData(
+        elevation: 0,
+        backgroundColor: isLight
+            ? lightScaffoldBg.withValues(alpha: 0.9)
+            : darkScaffoldBg.withValues(alpha: 0.9),
+        indicatorColor: colorScheme.primary.withValues(alpha: 0.12),
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+      ),
+      navigationRailTheme: NavigationRailThemeData(
+        elevation: 0,
+        backgroundColor: isLight
+            ? lightScaffoldBg
+            : darkScaffoldBg,
+        indicatorColor: colorScheme.primary.withValues(alpha: 0.12),
+      ),
     );
-  }
-
-  String? _getPlatformFont() {
-    if (Platform.isWindows) return 'Microsoft YaHei';
-    if (Platform.isMacOS) return 'PingFang SC';
-    return null;
   }
 
   /// Color → hex string (不含alpha)
@@ -189,6 +238,12 @@ class ThemeProvider extends ChangeNotifier {
     if (clean.length == 8) {
       return Color(int.parse(clean, radix: 16));
     }
+    return null;
+  }
+
+  String? _getPlatformFont() {
+    if (Platform.isWindows || Platform.isLinux) return 'NotoSansSC';
+    if (Platform.isMacOS) return 'PingFang SC';
     return null;
   }
 }

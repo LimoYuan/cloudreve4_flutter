@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart' hide DateUtils;
+import 'package:lucide_icons/lucide_icons.dart';
 import '../../data/models/file_model.dart';
 import '../../core/utils/date_utils.dart';
 import '../../core/utils/file_utils.dart';
@@ -9,6 +10,7 @@ class FileListItem extends StatelessWidget {
   final FileModel file;
   final bool isSelected;
   final bool showCheckbox;
+  final int index;
   final VoidCallback? onTap;
   final VoidCallback? onSelect;
   final VoidCallback? onDownload;
@@ -25,6 +27,7 @@ class FileListItem extends StatelessWidget {
     required this.file,
     this.isSelected = false,
     this.showCheckbox = false,
+    this.index = 0,
     this.onTap,
     this.onSelect,
     this.onDownload,
@@ -39,115 +42,15 @@ class FileListItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Builder(
-      builder: (builderContext) => GestureDetector(
-        onTap: onTap,
-        onLongPress: () => _showMenu(builderContext),
-        child: Container(
-          decoration: BoxDecoration(
-            color: isSelected
-                ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.1)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          margin: const EdgeInsets.symmetric(vertical: 2),
-          child: ListTile(
-            leading: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (showCheckbox)
-                  Checkbox(
-                    value: isSelected,
-                    onChanged: (_) => onSelect?.call(),
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                if (!showCheckbox) _buildIcon(context),
-              ],
-            ),
-            title: Text(
-              file.name,
-              style: TextStyle(
-                fontWeight: isSelected ? FontWeight.w500 : FontWeight.normal,
-              ),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-            subtitle: file.isFolder
-                    ? null
-                    : Text(
-                        DateUtils.formatFileSize(file.size),
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey,
-                        ),
-                      ),
-          ),
-        ),
-      ),
+    return _FileListItemHover(
+      isSelected: isSelected,
+      index: index,
+      onTap: onTap,
+      onLongPress: () => _showMenu(context),
+      showCheckbox: showCheckbox,
+      onSelect: onSelect,
+      file: file,
     );
-  }
-
-  Widget _buildIcon(BuildContext context) {
-    IconData icon;
-    Color iconColor;
-
-    if (file.isFolder) {
-      icon = Icons.folder_outlined;
-      iconColor = Theme.of(context).colorScheme.primary;
-    } else {
-      icon = _getFileIcon(file.name);
-      iconColor = _getFileIconColor(file.name);
-    }
-
-    return Icon(
-      icon,
-      color: iconColor,
-      size: 32,
-    );
-  }
-
-  /// 获取文件图标
-  IconData _getFileIcon(String fileName) {
-    if (FileUtils.isImageFile(fileName)) {
-      return Icons.image;
-    } else if (FileUtils.isVideoFile(fileName)) {
-      return Icons.videocam;
-    } else if (FileUtils.isAudioFile(fileName)) {
-      return Icons.audiotrack;
-    } else if (FileUtils.isPdfFile(fileName)) {
-      return Icons.picture_as_pdf;
-    } else if (FileUtils.isTextFile(fileName)) {
-      return Icons.description;
-    } else if (FileUtils.isCodeFile(fileName)) {
-      return Icons.code;
-    } else if (FileUtils.isArchiveFile(fileName)) {
-      return Icons.folder_zip;
-    } else if (FileUtils.isDocumentFile(fileName)) {
-      return Icons.description_outlined;
-    }
-    return Icons.insert_drive_file_outlined;
-  }
-
-  /// 获取文件图标颜色
-  Color _getFileIconColor(String fileName) {
-    if (FileUtils.isImageFile(fileName)) {
-      return Colors.purple.shade600;
-    } else if (FileUtils.isVideoFile(fileName)) {
-      return Colors.orange.shade600;
-    } else if (FileUtils.isAudioFile(fileName)) {
-      return Colors.blue.shade600;
-    } else if (FileUtils.isPdfFile(fileName)) {
-      return Colors.red.shade600;
-    } else if (FileUtils.isTextFile(fileName)) {
-      return Colors.teal.shade600;
-    } else if (FileUtils.isCodeFile(fileName)) {
-      return Colors.cyan.shade700;
-    } else if (FileUtils.isArchiveFile(fileName)) {
-      return Colors.amber.shade600;
-    } else if (FileUtils.isDocumentFile(fileName)) {
-      return Colors.indigo.shade600;
-    }
-    return Colors.grey.shade600;
   }
 
   Future<void> _showMenu(BuildContext context) async {
@@ -186,5 +89,140 @@ class FileListItem extends StatelessWidget {
       case null:
         break;
     }
+  }
+
+  static IconData _getFileIcon(String fileName) {
+    if (FileUtils.isImageFile(fileName)) return LucideIcons.image;
+    if (FileUtils.isVideoFile(fileName)) return LucideIcons.video;
+    if (FileUtils.isAudioFile(fileName)) return LucideIcons.music;
+    if (FileUtils.isPdfFile(fileName)) return LucideIcons.fileText;
+    if (FileUtils.isTextFile(fileName)) return LucideIcons.fileText;
+    if (FileUtils.isCodeFile(fileName)) return LucideIcons.code;
+    if (FileUtils.isArchiveFile(fileName)) return LucideIcons.archive;
+    if (FileUtils.isDocumentFile(fileName)) return LucideIcons.file;
+    return LucideIcons.file;
+  }
+
+  static Color _getFileIconColor(String fileName) {
+    if (FileUtils.isImageFile(fileName)) return const Color(0xFFA855F7);
+    if (FileUtils.isVideoFile(fileName)) return const Color(0xFFF97316);
+    if (FileUtils.isAudioFile(fileName)) return const Color(0xFF3B82F6);
+    if (FileUtils.isPdfFile(fileName)) return const Color(0xFFEF4444);
+    if (FileUtils.isTextFile(fileName)) return const Color(0xFF14B8A6);
+    if (FileUtils.isCodeFile(fileName)) return const Color(0xFF06B6D4);
+    if (FileUtils.isArchiveFile(fileName)) return const Color(0xFFF59E0B);
+    if (FileUtils.isDocumentFile(fileName)) return const Color(0xFF6366F1);
+    return const Color(0xFF64748B);
+  }
+}
+
+class _FileListItemHover extends StatefulWidget {
+  final bool isSelected;
+  final int index;
+  final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
+  final bool showCheckbox;
+  final VoidCallback? onSelect;
+  final FileModel file;
+
+  const _FileListItemHover({
+    required this.isSelected,
+    required this.index,
+    this.onTap,
+    this.onLongPress,
+    required this.showCheckbox,
+    this.onSelect,
+    required this.file,
+  });
+
+  @override
+  State<_FileListItemHover> createState() => _FileListItemHoverState();
+}
+
+class _FileListItemHoverState extends State<_FileListItemHover> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    Color bgColor;
+    if (widget.isSelected) {
+      bgColor = colorScheme.primary.withValues(alpha: 0.08);
+    } else if (_isHovered) {
+      bgColor = colorScheme.primary.withValues(alpha: 0.04);
+    } else if (widget.index.isOdd) {
+      bgColor = theme.scaffoldBackgroundColor;
+    } else {
+      bgColor = colorScheme.surface;
+    }
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        onLongPress: widget.onLongPress,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          decoration: BoxDecoration(
+            color: bgColor,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          margin: const EdgeInsets.symmetric(vertical: 1, horizontal: 4),
+          child: ListTile(
+            leading: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (widget.showCheckbox)
+                  Checkbox(
+                    value: widget.isSelected,
+                    onChanged: (_) => widget.onSelect?.call(),
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                if (!widget.showCheckbox) _buildIcon(context),
+              ],
+            ),
+            title: Text(
+              widget.file.name,
+              style: TextStyle(
+                fontWeight: widget.isSelected ? FontWeight.w500 : FontWeight.normal,
+                color: Colors.black87,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            subtitle: widget.file.isFolder
+                ? null
+                : Text(
+                    DateUtils.formatFileSize(widget.file.size),
+                    style: TextStyle(fontSize: 12, color: theme.hintColor),
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildIcon(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    if (widget.file.isFolder) {
+      return Icon(LucideIcons.folder, color: colorScheme.primary, size: 28);
+    }
+
+    final icon = FileListItem._getFileIcon(widget.file.name);
+    final iconColor = FileListItem._getFileIconColor(widget.file.name);
+
+    return Container(
+      width: 36,
+      height: 36,
+      decoration: BoxDecoration(
+        color: iconColor.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Icon(icon, color: iconColor, size: 20),
+    );
   }
 }

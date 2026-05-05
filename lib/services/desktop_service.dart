@@ -1,10 +1,13 @@
 import 'dart:io';
+import 'package:flutter_acrylic/window.dart';
+import 'package:flutter_acrylic/window_effect.dart';
 import 'package:path/path.dart' as p;
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:tray_manager/tray_manager.dart';
 import '../config/app_config.dart';
 import '../core/utils/app_logger.dart';
+import '../presentation/providers/theme_provider.dart';
 
 /// 桌面端服务（窗口管理 + 系统托盘）
 class DesktopService with TrayListener, WindowListener {
@@ -29,13 +32,25 @@ class DesktopService with TrayListener, WindowListener {
     await windowManager.ensureInitialized();
     windowManager.addListener(this);
 
+    // --- 新增：初始化 flutter_acrylic ---
+    if (Platform.isWindows) {
+      var themeProvider = ThemeProvider();
+      await Window.initialize();
+      // 设置 Mica 效果
+      await Window.setEffect(
+        effect: WindowEffect.mica,
+        // 根据你的 ThemeProvider 判断是深色还是浅色 Mica
+        dark: themeProvider.isDark, // 建议这里先写死 false 测试，后续对接 ThemeProvider
+      );
+    }
+
     // 2. 窗口选项设置
     WindowOptions windowOptions = const WindowOptions(
       size: Size(1280, 720),
       center: true,
       backgroundColor: Colors.transparent,
       skipTaskbar: false,
-      titleBarStyle: TitleBarStyle.normal,
+      titleBarStyle: TitleBarStyle.hidden,
     );
 
     // 3. 等待窗口准备就绪后执行居中和显示

@@ -2,7 +2,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import '../../data/models/upload_task_model.dart';
 import '../../services/upload_service.dart';
-import '../widgets/upload_progress_dialog.dart';
 
 /// 上传管理Provider
 class UploadManagerProvider extends ChangeNotifier {
@@ -90,9 +89,4 @@ class UploadManagerProvider extends ChangeNotifier {
   void clearFailedTasks() {
     _uploadService.clearFailedTasks();
   }
-}
-
-/// 显示上传对话框的帮助函数
-void showUploadDialogWidget(BuildContext context) {
-  showUploadDialog(context);
 }

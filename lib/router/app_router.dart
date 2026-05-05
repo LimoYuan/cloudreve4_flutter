@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../presentation/pages/auth/login_page.dart';
-import '../presentation/pages/home/home_page.dart';
+import '../presentation/pages/shell/app_shell.dart';
 import '../presentation/pages/splash/splash_page.dart';
 import '../presentation/pages/shares/shares_page.dart';
 import '../presentation/pages/recycle_bin/recycle_bin_page.dart';
@@ -56,7 +56,7 @@ class AppRouter {
       case RouteNames.home:
         return MaterialPageRoute(
           settings: settings,
-          builder: (context) => const HomePage(),
+          builder: (context) => const AppShell(),
         );
 
       case RouteNames.share:

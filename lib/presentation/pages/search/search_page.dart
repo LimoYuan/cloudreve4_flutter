@@ -3,6 +3,7 @@ import 'package:cloudreve4_flutter/services/file_service.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/file_manager_provider.dart';
+import '../../providers/navigation_provider.dart';
 
 /// 搜索页面
 class SearchPage extends StatefulWidget {
@@ -261,10 +262,12 @@ class _SearchPageState extends State<SearchPage> {
 
     final parentPath = parts.isEmpty ? '/' : parts.join('/');
 
-    // 使用 popUntil 返回到主页，然后使用 replacement 设置新路径
+    // 使用 popUntil 返回到主页，然后切换到文件Tab并进入目录
     Navigator.of(context).popUntil((route) => route.isFirst);
     if (mounted) {
+      final navProvider = Provider.of<NavigationProvider>(context, listen: false);
       final fileManager = Provider.of<FileManagerProvider>(context, listen: false);
+      navProvider.setIndex(1);
       fileManager.enterFolder(parentPath);
     }
   }

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/upload_manager_provider.dart';
 import '../providers/file_manager_provider.dart';
+import '../providers/navigation_provider.dart';
 import 'toast_helper.dart';
 
 /// 显示上传对话框
@@ -125,7 +126,7 @@ class _UploadDialogContent extends StatelessWidget {
           label: const Text('查看上传任务'),
           onPressed: () {
             Navigator.of(context).pop();
-            showUploadDialogWidget(context);
+            Provider.of<NavigationProvider>(context, listen: false).setIndex(2);
           },
           style: FilledButton.styleFrom(
             minimumSize: const Size(200, 50),
@@ -180,7 +181,7 @@ class _UploadDialogContent extends StatelessWidget {
       await uploadManager.startUpload(files, fileManager.currentPath);
 
       if (context.mounted) {
-        showUploadDialogWidget(context);
+        ToastHelper.info('上传已开始，查看任务页');
       }
     } catch (e) {
       if (!context.mounted) return;

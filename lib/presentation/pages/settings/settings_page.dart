@@ -5,6 +5,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../../../data/models/user_model.dart';
 import '../../../data/models/user_setting_model.dart';
 import '../../../services/user_setting_service.dart';
+import '../../../services/storage_service.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/user_setting_provider.dart';
 import '../../widgets/toast_helper.dart';
@@ -14,6 +15,7 @@ import 'security_settings_page.dart';
 import 'file_preferences_page.dart';
 import 'app_settings_page.dart';
 import 'credit_history_page.dart';
+import 'quick_access_settings_page.dart';
 
 /// 设置主页
 class SettingsPage extends StatefulWidget {
@@ -114,6 +116,12 @@ class _SettingsPageState extends State<SettingsPage> {
                 title: '应用设置',
                 subtitle: '缓存、主题、语言',
                 onTap: () => _navigateTo(context, const AppSettingsPage()),
+              ),
+              _SettingsTile(
+                icon: Icons.apps_outlined,
+                title: '快捷入口',
+                subtitle: '自定义概览页快捷目录',
+                onTap: () => _navigateTo(context, const QuickAccessSettingsPage()),
               ),
             ],
           ),

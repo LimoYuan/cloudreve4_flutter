@@ -214,4 +214,24 @@ class FileService {
     AppLogger.d('Search files ---------> : $response');
     return response;
   }
+
+  /// 获取文件/文件夹详细信息
+  Future<Map<String, dynamic>> getFileInfo({
+    String? uri,
+    String? id,
+    bool extended = false,
+    bool folderSummary = false,
+  }) async {
+    final params = <String, dynamic>{
+      if (uri != null) 'uri': _toCloudreveUri(uri),
+      'id': ?id,
+      'extended': extended,
+      'folder_summary': folderSummary,
+    };
+
+    final response = await ApiService.instance
+        .get<Map<String, dynamic>>('/file/info', queryParameters: params);
+    AppLogger.d("getFileInfo --> $response");
+    return response;
+  }
 }

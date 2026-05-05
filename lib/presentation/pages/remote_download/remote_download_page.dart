@@ -982,7 +982,9 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
             color: colorScheme.surface,
             borderRadius: const BorderRadius.horizontal(
                 left: Radius.circular(16)),
-            child: Container(
+            child: SafeArea(
+              right: false,
+              child: Container(
               width: isDesktop ? 420 : MediaQuery.of(context).size.width * 0.85,
               height: MediaQuery.of(context).size.height,
               decoration: BoxDecoration(
@@ -1132,7 +1134,8 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
                   ),
                 ],
               ),
-            ),
+            ),  // Container
+            ),  // SafeArea
           ),
         );
       },

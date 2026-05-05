@@ -36,7 +36,7 @@ class FileModel {
       name: json['name'] as String,
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
-      size: json['size'] as int,
+      size: (json['size'] as num?)?.toInt() ?? 0,
       path: json['path'] as String,
       metadata: json['metadata'] as Map<String, dynamic>?,
       permission: json['permission'] as String?,
@@ -293,5 +293,28 @@ class DirectLinkModel {
       'url': url,
       'downloaded': downloaded,
     };
+  }
+}
+
+/// 文件详情模型（/file/info 接口返回）
+class FileInfoModel {
+  final FileModel file;
+  final FolderSummaryModel? folderSummary;
+  final ExtendedInfoModel? extendedInfo;
+
+  FileInfoModel({
+    required this.file,
+    this.folderSummary,
+    this.extendedInfo,
+  });
+
+  factory FileInfoModel.fromJson(Map<String, dynamic> json) {
+    return FileInfoModel(
+      file: FileModel.fromJson(json),
+      folderSummary: json['folder_summary'] is Map<String, dynamic>
+          ? FolderSummaryModel.fromJson(json['folder_summary'] as Map<String, dynamic>)
+          : null,
+      extendedInfo: null,
+    );
   }
 }

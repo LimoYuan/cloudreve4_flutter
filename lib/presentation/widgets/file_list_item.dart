@@ -2,7 +2,8 @@ import 'package:flutter/material.dart' hide DateUtils;
 import 'package:lucide_icons/lucide_icons.dart';
 import '../../data/models/file_model.dart';
 import '../../core/utils/date_utils.dart';
-import '../../core/utils/file_utils.dart';
+import '../../core/utils/file_icon_utils.dart';
+import '../../services/file_service.dart';
 import 'file_menu_helper.dart';
 
 /// 文件列表项
@@ -11,6 +12,7 @@ class FileListItem extends StatelessWidget {
   final bool isSelected;
   final bool showCheckbox;
   final int index;
+  final bool isDesktop;
   final VoidCallback? onTap;
   final VoidCallback? onSelect;
   final VoidCallback? onDownload;
@@ -21,6 +23,7 @@ class FileListItem extends StatelessWidget {
   final VoidCallback? onShare;
   final VoidCallback? onDelete;
   final VoidCallback? onRestore;
+  final VoidCallback? onInfo;
 
   const FileListItem({
     super.key,
@@ -28,6 +31,7 @@ class FileListItem extends StatelessWidget {
     this.isSelected = false,
     this.showCheckbox = false,
     this.index = 0,
+    this.isDesktop = true,
     this.onTap,
     this.onSelect,
     this.onDownload,
@@ -38,18 +42,20 @@ class FileListItem extends StatelessWidget {
     this.onShare,
     this.onDelete,
     this.onRestore,
+    this.onInfo,
   });
 
   @override
   Widget build(BuildContext context) {
     return _FileListItemHover(
+      file: file,
       isSelected: isSelected,
       index: index,
+      isDesktop: isDesktop,
+      showCheckbox: showCheckbox,
       onTap: onTap,
       onLongPress: () => _showMenu(context),
-      showCheckbox: showCheckbox,
       onSelect: onSelect,
-      file: file,
     );
   }
 
@@ -65,6 +71,7 @@ class FileListItem extends StatelessWidget {
       hasShare: onShare != null,
       hasDelete: onDelete != null,
       hasRestore: onRestore != null,
+      hasInfo: onInfo != null,
     );
 
     switch (result) {
@@ -86,53 +93,33 @@ class FileListItem extends StatelessWidget {
         onDelete?.call();
       case FileMenuAction.restore:
         onRestore?.call();
+      case FileMenuAction.info:
+        onInfo?.call();
       case null:
         break;
     }
   }
-
-  static IconData _getFileIcon(String fileName) {
-    if (FileUtils.isImageFile(fileName)) return LucideIcons.image;
-    if (FileUtils.isVideoFile(fileName)) return LucideIcons.video;
-    if (FileUtils.isAudioFile(fileName)) return LucideIcons.music;
-    if (FileUtils.isPdfFile(fileName)) return LucideIcons.fileText;
-    if (FileUtils.isTextFile(fileName)) return LucideIcons.fileText;
-    if (FileUtils.isCodeFile(fileName)) return LucideIcons.code;
-    if (FileUtils.isArchiveFile(fileName)) return LucideIcons.archive;
-    if (FileUtils.isDocumentFile(fileName)) return LucideIcons.file;
-    return LucideIcons.file;
-  }
-
-  static Color _getFileIconColor(String fileName) {
-    if (FileUtils.isImageFile(fileName)) return const Color(0xFFA855F7);
-    if (FileUtils.isVideoFile(fileName)) return const Color(0xFFF97316);
-    if (FileUtils.isAudioFile(fileName)) return const Color(0xFF3B82F6);
-    if (FileUtils.isPdfFile(fileName)) return const Color(0xFFEF4444);
-    if (FileUtils.isTextFile(fileName)) return const Color(0xFF14B8A6);
-    if (FileUtils.isCodeFile(fileName)) return const Color(0xFF06B6D4);
-    if (FileUtils.isArchiveFile(fileName)) return const Color(0xFFF59E0B);
-    if (FileUtils.isDocumentFile(fileName)) return const Color(0xFF6366F1);
-    return const Color(0xFF64748B);
-  }
 }
 
 class _FileListItemHover extends StatefulWidget {
+  final FileModel file;
   final bool isSelected;
   final int index;
+  final bool isDesktop;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final bool showCheckbox;
   final VoidCallback? onSelect;
-  final FileModel file;
 
   const _FileListItemHover({
+    required this.file,
     required this.isSelected,
     required this.index,
+    required this.isDesktop,
     this.onTap,
     this.onLongPress,
     required this.showCheckbox,
     this.onSelect,
-    required this.file,
   });
 
   @override
@@ -141,6 +128,31 @@ class _FileListItemHover extends StatefulWidget {
 
 class _FileListItemHoverState extends State<_FileListItemHover> {
   bool _isHovered = false;
+  String? _folderSizeText;
+  bool _isCalculatingFolder = false;
+
+  Future<void> _calculateFolderSize() async {
+    setState(() => _isCalculatingFolder = true);
+    try {
+      final response = await FileService().getFileInfo(
+        uri: widget.file.relativePath,
+        folderSummary: true,
+      );
+      final summary = response['folder_summary'];
+      if (summary is Map<String, dynamic> && summary.containsKey('size')) {
+        if (mounted) {
+          setState(() {
+            _folderSizeText = DateUtils.formatFileSize(summary['size'] as int);
+            _isCalculatingFolder = false;
+          });
+        }
+      } else {
+        if (mounted) setState(() => _isCalculatingFolder = false);
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isCalculatingFolder = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -151,9 +163,9 @@ class _FileListItemHoverState extends State<_FileListItemHover> {
     if (widget.isSelected) {
       bgColor = colorScheme.primary.withValues(alpha: 0.08);
     } else if (_isHovered) {
-      bgColor = colorScheme.primary.withValues(alpha: 0.04);
+      bgColor = colorScheme.primary.withValues(alpha: 0.05);
     } else if (widget.index.isOdd) {
-      bgColor = theme.scaffoldBackgroundColor;
+      bgColor = colorScheme.surfaceContainerLow;
     } else {
       bgColor = colorScheme.surface;
     }
@@ -164,65 +176,198 @@ class _FileListItemHoverState extends State<_FileListItemHover> {
       child: GestureDetector(
         onTap: widget.onTap,
         onLongPress: widget.onLongPress,
+        onSecondaryTap: widget.onLongPress,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
           decoration: BoxDecoration(
             color: bgColor,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(4),
           ),
           margin: const EdgeInsets.symmetric(vertical: 1, horizontal: 4),
-          child: ListTile(
-            leading: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (widget.showCheckbox)
-                  Checkbox(
-                    value: widget.isSelected,
-                    onChanged: (_) => widget.onSelect?.call(),
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                if (!widget.showCheckbox) _buildIcon(context),
-              ],
-            ),
-            title: Text(
-              widget.file.name,
-              style: TextStyle(
-                fontWeight: widget.isSelected ? FontWeight.w500 : FontWeight.normal,
-                color: Colors.black87,
-              ),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-            subtitle: widget.file.isFolder
-                ? null
-                : Text(
-                    DateUtils.formatFileSize(widget.file.size),
-                    style: TextStyle(fontSize: 12, color: theme.hintColor),
-                  ),
+          padding: EdgeInsets.symmetric(
+            horizontal: widget.isDesktop ? 24 : 16,
+            vertical: 8,
           ),
+          child: widget.isDesktop
+              ? _buildDesktopRow(context)
+              : _buildMobileRow(context),
         ),
       ),
     );
   }
 
-  Widget _buildIcon(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
+  Widget _buildSizeCell(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
 
-    if (widget.file.isFolder) {
-      return Icon(LucideIcons.folder, color: colorScheme.primary, size: 28);
+    if (!widget.file.isFolder) {
+      return Text(
+        DateUtils.formatFileSize(widget.file.size),
+        style: TextStyle(fontSize: 13, color: theme.hintColor),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      );
     }
 
-    final icon = FileListItem._getFileIcon(widget.file.name);
-    final iconColor = FileListItem._getFileIconColor(widget.file.name);
+    // 文件夹：已计算 -> 显示大小，未计算 -> 小按钮
+    if (_folderSizeText != null) {
+      return Text(
+        _folderSizeText!,
+        style: TextStyle(fontSize: 13, color: theme.hintColor),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      );
+    }
 
-    return Container(
-      width: 36,
-      height: 36,
-      decoration: BoxDecoration(
-        color: iconColor.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(8),
+    return _buildCalcButton(context, colorScheme);
+  }
+
+  Widget _buildCalcButton(BuildContext context, ColorScheme colorScheme) {
+    if (_isCalculatingFolder) {
+      return SizedBox(
+        width: 14,
+        height: 14,
+        child: CircularProgressIndicator(
+          strokeWidth: 1.5,
+          color: colorScheme.primary,
+        ),
+      );
+    }
+
+    return InkWell(
+      onTap: _calculateFolderSize,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: colorScheme.primary.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(LucideIcons.calculator, size: 11, color: colorScheme.primary),
+            const SizedBox(width: 3),
+            Text(
+              '计算',
+              style: TextStyle(fontSize: 11, color: colorScheme.primary, fontWeight: FontWeight.w500),
+            ),
+          ],
+        ),
       ),
-      child: Icon(icon, color: iconColor, size: 20),
+    );
+  }
+
+  /// 桌面端：三列对齐 Row
+  Widget _buildDesktopRow(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final nameColor = widget.isSelected ? colorScheme.primary : colorScheme.onSurface;
+
+    return Row(
+      children: [
+        if (widget.showCheckbox)
+          SizedBox(
+            width: 40,
+            child: Checkbox(
+              value: widget.isSelected,
+              onChanged: (_) => widget.onSelect?.call(),
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          ),
+        FileIconUtils.buildIconWidget(context: context, file: widget.file),
+        const SizedBox(width: 16),
+        Expanded(
+          flex: 5,
+          child: Text(
+            widget.file.name,
+            style: TextStyle(
+              fontWeight: widget.isSelected ? FontWeight.w500 : FontWeight.normal,
+              fontSize: 14,
+              color: nameColor,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        Expanded(
+          flex: 2,
+          child: Text(
+            DateUtils.formatDateTime(widget.file.updatedAt),
+            style: TextStyle(fontSize: 13, color: theme.hintColor),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        Expanded(
+          flex: 1,
+          child: _buildSizeCell(context),
+        ),
+      ],
+    );
+  }
+
+  /// 窄屏端：两行紧凑布局
+  Widget _buildMobileRow(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final nameColor = widget.isSelected ? colorScheme.primary : colorScheme.onSurface;
+
+    // 构建第二行内容
+    final typeLabel = FileIconUtils.getFileTypeLabel(widget.file.name, isFolder: widget.file.isFolder);
+    final dateStr = DateUtils.formatDateTime(widget.file.updatedAt);
+
+    return Row(
+      children: [
+        if (widget.showCheckbox)
+          SizedBox(
+            width: 40,
+            child: Checkbox(
+              value: widget.isSelected,
+              onChanged: (_) => widget.onSelect?.call(),
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          ),
+        FileIconUtils.buildIconWidget(context: context, file: widget.file),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                widget.file.name,
+                style: TextStyle(
+                  fontWeight: FontWeight.w500,
+                  fontSize: 14,
+                  color: nameColor,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 2),
+              // 第二行：文件夹显示 计算按钮，文件显示类型|大小|日期
+              if (widget.file.isFolder)
+                Row(
+                  children: [
+                    Text('$typeLabel  |  $dateStr', style: TextStyle(fontSize: 12, color: theme.hintColor)),
+                    const SizedBox(width: 6),
+                    if (_folderSizeText != null)
+                      Text('|  $_folderSizeText', style: TextStyle(fontSize: 12, color: theme.hintColor))
+                    else
+                      _buildCalcButton(context, colorScheme),
+                  ],
+                )
+              else
+                Text(
+                  '$typeLabel  |  ${DateUtils.formatFileSize(widget.file.size)}  |  $dateStr',
+                  style: TextStyle(fontSize: 12, color: theme.hintColor),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

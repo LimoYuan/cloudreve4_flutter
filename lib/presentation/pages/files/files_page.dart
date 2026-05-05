@@ -9,11 +9,13 @@ import '../../providers/download_manager_provider.dart';
 import '../../providers/navigation_provider.dart';
 import '../../widgets/file_list_item.dart';
 import '../../widgets/file_grid_item.dart';
+import '../../widgets/file_list_header.dart';
 import '../../widgets/file_breadcrumb.dart';
 import '../../widgets/selection_toolbar.dart';
 import '../../widgets/empty_folder_view.dart';
 import '../../widgets/upload_dialog.dart';
 import '../../widgets/file_operation_dialogs.dart';
+import '../../widgets/file_info_dialog.dart';
 import '../../widgets/toast_helper.dart';
 import '../../../router/app_router.dart';
 import '../../../core/utils/file_type_utils.dart';
@@ -27,6 +29,8 @@ class FilesPage extends StatefulWidget {
 
 class _FilesPageState extends State<FilesPage> {
   bool _isFirstLoad = true;
+  FileModel? _infoFile;
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   @override
   void initState() {
@@ -50,12 +54,19 @@ class _FilesPageState extends State<FilesPage> {
     });
   }
 
+  void _showFileInfo(FileModel file) {
+    setState(() => _infoFile = file);
+    _scaffoldKey.currentState?.openEndDrawer();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      key: _scaffoldKey,
       appBar: _buildAppBar(context),
       body: _buildBody(context),
       bottomNavigationBar: _buildBottomBar(context),
+      endDrawer: _infoFile != null ? FileInfoPanel(file: _infoFile!) : null,
     );
   }
 
@@ -338,39 +349,49 @@ class _FilesPageState extends State<FilesPage> {
   }
 
   Widget _buildListView(BuildContext context, FileManagerProvider fileManager) {
+    final isDesktop = MediaQuery.of(context).size.width >= 1000;
     final showCheckbox = fileManager.hasSelection;
 
-    return ListView.builder(
-      itemCount: fileManager.files.length,
-      itemBuilder: (context, index) {
-        final file = fileManager.files[index];
-        final isSelected = fileManager.selectedFiles.contains(file.path);
+    return Column(
+      children: [
+        if (isDesktop) FileListHeader(showCheckbox: showCheckbox),
+        Expanded(
+          child: ListView.builder(
+            itemCount: fileManager.files.length,
+            itemBuilder: (context, index) {
+              final file = fileManager.files[index];
+              final isSelected = fileManager.selectedFiles.contains(file.path);
 
-        return FileListItem(
-          key: ValueKey('file_${file.id}'),
-          file: file,
-          isSelected: isSelected,
-          showCheckbox: showCheckbox,
-          index: index,
-          onTap: () {
-            if (showCheckbox) {
-              fileManager.toggleSelection(file.path);
-            } else if (file.isFolder) {
-              fileManager.enterFolder(file.relativePath);
-            } else {
-              _openFile(context, file);
-            }
-          },
-          onSelect: () => fileManager.toggleSelection(file.path),
-          onDownload: !file.isFolder ? () => _downloadFile(context, fileManager, file) : null,
-          onOpenInBrowser: !file.isFolder ? () => _openInBrowser(context, file) : null,
-          onRename: () => FileOperationDialogs.showRenameDialog(context, fileManager, file),
-          onMove: () => FileOperationDialogs.showMoveDialog(context, fileManager, file, false),
-          onCopy: () => FileOperationDialogs.showMoveDialog(context, fileManager, file, true),
-          onShare: () => FileOperationDialogs.showShareDialog(context, file),
-          onDelete: () => FileOperationDialogs.showDeleteSingleConfirmation(context, fileManager, file),
-        );
-      },
+              return FileListItem(
+                key: ValueKey('file_${file.id}'),
+                file: file,
+                isSelected: isSelected,
+                showCheckbox: showCheckbox,
+                index: index,
+                isDesktop: isDesktop,
+                onTap: () {
+                  if (showCheckbox) {
+                    fileManager.toggleSelection(file.path);
+                  } else if (file.isFolder) {
+                    fileManager.enterFolder(file.relativePath);
+                  } else {
+                    _openFile(context, file);
+                  }
+                },
+                onSelect: () => fileManager.toggleSelection(file.path),
+                onDownload: !file.isFolder ? () => _downloadFile(context, fileManager, file) : null,
+                onOpenInBrowser: !file.isFolder ? () => _openInBrowser(context, file) : null,
+                onRename: () => FileOperationDialogs.showRenameDialog(context, fileManager, file),
+                onMove: () => FileOperationDialogs.showMoveDialog(context, fileManager, file, false),
+                onCopy: () => FileOperationDialogs.showMoveDialog(context, fileManager, file, true),
+                onShare: () => FileOperationDialogs.showShareDialog(context, file),
+                onDelete: () => FileOperationDialogs.showDeleteSingleConfirmation(context, fileManager, file),
+                onInfo: () => _showFileInfo(file),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 
@@ -392,7 +413,7 @@ class _FilesPageState extends State<FilesPage> {
     }
 
     final itemWidth = (availableWidth - spacing * (crossAxisCount - 1)) / crossAxisCount;
-    final childAspectRatio = itemWidth / 140;
+    final childAspectRatio = itemWidth / 160;
     final showCheckbox = fileManager.hasSelection;
 
     return GridView.builder(
@@ -430,6 +451,7 @@ class _FilesPageState extends State<FilesPage> {
           onCopy: () => FileOperationDialogs.showMoveDialog(context, fileManager, file, true),
           onShare: () => FileOperationDialogs.showShareDialog(context, file),
           onDelete: () => FileOperationDialogs.showDeleteSingleConfirmation(context, fileManager, file),
+          onInfo: () => _showFileInfo(file),
         );
       },
     );

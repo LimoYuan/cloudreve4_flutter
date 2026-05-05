@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart' hide DateUtils;
 import 'package:lucide_icons/lucide_icons.dart';
 import '../../data/models/file_model.dart';
-import '../../core/utils/file_utils.dart';
 import '../../core/utils/date_utils.dart';
+import '../../core/utils/file_icon_utils.dart';
 import 'file_menu_helper.dart';
 
 /// 文件网格项
@@ -20,6 +20,7 @@ class FileGridItem extends StatelessWidget {
   final VoidCallback? onShare;
   final VoidCallback? onDelete;
   final VoidCallback? onRestore;
+  final VoidCallback? onInfo;
 
   const FileGridItem({
     super.key,
@@ -36,6 +37,7 @@ class FileGridItem extends StatelessWidget {
     this.onShare,
     this.onDelete,
     this.onRestore,
+    this.onInfo,
   });
 
   @override
@@ -43,7 +45,7 @@ class FileGridItem extends StatelessWidget {
     return Builder(
       builder: (builderContext) => LayoutBuilder(
         builder: (context, constraints) {
-          final fontSize = (constraints.maxWidth * 0.13).clamp(11.0, 14.0);
+          final fontSize = (constraints.maxWidth * 0.1).clamp(10.0, 13.0);
 
           return _FileGridItemHover(
             file: file,
@@ -72,6 +74,7 @@ class FileGridItem extends StatelessWidget {
       hasShare: onShare != null,
       hasDelete: onDelete != null,
       hasRestore: onRestore != null,
+      hasInfo: onInfo != null,
     );
 
     switch (result) {
@@ -93,33 +96,11 @@ class FileGridItem extends StatelessWidget {
         onDelete?.call();
       case FileMenuAction.restore:
         onRestore?.call();
+      case FileMenuAction.info:
+        onInfo?.call();
       case null:
         break;
     }
-  }
-
-  static IconData _getFileIcon(String fileName) {
-    if (FileUtils.isImageFile(fileName)) return LucideIcons.image;
-    if (FileUtils.isVideoFile(fileName)) return LucideIcons.video;
-    if (FileUtils.isAudioFile(fileName)) return LucideIcons.music;
-    if (FileUtils.isPdfFile(fileName)) return LucideIcons.fileText;
-    if (FileUtils.isTextFile(fileName)) return LucideIcons.fileText;
-    if (FileUtils.isCodeFile(fileName)) return LucideIcons.code;
-    if (FileUtils.isArchiveFile(fileName)) return LucideIcons.archive;
-    if (FileUtils.isDocumentFile(fileName)) return LucideIcons.file;
-    return LucideIcons.file;
-  }
-
-  static Color _getFileIconColor(String fileName) {
-    if (FileUtils.isImageFile(fileName)) return const Color(0xFFA855F7);
-    if (FileUtils.isVideoFile(fileName)) return const Color(0xFFF97316);
-    if (FileUtils.isAudioFile(fileName)) return const Color(0xFF3B82F6);
-    if (FileUtils.isPdfFile(fileName)) return const Color(0xFFEF4444);
-    if (FileUtils.isTextFile(fileName)) return const Color(0xFF14B8A6);
-    if (FileUtils.isCodeFile(fileName)) return const Color(0xFF06B6D4);
-    if (FileUtils.isArchiveFile(fileName)) return const Color(0xFFF59E0B);
-    if (FileUtils.isDocumentFile(fileName)) return const Color(0xFF6366F1);
-    return const Color(0xFF64748B);
   }
 }
 
@@ -155,12 +136,37 @@ class _FileGridItemHoverState extends State<_FileGridItemHover> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final iconColor = widget.file.isFolder
-        ? colorScheme.primary
-        : FileGridItem._getFileIconColor(widget.file.name);
-    final icon = widget.file.isFolder
-        ? LucideIcons.folder
-        : FileGridItem._getFileIcon(widget.file.name);
+    final isDark = theme.brightness == Brightness.dark;
+
+    // 卡片背景
+    Color cardBg;
+    BoxBorder? border;
+    List<BoxShadow>? shadows;
+
+    if (widget.isSelected) {
+      cardBg = colorScheme.primary.withValues(alpha: 0.06);
+      border = Border.all(color: colorScheme.primary, width: 2);
+    } else if (_isHovered) {
+      cardBg = isDark ? const Color(0xFF263548) : const Color(0xFFF1F5F9);
+      border = Border.all(color: colorScheme.primary.withValues(alpha: 0.2));
+      shadows = [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.08),
+          blurRadius: 4,
+          offset: const Offset(0, 2),
+        ),
+      ];
+    } else {
+      cardBg = colorScheme.surfaceContainerLow;
+      border = Border.all(
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.06)
+            : theme.dividerColor.withValues(alpha: 0.15),
+      );
+    }
+
+    // 文字颜色
+    final nameColor = widget.isSelected ? colorScheme.primary : colorScheme.onSurface;
 
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),
@@ -168,28 +174,23 @@ class _FileGridItemHoverState extends State<_FileGridItemHover> {
       child: GestureDetector(
         onTap: widget.onTap,
         onLongPress: widget.onLongPress,
+        onSecondaryTap: widget.onLongPress,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
           decoration: BoxDecoration(
-            color: theme.cardColor,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: widget.isSelected
-                  ? colorScheme.primary
-                  : _isHovered
-                      ? colorScheme.primary.withValues(alpha: 0.3)
-                      : theme.dividerColor.withValues(alpha: 0.5),
-              width: widget.isSelected ? 2 : 1,
-            ),
+            color: cardBg,
+            borderRadius: BorderRadius.circular(8),
+            border: border,
+            boxShadow: shadows,
           ),
-          padding: const EdgeInsets.all(8),
+          padding: const EdgeInsets.all(6),
           child: Stack(
             children: [
               Column(
-                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  // 图标区
                   Expanded(
-                    flex: 65,
                     child: Center(
                       child: widget.showCheckbox
                           ? Checkbox(
@@ -197,63 +198,73 @@ class _FileGridItemHoverState extends State<_FileGridItemHover> {
                               onChanged: (_) => widget.onSelect?.call(),
                               materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                             )
-                          : FittedBox(
-                              fit: BoxFit.contain,
-                              child: Container(
-                                width: 48,
-                                height: 48,
-                                decoration: BoxDecoration(
-                                  color: iconColor.withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Icon(icon, color: iconColor, size: 24),
-                              ),
+                          : FileIconUtils.buildIconWidget(
+                              context: context,
+                              file: widget.file,
+                              size: 40,
+                              iconSize: 22,
+                              borderRadius: 10,
                             ),
                     ),
                   ),
-                  Expanded(
-                    flex: 35,
+                  const SizedBox(height: 6),
+                  // 文字区：左对齐
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
                     child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // 第一行：文件名
                         Text(
                           _truncateFileName(widget.file.name),
                           style: TextStyle(
                             fontSize: widget.fontSize,
                             fontWeight: FontWeight.w500,
-                            color: Colors.black87,
+                            color: nameColor,
                           ),
-                          maxLines: 2,
+                          maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.center,
                         ),
-                        if (!widget.file.isFolder)
-                          Text(
-                            DateUtils.formatFileSize(widget.file.size),
-                            style: TextStyle(
-                              fontSize: widget.fontSize * 0.85,
-                              color: theme.hintColor,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                        const SizedBox(height: 2),
+                        // 第二行：类型 | 大小
+                        Text(
+                          widget.file.isFolder
+                              ? FileIconUtils.getFileTypeLabel(widget.file.name, isFolder: true)
+                              : '${FileIconUtils.getFileTypeLabel(widget.file.name)}  |  ${DateUtils.formatFileSize(widget.file.size)}',
+                          style: TextStyle(
+                            fontSize: widget.fontSize * 0.85,
+                            color: theme.hintColor,
                           ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 1),
+                        // 第三行：修改时间
+                        Text(
+                          DateUtils.formatDateTime(widget.file.updatedAt),
+                          style: TextStyle(
+                            fontSize: widget.fontSize * 0.8,
+                            color: theme.hintColor.withValues(alpha: 0.7),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ],
                     ),
                   ),
                 ],
               ),
-              // Hover action button
+              // Hover 操作按钮
               if (_isHovered && !widget.showCheckbox)
                 Positioned(
                   top: 0,
                   right: 0,
                   child: Material(
                     color: colorScheme.primary.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(14),
                     child: InkWell(
                       onTap: widget.onMore,
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(14),
                       child: Padding(
                         padding: const EdgeInsets.all(4),
                         child: Icon(LucideIcons.moreVertical, size: 14, color: colorScheme.primary),
@@ -269,12 +280,12 @@ class _FileGridItemHoverState extends State<_FileGridItemHover> {
   }
 
   String _truncateFileName(String name) {
-    const maxChars = 15;
+    const maxChars = 20;
     if (name.length <= maxChars) return name;
 
     final dotIndex = name.lastIndexOf('.');
     if (dotIndex > 0 && dotIndex < name.length - 1) {
-      final prefix = name.substring(0, 6);
+      final prefix = name.substring(0, 8);
       final extension = name.substring(dotIndex);
       final middleLength = maxChars - prefix.length - extension.length - 3;
       if (middleLength > 0) return '$prefix...$extension';

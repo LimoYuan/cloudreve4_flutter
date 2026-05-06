@@ -21,12 +21,14 @@ class FileGridItem extends StatelessWidget {
   final VoidCallback? onDelete;
   final VoidCallback? onRestore;
   final VoidCallback? onInfo;
+  final bool tapToShowMenu;
 
   const FileGridItem({
     super.key,
     required this.file,
     this.isSelected = false,
     this.showCheckbox = false,
+    this.tapToShowMenu = false,
     this.onTap,
     this.onSelect,
     this.onDownload,
@@ -52,7 +54,8 @@ class FileGridItem extends StatelessWidget {
             isSelected: isSelected,
             showCheckbox: showCheckbox,
             fontSize: fontSize,
-            onTap: onTap,
+            tapToShowMenu: tapToShowMenu,
+            onTap: tapToShowMenu ? null : onTap,
             onLongPress: () => _showMenu(builderContext),
             onSelect: onSelect,
             onMore: () => _showMenu(builderContext),
@@ -113,6 +116,7 @@ class _FileGridItemHover extends StatefulWidget {
   final VoidCallback? onLongPress;
   final VoidCallback? onSelect;
   final VoidCallback? onMore;
+  final bool tapToShowMenu;
 
   const _FileGridItemHover({
     required this.file,
@@ -123,6 +127,7 @@ class _FileGridItemHover extends StatefulWidget {
     this.onLongPress,
     this.onSelect,
     this.onMore,
+    this.tapToShowMenu = false,
   });
 
   @override
@@ -172,7 +177,7 @@ class _FileGridItemHoverState extends State<_FileGridItemHover> {
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
       child: GestureDetector(
-        onTap: widget.onTap,
+        onTap: widget.tapToShowMenu ? widget.onLongPress : widget.onTap,
         onLongPress: widget.onLongPress,
         onSecondaryTap: widget.onLongPress,
         child: AnimatedContainer(

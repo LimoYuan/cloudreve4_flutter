@@ -24,6 +24,7 @@ class FileListItem extends StatelessWidget {
   final VoidCallback? onDelete;
   final VoidCallback? onRestore;
   final VoidCallback? onInfo;
+  final bool tapToShowMenu;
 
   const FileListItem({
     super.key,
@@ -32,6 +33,7 @@ class FileListItem extends StatelessWidget {
     this.showCheckbox = false,
     this.index = 0,
     this.isDesktop = true,
+    this.tapToShowMenu = false,
     this.onTap,
     this.onSelect,
     this.onDownload,
@@ -53,7 +55,8 @@ class FileListItem extends StatelessWidget {
       index: index,
       isDesktop: isDesktop,
       showCheckbox: showCheckbox,
-      onTap: onTap,
+      tapToShowMenu: tapToShowMenu,
+      onTap: tapToShowMenu ? null : onTap,
       onLongPress: () => _showMenu(context),
       onSelect: onSelect,
     );
@@ -110,6 +113,7 @@ class _FileListItemHover extends StatefulWidget {
   final VoidCallback? onLongPress;
   final bool showCheckbox;
   final VoidCallback? onSelect;
+  final bool tapToShowMenu;
 
   const _FileListItemHover({
     required this.file,
@@ -120,6 +124,7 @@ class _FileListItemHover extends StatefulWidget {
     this.onLongPress,
     required this.showCheckbox,
     this.onSelect,
+    this.tapToShowMenu = false,
   });
 
   @override
@@ -174,7 +179,7 @@ class _FileListItemHoverState extends State<_FileListItemHover> {
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
       child: GestureDetector(
-        onTap: widget.onTap,
+        onTap: widget.tapToShowMenu ? widget.onLongPress : widget.onTap,
         onLongPress: widget.onLongPress,
         onSecondaryTap: widget.onLongPress,
         child: AnimatedContainer(

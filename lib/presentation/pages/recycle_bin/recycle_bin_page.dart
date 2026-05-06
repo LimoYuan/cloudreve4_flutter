@@ -143,6 +143,9 @@ class _RecycleBinPageState extends State<RecycleBinPage>
   }
 
   Widget _buildListView(BuildContext context) {
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final isDesktop = screenWidth >= 1000;
+
     return ListView.builder(
       itemCount: _files.length,
       itemBuilder: (context, index) {
@@ -154,6 +157,9 @@ class _RecycleBinPageState extends State<RecycleBinPage>
           file: file,
           isSelected: isSelected,
           showCheckbox: _hasSelection,
+          index: index,
+          isDesktop: isDesktop,
+          tapToShowMenu: !_hasSelection,
           onTap: () {
             if (_hasSelection) {
               _toggleSelection(file.path);
@@ -205,6 +211,7 @@ class _RecycleBinPageState extends State<RecycleBinPage>
           file: file,
           isSelected: isSelected,
           showCheckbox: _hasSelection,
+          tapToShowMenu: !_hasSelection,
           onTap: () {
             if (_hasSelection) {
               _toggleSelection(file.path);

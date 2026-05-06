@@ -86,6 +86,7 @@ class _AppShellState extends State<AppShell> with GestureHandlerMixin {
             final activeCount = uploadManager.activeTasks.length + downloadManager.downloadingCount;
 
             return NavigationBar(
+              height: 64,
               selectedIndex: navProvider.currentIndex,
               onDestinationSelected: (i) => navProvider.setIndex(i),
               destinations: [

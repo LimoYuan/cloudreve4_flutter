@@ -17,7 +17,12 @@ class UploadManagerProvider extends ChangeNotifier {
   Future<void> initialize() async {
     if (_isInitialized) return;
     await _uploadService.initialize();
+    _uploadService.addListener(_onServiceChanged);
     _isInitialized = true;
+  }
+
+  void _onServiceChanged() {
+    notifyListeners();
   }
 
   /// 标记应该显示对话框
@@ -88,5 +93,11 @@ class UploadManagerProvider extends ChangeNotifier {
   /// 清除失败的任务
   void clearFailedTasks() {
     _uploadService.clearFailedTasks();
+  }
+
+  @override
+  void dispose() {
+    _uploadService.removeListener(_onServiceChanged);
+    super.dispose();
   }
 }

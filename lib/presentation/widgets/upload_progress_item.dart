@@ -27,7 +27,6 @@ class UploadProgressItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final isUploading = task.status == UploadStatus.uploading;
     final isWaiting = task.status == UploadStatus.waiting;
-    final isCompleted = task.status == UploadStatus.completed;
     final isPaused = task.status == UploadStatus.paused;
     final isFailed = task.status == UploadStatus.failed;
 

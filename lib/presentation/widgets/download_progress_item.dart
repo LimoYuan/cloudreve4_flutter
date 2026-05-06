@@ -40,7 +40,6 @@ class DownloadProgressItem extends StatelessWidget {
     final latestTask = downloadManager.getTask(task.id) ?? task;
 
     final isDownloading = latestTask.status == DownloadStatus.downloading;
-    final isCompleted = latestTask.status == DownloadStatus.completed;
     final isPaused = latestTask.status == DownloadStatus.paused;
     final isFailed = latestTask.status == DownloadStatus.failed;
 

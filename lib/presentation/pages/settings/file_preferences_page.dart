@@ -185,7 +185,7 @@ class _FilePreferencesPageState extends State<FilePreferencesPage> {
 
     if (selected == null || !mounted) return;
     if (selected == currentValue) return;
-
+    if (!context.mounted) return;
     final success = await context.read<UserSettingProvider>().updateShareLinksInProfile(selected);
     if (!mounted) return;
     if (success) {
@@ -242,7 +242,7 @@ class _FilePreferencesPageState extends State<FilePreferencesPage> {
 
     if (result == null || !mounted) return;
     final max = result['max'] as int;
-
+    if (!context.mounted) return;
     final success = await context.read<UserSettingProvider>().updateVersionRetention(max: max);
     if (!mounted) return;
     if (success) {
@@ -294,7 +294,7 @@ class _FilePreferencesPageState extends State<FilePreferencesPage> {
     } else {
       newExts = text.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
     }
-
+    if (!context.mounted) return;
     final success = await context.read<UserSettingProvider>().updateVersionRetention(ext: newExts);
     if (!mounted) return;
     if (success) {

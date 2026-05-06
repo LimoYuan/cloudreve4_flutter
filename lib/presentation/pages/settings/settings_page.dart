@@ -450,6 +450,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
     try {
       await UserSettingService.instance.updateUserSetting(groupExpires: true);
+      if (!context.mounted) return;
       await context.read<UserSettingProvider>().loadSettings();
       if (mounted) ToastHelper.success('会员已取消');
     } catch (e) {
@@ -459,6 +460,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Future<void> _navigateTo(BuildContext context, Widget page) async {
     await Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
+    if (!context.mounted) return;
     if (mounted) {
       context.read<UserSettingProvider>().loadAll();
     }
@@ -483,9 +485,8 @@ class _SettingsPageState extends State<SettingsPage> {
 
     if (confirmed == true && mounted) {
       await auth.logout();
-      if (mounted) {
-        Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
-      }
+      if (!context.mounted) return;
+      Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
     }
   }
 

@@ -39,7 +39,7 @@ class RemoteDownloadService {
     final params = <String, dynamic>{
       'page_size': pageSize,
       'category': category,
-      if (nextPageToken != null) 'next_page_token': nextPageToken,
+      'next_page_token': ?nextPageToken,
     };
 
     return await ApiService.instance

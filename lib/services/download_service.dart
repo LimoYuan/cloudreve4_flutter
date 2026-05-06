@@ -108,6 +108,13 @@ class DownloadService {
         false;
   }
 
+  /// 读取重试次数设置
+  Future<int> getRetries() async {
+    return await StorageService.instance
+            .getInt(StorageKeys.downloadRetries) ??
+        3;
+  }
+
   /// 初始化下载器
   Future<void> initialize(
       {Function(String taskId, DownloadStatus status, int progress)?
@@ -142,6 +149,13 @@ class DownloadService {
       taskProgressCallback: _handleBdProgressUpdate,
     );
 
+    // 启动任务追踪和恢复
+    await bd.FileDownloader().start(
+      doTrackTasks: true,
+      markDownloadedComplete: true,
+      doRescheduleKilledTasks: true,
+    );
+
     _isInitialized = true;
     AppLogger.d('DownloadService 初始化完成 (background_downloader)');
   }
@@ -149,7 +163,19 @@ class DownloadService {
   /// background_downloader 状态回调
   void _handleBdStatusUpdate(bd.TaskStatusUpdate update) {
     final internalId = _externalTaskIdToInternalId[update.task.taskId];
-    if (internalId == null) {
+    // 如果映射不存在，尝试从 metaData 恢复
+    if (internalId == null && update.task.metaData.isNotEmpty) {
+      final metaInternalId = update.task.metaData;
+      _externalTaskIdToInternalId[update.task.taskId] = metaInternalId;
+      _internalIdToExternalTaskId[metaInternalId] = update.task.taskId;
+      _bdTasks[metaInternalId] = update.task as bd.DownloadTask;
+      AppLogger.d(
+          '从 metaData 恢复映射: bdTaskId=${update.task.taskId}, internalId=$metaInternalId');
+    }
+
+    final resolvedInternalId =
+        _externalTaskIdToInternalId[update.task.taskId];
+    if (resolvedInternalId == null) {
       AppLogger.d(
           'background_downloader 状态回调: 未找到内部任务ID, taskId=${update.task.taskId}');
       return;
@@ -175,10 +201,10 @@ class DownloadService {
     }
 
     AppLogger.d(
-        'background_downloader 状态更新: taskId=${update.task.taskId}, internalId=$internalId, status=$status');
+        'background_downloader 状态更新: taskId=${update.task.taskId}, internalId=$resolvedInternalId, status=$status');
 
     final progress = status == DownloadStatus.completed ? 100 : 0;
-    _callbackHandler?.call(internalId, status, progress);
+    _callbackHandler?.call(resolvedInternalId, status, progress);
   }
 
   /// background_downloader 进度回调
@@ -190,7 +216,7 @@ class DownloadService {
     _callbackHandler?.call(internalId, DownloadStatus.downloading, progress);
   }
 
-  /// 开始下载
+  /// 开始下载（新任务）
   Future<String?> startDownload(DownloadTaskModel task) async {
     try {
       if (!_isInitialized) {
@@ -221,8 +247,8 @@ class DownloadService {
         await dir.create(recursive: true);
       }
 
-      // 如果文件已存在，删除它
-      if (await file.exists()) {
+      // 新任务：如果完整文件已存在，删除它
+      if (await file.exists() && task.downloadedBytes == 0) {
         await file.delete();
       }
 
@@ -237,6 +263,7 @@ class DownloadService {
   Future<String?> _startBdDownload(
       DownloadTaskModel task, String url, Directory dir) async {
     final wifiOnly = await isWifiOnlyEnabled();
+    final retries = await getRetries();
     final bdTask = bd.DownloadTask(
       url: url,
       filename: task.fileName,
@@ -244,7 +271,7 @@ class DownloadService {
       baseDirectory: bd.BaseDirectory.root,
       updates: bd.Updates.statusAndProgress,
       allowPause: true,
-      retries: 3,
+      retries: retries,
       requiresWiFi: wifiOnly,
       metaData: task.id,
     );
@@ -260,10 +287,87 @@ class DownloadService {
     _internalIdToExternalTaskId[task.id] = bdTask.taskId;
     _bdTasks[task.id] = bdTask;
 
+    // 保存 backgroundTaskId 到任务模型（持久化，用于重启后恢复映射）
+    task.backgroundTaskId = bdTask.taskId;
+
     AppLogger.d(
-        'background_downloader 任务已添加: taskId=${bdTask.taskId}, internalId=${task.id}, requiresWiFi=$wifiOnly');
+        'background_downloader 任务已添加: taskId=${bdTask.taskId}, internalId=${task.id}, requiresWiFi=$wifiOnly, retries=$retries');
 
     return bdTask.taskId;
+  }
+
+  /// 恢复下载（用于重启后恢复暂停的任务）
+  Future<String?> resumeDownloadAfterRestart(
+      DownloadTaskModel task) async {
+    try {
+      if (!_isInitialized) {
+        await initialize();
+      }
+
+      // 获取下载 URL
+      String url = task.downloadUrl ?? '';
+      if (url.isEmpty) {
+        final response = await _fileService.getDownloadUrls(
+          uris: [task.fileUri],
+          download: true,
+        );
+
+        final urls = response['urls'] as List<dynamic>? ?? [];
+        if (urls.isEmpty) {
+          throw Exception('无法获取下载链接');
+        }
+
+        final urlData = urls[0] as Map<String, dynamic>;
+        url = urlData['url'] as String;
+      }
+
+      final file = File(task.savePath);
+      final dir = file.parent;
+      if (!await dir.exists()) {
+        await dir.create(recursive: true);
+      }
+
+      // 恢复任务：不删除部分文件，使用 resume 方式重建 bdTask
+      final wifiOnly = await isWifiOnlyEnabled();
+      final retries = await getRetries();
+      final bdTask = bd.DownloadTask(
+        url: url,
+        filename: task.fileName,
+        directory: dir.path,
+        baseDirectory: bd.BaseDirectory.root,
+        updates: bd.Updates.statusAndProgress,
+        allowPause: true,
+        retries: retries,
+        requiresWiFi: wifiOnly,
+        metaData: task.id,
+      );
+
+      // 恢复映射关系
+      _externalTaskIdToInternalId[bdTask.taskId] = task.id;
+      _internalIdToExternalTaskId[task.id] = bdTask.taskId;
+      _bdTasks[task.id] = bdTask;
+      task.backgroundTaskId = bdTask.taskId;
+
+      // 如果有已下载的部分，尝试 resume；否则 enqueue
+      final partialFile =
+          File('${dir.path}/${task.fileName}.part');
+      if (task.downloadedBytes > 0 && await partialFile.exists()) {
+        AppLogger.d(
+            '断点续传: ${task.fileName}, 已下载 ${task.downloadedBytes} bytes');
+        await bd.FileDownloader().resume(bdTask);
+      } else {
+        AppLogger.d('重新下载: ${task.fileName}');
+        final success = await bd.FileDownloader().enqueue(bdTask);
+        if (!success) {
+          throw Exception('创建下载任务失败');
+        }
+      }
+
+      return bdTask.taskId;
+    } catch (e) {
+      AppLogger.d('恢复下载失败: $e');
+      rethrow;
+    }
   }
 
   /// 暂停下载
@@ -316,6 +420,11 @@ class DownloadService {
       final file = File(savePath);
       if (await file.exists()) {
         await file.delete();
+      }
+      // 同时删除部分文件
+      final partialFile = File('$savePath.part');
+      if (await partialFile.exists()) {
+        await partialFile.delete();
       }
     } catch (e) {
       AppLogger.d('删除文件失败: $e');

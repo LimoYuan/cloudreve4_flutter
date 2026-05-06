@@ -254,6 +254,7 @@ class _LoginPageState extends State<LoginPage> {
 
                   // 记住我
                   Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Checkbox(
                         value: _rememberMe,
@@ -437,7 +438,7 @@ class ServerSelectorSheet extends StatelessWidget {
             child: ListView.separated(
               shrinkWrap: true,
               itemCount: servers.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              separatorBuilder: (_, _) => const SizedBox(height: 8),
               itemBuilder: (context, index) {
                 final server = servers[index];
                 final isSelected = currentServer?.label == server.label;

@@ -188,7 +188,7 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
       final bytes = await image.readAsBytes();
       final service = UserSettingService.instance;
       await service.updateAvatar(bytes);
-
+      if (!mounted) return;
       // 刷新用户信息
       await context.read<AuthProvider>().refreshUser();
 
@@ -209,6 +209,7 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
       setState(() => _isUploadingAvatar = true);
       final service = UserSettingService.instance;
       await service.updateAvatar(null);
+      if (!mounted) return;
       await context.read<AuthProvider>().refreshUser();
 
       if (mounted) {
@@ -265,10 +266,10 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
 
     final newNick = controller.text.trim();
     if (newNick == user?.nickname) return;
-
+    if (!context.mounted) return;
     final success = await context.read<UserSettingProvider>().updateNick(newNick);
     if (!mounted) return;
-
+    if (!context.mounted) return;
     if (success) {
       // 同步刷新 AuthProvider 中的用户信息
       await context.read<AuthProvider>().refreshUser();

@@ -564,8 +564,10 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
                       icon: const Icon(Icons.list_alt, size: 18),
                       onPressed: () {
                         if (!mounted) return;
-                        Future.microtask(
-                            () => _showFilesDialog(context, task));
+                        Future.microtask(() {
+                          if (!mounted) return;
+                          _showFilesDialog(context, task);
+                        });
                       },
                       tooltip: '查看文件',
                       style: IconButton.styleFrom(
@@ -1526,6 +1528,7 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
                     await _service.selectFiles(
                         taskId: task.id, files: changes);
                     if (!mounted) return;
+                    if (!context.mounted) return;
                     Navigator.of(ctx).pop();
                     ToastHelper.success('文件选择已更新');
                     _loadTasks();

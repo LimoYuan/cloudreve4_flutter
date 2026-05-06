@@ -209,7 +209,7 @@ class _SecuritySettingsPageState extends State<SecuritySettingsPage> {
     );
 
     if (confirmed != true || !mounted) return;
-
+    if (!context.mounted) return;
     final success = await context.read<UserSettingProvider>().changePassword(
           currentPassword: currentCtrl.text,
           newPassword: newCtrl.text,
@@ -240,7 +240,7 @@ class _SecuritySettingsPageState extends State<SecuritySettingsPage> {
       ToastHelper.failure('获取2FA密钥失败');
       return;
     }
-
+    if (!context.mounted) return;
     final auth = context.read<AuthProvider>();
     final userEmail = auth.user?.email ?? 'user';
     final otpAuthUri = 'otpauth://totp/Cloudreve:$userEmail?secret=$secret&issuer=Cloudreve';
@@ -364,7 +364,7 @@ class _SecuritySettingsPageState extends State<SecuritySettingsPage> {
     );
 
     if (confirmed != true || !mounted) return;
-
+    if (!context.mounted) return;
     final success = await context.read<UserSettingProvider>().disable2FA(codeCtrl.text.trim());
     if (!mounted) return;
 
@@ -439,6 +439,7 @@ class _SecuritySettingsPageState extends State<SecuritySettingsPage> {
 
     try {
       await UserSettingService.instance.deletePasskey(passkey.id);
+      if (!context.mounted) return;
       await context.read<UserSettingProvider>().loadSettings();
       if (mounted) ToastHelper.success('Passkey 已删除');
     } catch (e) {
@@ -489,7 +490,7 @@ class _SecuritySettingsPageState extends State<SecuritySettingsPage> {
     );
 
     if (confirmed != true || !mounted) return;
-
+    if (!context.mounted) return;
     final success = await context.read<UserSettingProvider>().unlinkOpenId(oid.provider);
     if (!mounted) return;
     if (success) {
@@ -555,7 +556,7 @@ class _SecuritySettingsPageState extends State<SecuritySettingsPage> {
     );
 
     if (confirmed != true || !mounted) return;
-
+    if (!context.mounted) return;
     final success = await context.read<UserSettingProvider>().revokeOAuthGrant(grant.clientId);
     if (!mounted) return;
     if (success) {

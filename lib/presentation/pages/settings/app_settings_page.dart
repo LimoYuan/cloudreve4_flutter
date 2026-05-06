@@ -24,6 +24,7 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
   int? _currentCacheSize;
   bool _isCleaning = false;
   bool _wifiOnlyEnabled = false;
+  int _downloadRetries = 3;
 
   @override
   void initState() {
@@ -64,7 +65,15 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
     final enabled = await StorageService.instance
             .getBool(StorageKeys.downloadWifiOnly) ??
         false;
-    if (mounted) setState(() => _wifiOnlyEnabled = enabled);
+    final retries = await StorageService.instance
+            .getInt(StorageKeys.downloadRetries) ??
+        3;
+    if (mounted) {
+      setState(() {
+        _wifiOnlyEnabled = enabled;
+        _downloadRetries = retries;
+      });
+    }
   }
 
   @override
@@ -123,11 +132,18 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
                         await StorageService.instance
                             .setBool(StorageKeys.downloadWifiOnly, value);
                         if (mounted) {
+                          if (!context.mounted) return;
                           context
                               .read<DownloadManagerProvider>()
                               .setWifiOnlyEnabled(value);
                         }
                       },
+                    ),
+                    ListTile(
+                      title: const Text('重试次数'),
+                      subtitle: Text(_downloadRetries == 0 ? '不重试' : '失败后自动重试 $_downloadRetries 次'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => _showRetriesDialog(context),
                     ),
                   ],
                 ),
@@ -250,9 +266,10 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
     );
 
     if (selected == null || !mounted) return;
-
+    if (!context.mounted) return;
     // 立即更新本地主题
     await context.read<ThemeProvider>().setSeedColor(selected);
+    if (!context.mounted) return;
 
     // 同步到服务端
     final hex = '#${selected.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}';
@@ -305,6 +322,7 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
     );
 
     if (selected == null || !mounted) return;
+    if (!context.mounted) return;
     await context.read<ThemeProvider>().setThemeMode(selected);
   }
 
@@ -330,7 +348,7 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
     );
 
     if (selected == null || !mounted) return;
-
+    if (!context.mounted) return;
     final success = await context.read<UserSettingProvider>().updateLanguage(selected);
     if (!mounted) return;
     if (success) {
@@ -407,6 +425,41 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
     if (selected != null && mounted) {
       setState(() => _cacheSettings = CacheSettingsModel.fromDays(selected));
       _saveCacheSettings();
+    }
+  }
+
+  Future<void> _showRetriesDialog(BuildContext context) async {
+    final selected = await showModalBottomSheet<int>(
+      context: context,
+      builder: (sheetContext) => Container(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('选择重试次数', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            const Text('下载失败后自动重试的次数', style: TextStyle(fontSize: 13, color: Colors.grey)),
+            const SizedBox(height: 16),
+            for (final retries in [0, 1, 2, 3, 5, 10])
+              ListTile(
+                title: Text(retries == 0 ? '不重试' : '$retries 次'),
+                selected: _downloadRetries == retries,
+                leading: Icon(
+                  _downloadRetries == retries ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                onTap: () => Navigator.of(sheetContext).pop(retries),
+              ),
+          ],
+        ),
+      ),
+    );
+
+    if (selected != null && mounted) {
+      setState(() => _downloadRetries = selected);
+      await StorageService.instance
+          .setInt(StorageKeys.downloadRetries, selected);
     }
   }
 

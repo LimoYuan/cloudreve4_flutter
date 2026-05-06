@@ -18,7 +18,7 @@ class DownloadTaskModel {
   final String? downloadUrl;   // 实际下载URL
   final int fileSize;
   final String savePath;
-  final String? backgroundTaskId; // background_downloader 的 task ID
+  String? backgroundTaskId; // background_downloader 的 task ID（可变，用于重启后恢复映射）
   DownloadStatus status;
   int downloadedBytes;
   int speed; // 下载速度，字节/秒

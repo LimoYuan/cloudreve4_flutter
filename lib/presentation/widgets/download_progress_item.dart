@@ -257,6 +257,11 @@ class DownloadProgressItem extends StatelessWidget {
             tooltip: '打开',
           ),
           IconButton(
+            icon: const Icon(Icons.folder_open, size: 20),
+            onPressed: () => _openFileFolder(context, task),
+            tooltip: '打开文件夹',
+          ),
+          IconButton(
             icon: Icon(Icons.delete_outline, size: 20, color: errorColor),
             onPressed: onDelete,
             tooltip: '删除',
@@ -305,6 +310,23 @@ class DownloadProgressItem extends StatelessWidget {
     } catch (e) {
       if (context.mounted) {
         ToastHelper.error('打开文件失败：$e');
+      }
+    }
+  }
+
+  Future<void> _openFileFolder(
+    BuildContext context,
+    DownloadTaskModel task,
+  ) async {
+    try {
+      final dir = File(task.savePath).parent.path;
+      final result = await OpenFile.open(dir);
+      if (result.type != ResultType.done && context.mounted) {
+        ToastHelper.error('无法打开文件夹：${result.message}');
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ToastHelper.error('打开文件夹失败：$e');
       }
     }
   }

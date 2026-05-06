@@ -156,17 +156,22 @@ class UploadService extends ChangeNotifier {
             continue;
           }
 
-          // 如果任务已完成，只保留最近7天内的记录
+          // 如果任务已完成，只保留配置天数内的记录
           if (task.status == UploadStatus.completed) {
             if (task.completedAt == null) {
               continue;
             }
-            final daysSinceCompletion = now
-                .difference(task.completedAt!)
-                .inDays;
-            if (daysSinceCompletion > 7) {
-              AppLogger.d('跳过超过7天的已完成任务: ${task.fileName}');
-              continue;
+            final retentionDays = await StorageService.instance
+                    .getInt(StorageKeys.taskRetentionDays) ??
+                7;
+            if (retentionDays > 0) {
+              final daysSinceCompletion = now
+                  .difference(task.completedAt!)
+                  .inDays;
+              if (daysSinceCompletion > retentionDays) {
+                AppLogger.d('跳过超过$retentionDays天的已完成任务: ${task.fileName}');
+                continue;
+              }
             }
           }
 

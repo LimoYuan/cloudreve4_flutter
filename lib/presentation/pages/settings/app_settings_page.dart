@@ -1,14 +1,19 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:open_file/open_file.dart';
 import 'package:provider/provider.dart';
 import '../../../core/constants/storage_keys.dart';
+import '../../../core/utils/app_logger.dart';
 import '../../../data/models/cache_settings_model.dart';
 import '../../../services/cache_manager_service.dart';
+import '../../../services/download_service.dart';
 import '../../../services/storage_service.dart';
 import '../../providers/download_manager_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../providers/user_setting_provider.dart';
 import '../../widgets/toast_helper.dart';
 import '../../widgets/desktop_constrained.dart';
+import 'log_viewer_page.dart';
 
 /// 应用设置页（缓存、主题、语言）
 class AppSettingsPage extends StatefulWidget {
@@ -25,12 +30,16 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
   bool _isCleaning = false;
   bool _wifiOnlyEnabled = false;
   int _downloadRetries = 3;
+  int _taskRetentionDays = 7;
+  String _logFilePath = '';
+  int? _logFileSize;
 
   @override
   void initState() {
     super.initState();
     _loadCacheSettings();
     _loadWifiOnlySetting();
+    _loadLogInfo();
   }
 
   Future<void> _loadCacheSettings() async {
@@ -61,6 +70,17 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
     if (mounted) ToastHelper.success('设置已保存');
   }
 
+  Future<void> _loadLogInfo() async {
+    final path = await AppLogger.logFilePath;
+    final size = await AppLogger.logFileSize;
+    if (mounted) {
+      setState(() {
+        _logFilePath = path;
+        _logFileSize = size;
+      });
+    }
+  }
+
   Future<void> _loadWifiOnlySetting() async {
     final enabled = await StorageService.instance
             .getBool(StorageKeys.downloadWifiOnly) ??
@@ -68,10 +88,14 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
     final retries = await StorageService.instance
             .getInt(StorageKeys.downloadRetries) ??
         3;
+    final retentionDays = await StorageService.instance
+            .getInt(StorageKeys.taskRetentionDays) ??
+        7;
     if (mounted) {
       setState(() {
         _wifiOnlyEnabled = enabled;
         _downloadRetries = retries;
+        _taskRetentionDays = retentionDays;
       });
     }
   }
@@ -145,6 +169,12 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () => _showRetriesDialog(context),
                     ),
+                    ListTile(
+                      title: const Text('任务记录保留'),
+                      subtitle: Text(_taskRetentionDays == -1 ? '永久保留' : '保留 $_taskRetentionDays 天'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => _showRetentionDaysDialog(context),
+                    ),
                   ],
                 ),
                 _buildSection(
@@ -193,6 +223,49 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
                             )
                           : const Icon(Icons.chevron_right),
                       onTap: _isCleaning ? null : _clearCache,
+                    ),
+                  ],
+                ),
+                _buildSection(
+                  title: '日志管理',
+                  children: [
+                    ListTile(
+                      title: const Text('日志文件路径'),
+                      subtitle: Text(
+                        _logFilePath,
+                        style: const TextStyle(fontSize: 11),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    ListTile(
+                      title: const Text('日志文件大小'),
+                      subtitle: Text(_formatBytes(_logFileSize)),
+                    ),
+                    ListTile(
+                      title: const Text('打开日志目录'),
+                      leading: const Icon(Icons.folder_open),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: _openLogFolder,
+                    ),
+                    ListTile(
+                      title: const Text('导出日志'),
+                      leading: const Icon(Icons.file_download_outlined),
+                      subtitle: const Text('导出到 Download 目录'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: _exportLog,
+                    ),
+                    ListTile(
+                      title: const Text('预览日志'),
+                      leading: const Icon(Icons.visibility_outlined),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: _previewLog,
+                    ),
+                    ListTile(
+                      title: const Text('清空日志'),
+                      leading: const Icon(Icons.delete_outline, color: Colors.red),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: _clearLog,
                     ),
                   ],
                 ),
@@ -463,6 +536,48 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
     }
   }
 
+  Future<void> _showRetentionDaysDialog(BuildContext context) async {
+    final options = [
+      (7, '7 天'),
+      (15, '15 天'),
+      (30, '30 天'),
+      (-1, '永久保留'),
+    ];
+
+    final selected = await showModalBottomSheet<int>(
+      context: context,
+      builder: (sheetContext) => Container(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('任务记录保留时间', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            const Text('超过保留时间的已完成任务将被自动清理', style: TextStyle(fontSize: 13, color: Colors.grey)),
+            const SizedBox(height: 16),
+            for (final opt in options)
+              ListTile(
+                title: Text(opt.$2),
+                selected: _taskRetentionDays == opt.$1,
+                leading: Icon(
+                  _taskRetentionDays == opt.$1 ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                onTap: () => Navigator.of(sheetContext).pop(opt.$1),
+              ),
+          ],
+        ),
+      ),
+    );
+
+    if (selected != null && mounted) {
+      setState(() => _taskRetentionDays = selected);
+      await StorageService.instance
+          .setInt(StorageKeys.taskRetentionDays, selected);
+    }
+  }
+
   Future<void> _clearCache() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -511,5 +626,69 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
     if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+  }
+
+  Future<void> _openLogFolder() async {
+    try {
+      final path = _logFilePath;
+      if (path.isEmpty) {
+        ToastHelper.error('日志文件路径未获取');
+        return;
+      }
+      final dir = File(path).parent.path;
+      final result = await OpenFile.open(dir);
+      if (result.type != ResultType.done) {
+        if (mounted) ToastHelper.error('无法打开目录：${result.message}');
+      }
+    } catch (e) {
+      if (mounted) ToastHelper.error('打开目录失败：$e');
+    }
+  }
+
+  Future<void> _exportLog() async {
+    try {
+      final dir = await DownloadService().getDownloadDirectory();
+      final destPath = await AppLogger.exportLog(dir.path);
+      if (destPath != null && mounted) {
+        ToastHelper.success('日志已导出到：$destPath');
+      } else if (mounted) {
+        ToastHelper.error('导出失败：日志文件不存在');
+      }
+    } catch (e) {
+      if (mounted) ToastHelper.error('导出日志失败：$e');
+    }
+  }
+
+  Future<void> _previewLog() async {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const LogViewerPage()),
+    );
+  }
+
+  Future<void> _clearLog() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('清空日志'),
+        content: const Text('确定要清空日志文件内容吗？此操作不可恢复。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
+            child: const Text('清空'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      await AppLogger.clearLog();
+      await _loadLogInfo();
+      if (mounted) ToastHelper.success('日志已清空');
+    }
   }
 }

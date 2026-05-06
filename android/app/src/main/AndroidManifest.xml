@@ -51,13 +51,6 @@
             </intent-filter>
         </activity>
 
-        <!-- background_downloader  -->
-        <service
-            android:name="com.bbflight.background_downloader.BackgroundDownloaderService"
-            android:foregroundServiceType="dataSync|dataDownload"
-            android:exported="false">
-        </service>
-
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />

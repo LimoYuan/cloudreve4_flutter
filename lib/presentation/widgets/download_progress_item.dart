@@ -52,10 +52,10 @@ class DownloadProgressItem extends StatelessWidget {
           filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
           child: Container(
             decoration: BoxDecoration(
-              color: _getCardColor(context, latestTask.status),
+              color: _getCardColor(context, latestTask.status, waitingForWifi: latestTask.waitingForWifi),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: _getBorderColor(context, latestTask.status),
+                color: _getBorderColor(context, latestTask.status, waitingForWifi: latestTask.waitingForWifi),
               ),
             ),
             padding: const EdgeInsets.all(12),
@@ -64,7 +64,7 @@ class DownloadProgressItem extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    _buildStatusIcon(context, latestTask.status),
+                    _buildStatusIcon(context, latestTask.status, waitingForWifi: latestTask.waitingForWifi),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Column(
@@ -147,8 +147,8 @@ class DownloadProgressItem extends StatelessWidget {
     );
   }
 
-  Widget _buildStatusIcon(BuildContext context, DownloadStatus status) {
-    final color = _getStatusColor(status);
+  Widget _buildStatusIcon(BuildContext context, DownloadStatus status, {bool waitingForWifi = false}) {
+    final color = _getStatusColor(status, waitingForWifi: waitingForWifi);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Container(
@@ -159,7 +159,7 @@ class DownloadProgressItem extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
       ),
       child: Icon(
-        _getStatusIcon(status),
+        _getStatusIcon(status, waitingForWifi: waitingForWifi),
         size: 18,
         color: color,
       ),
@@ -167,7 +167,7 @@ class DownloadProgressItem extends StatelessWidget {
   }
 
   Widget _buildStatusRow(BuildContext context, DownloadTaskModel task) {
-    final color = _getStatusColor(task.status);
+    final color = _getStatusColor(task.status, waitingForWifi: task.waitingForWifi);
     final isCompleted = task.status == DownloadStatus.completed;
 
     return Row(
@@ -205,6 +205,17 @@ class DownloadProgressItem extends StatelessWidget {
     final errorColor = Theme.of(context).colorScheme.error;
 
     switch (task.status) {
+      case DownloadStatus.waiting:
+        if (task.waitingForWifi) {
+          return [
+            IconButton(
+              icon: Icon(Icons.cancel, size: 20, color: errorColor),
+              onPressed: onCancel,
+              tooltip: '取消',
+            ),
+          ];
+        }
+        return [];
       case DownloadStatus.downloading:
         return [
           IconButton(
@@ -252,7 +263,7 @@ class DownloadProgressItem extends StatelessWidget {
             tooltip: '删除',
           ),
         ];
-      default:
+      case DownloadStatus.cancelled:
         return [];
     }
   }
@@ -299,10 +310,10 @@ class DownloadProgressItem extends StatelessWidget {
     }
   }
 
-  IconData _getStatusIcon(DownloadStatus status) {
+  IconData _getStatusIcon(DownloadStatus status, {bool waitingForWifi = false}) {
     switch (status) {
       case DownloadStatus.waiting:
-        return LucideIcons.clock;
+        return waitingForWifi ? LucideIcons.wifi : LucideIcons.clock;
       case DownloadStatus.downloading:
         return LucideIcons.download;
       case DownloadStatus.completed:
@@ -315,8 +326,10 @@ class DownloadProgressItem extends StatelessWidget {
     }
   }
 
-  Color _getStatusColor(DownloadStatus status) {
+  Color _getStatusColor(DownloadStatus status, {bool waitingForWifi = false}) {
     switch (status) {
+      case DownloadStatus.waiting:
+        return waitingForWifi ? Colors.blue : Colors.grey;
       case DownloadStatus.downloading:
         return Colors.blue;
       case DownloadStatus.completed:
@@ -326,14 +339,17 @@ class DownloadProgressItem extends StatelessWidget {
       case DownloadStatus.failed:
       case DownloadStatus.cancelled:
         return Colors.red;
-      default:
-        return Colors.grey;
     }
   }
 
-  Color _getCardColor(BuildContext context, DownloadStatus status) {
+  Color _getCardColor(BuildContext context, DownloadStatus status, {bool waitingForWifi = false}) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     switch (status) {
+      case DownloadStatus.waiting:
+        if (waitingForWifi) {
+          return isDark ? Colors.blue.withValues(alpha: 0.08) : Colors.blue.withValues(alpha: 0.05);
+        }
+        return isDark ? Colors.white.withValues(alpha: 0.05) : Colors.white.withValues(alpha: 0.6);
       case DownloadStatus.completed:
         return isDark ? Colors.green.withValues(alpha: 0.08) : Colors.green.withValues(alpha: 0.05);
       case DownloadStatus.failed:
@@ -344,9 +360,14 @@ class DownloadProgressItem extends StatelessWidget {
     }
   }
 
-  Color _getBorderColor(BuildContext context, DownloadStatus status) {
+  Color _getBorderColor(BuildContext context, DownloadStatus status, {bool waitingForWifi = false}) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     switch (status) {
+      case DownloadStatus.waiting:
+        if (waitingForWifi) {
+          return Colors.blue.withValues(alpha: isDark ? 0.2 : 0.15);
+        }
+        return isDark ? Colors.white.withValues(alpha: 0.1) : Colors.white.withValues(alpha: 0.3);
       case DownloadStatus.completed:
         return Colors.green.withValues(alpha: isDark ? 0.2 : 0.15);
       case DownloadStatus.failed:

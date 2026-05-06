@@ -67,9 +67,7 @@ dependencies:
   file_picker: ^8.0.0
 
   # 下载
-  flutter_downloader: ^1.8.0
-
-  # 工具
+  background_downloader: 9.5.4
   path_provider: ^2.1.1
   permission_handler: ^11.1.0
   url_launcher: ^6.2.1
@@ -94,7 +92,6 @@ dependencies:
   logger: ^2.7.0
   image_picker: ^1.2.2
   qr_flutter: ^4.1.0
-  background_downloader: 9.5.4
 
   # 桌面端
   window_manager: ^0.5.0

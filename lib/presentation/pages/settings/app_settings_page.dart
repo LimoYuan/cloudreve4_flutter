@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../../core/constants/storage_keys.dart';
 import '../../../data/models/cache_settings_model.dart';
 import '../../../services/cache_manager_service.dart';
+import '../../../services/storage_service.dart';
+import '../../providers/download_manager_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../providers/user_setting_provider.dart';
 import '../../widgets/toast_helper.dart';
@@ -20,11 +23,13 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
   bool _isLoading = true;
   int? _currentCacheSize;
   bool _isCleaning = false;
+  bool _wifiOnlyEnabled = false;
 
   @override
   void initState() {
     super.initState();
     _loadCacheSettings();
+    _loadWifiOnlySetting();
   }
 
   Future<void> _loadCacheSettings() async {
@@ -53,6 +58,13 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
     final service = CacheManagerService.instance;
     await service.saveSettings(_cacheSettings);
     if (mounted) ToastHelper.success('设置已保存');
+  }
+
+  Future<void> _loadWifiOnlySetting() async {
+    final enabled = await StorageService.instance
+            .getBool(StorageKeys.downloadWifiOnly) ??
+        false;
+    if (mounted) setState(() => _wifiOnlyEnabled = enabled);
   }
 
   @override
@@ -96,6 +108,26 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
                       subtitle: const Text('跟随系统'),
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () => _showLanguageDialog(context),
+                    ),
+                  ],
+                ),
+                _buildSection(
+                  title: '下载设置',
+                  children: [
+                    SwitchListTile(
+                      title: const Text('仅WiFi下载'),
+                      subtitle: const Text('非WiFi环境下暂停下载，等待WiFi后自动恢复'),
+                      value: _wifiOnlyEnabled,
+                      onChanged: (value) async {
+                        setState(() => _wifiOnlyEnabled = value);
+                        await StorageService.instance
+                            .setBool(StorageKeys.downloadWifiOnly, value);
+                        if (mounted) {
+                          context
+                              .read<DownloadManagerProvider>()
+                              .setWifiOnlyEnabled(value);
+                        }
+                      },
                     ),
                   ],
                 ),

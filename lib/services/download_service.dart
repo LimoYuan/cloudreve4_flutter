@@ -1,37 +1,22 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:isolate';
-import 'dart:ui';
-import 'package:flutter/foundation.dart';
-import 'package:flutter_downloader/flutter_downloader.dart';
 import 'package:background_downloader/background_downloader.dart' as bd;
+import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
+import '../core/constants/storage_keys.dart';
 import '../data/models/download_task_model.dart';
 import 'file_service.dart';
+import 'storage_service.dart';
 import '../core/utils/app_logger.dart';
 
 /// 下载服务 - 单例模式
-/// Android 使用 flutter_downloader，Windows/Linux/macOS 使用 background_downloader
-@pragma('vm:entry-point')
+/// 所有平台统一使用 background_downloader
 class DownloadService {
   static final DownloadService _instance = DownloadService._internal();
   factory DownloadService() => _instance;
 
-  DownloadService._internal() {
-    if (!_useBackgroundDownloader) {
-      _port = ReceivePort();
-      _port!.listen((dynamic data) {
-        AppLogger.d('DownloadService ReceivePort 收到数据: $data');
-        final id = data[0] as String;
-        final status = data[1] as int;
-        final progress = data[2] as int;
-        _callbackHandler?.call(id, status, progress);
-      });
-    }
-  }
-
-  ReceivePort? _port;
+  DownloadService._internal();
 
   // 统一映射：外部下载器 task ID → 内部 task ID
   final Map<String, String> _externalTaskIdToInternalId = {};
@@ -41,27 +26,25 @@ class DownloadService {
   final Map<String, bd.DownloadTask> _bdTasks = {};
 
   // 回调处理器
-  static Function(String taskId, int status, int progress)? _callbackHandler;
+  static Function(String taskId, DownloadStatus status, int progress)?
+      _callbackHandler;
 
   final FileService _fileService = FileService();
-  final Map<String, StreamController<DownloadTaskModel>> _progressControllers = {};
+  final Map<String, StreamController<DownloadTaskModel>> _progressControllers =
+      {};
   bool _isInitialized = false;
 
-  /// 是否使用 background_downloader（Windows/Linux/macOS）
-  bool get _useBackgroundDownloader =>
-      defaultTargetPlatform == TargetPlatform.windows ||
-      defaultTargetPlatform == TargetPlatform.linux ||
-      defaultTargetPlatform == TargetPlatform.macOS;
-
   /// 设置回调处理器
-  static void setCallbackHandler(Function(String taskId, int status, int progress) handler) {
+  static void setCallbackHandler(
+      Function(String taskId, DownloadStatus status, int progress) handler) {
     _callbackHandler = handler;
   }
 
   /// 获取下载任务进度流
   Stream<DownloadTaskModel> getProgressStream(String taskId) {
     if (!_progressControllers.containsKey(taskId)) {
-      _progressControllers[taskId] = StreamController<DownloadTaskModel>.broadcast();
+      _progressControllers[taskId] =
+          StreamController<DownloadTaskModel>.broadcast();
     }
     return _progressControllers[taskId]!.stream;
   }
@@ -118,8 +101,17 @@ class DownloadService {
     }
   }
 
+  /// 读取 WiFi-only 下载设置
+  Future<bool> isWifiOnlyEnabled() async {
+    return await StorageService.instance
+            .getBool(StorageKeys.downloadWifiOnly) ??
+        false;
+  }
+
   /// 初始化下载器
-  Future<void> initialize({Function(String taskId, int status, int progress)? callbackHandler}) async {
+  Future<void> initialize(
+      {Function(String taskId, DownloadStatus status, int progress)?
+          callbackHandler}) async {
     if (callbackHandler != null) {
       setCallbackHandler(callbackHandler);
       AppLogger.d('回调处理器已更新');
@@ -130,81 +122,63 @@ class DownloadService {
       return;
     }
 
-    if (_useBackgroundDownloader) {
-      // Windows/Linux/macOS: 使用 background_downloader
-      bd.FileDownloader().registerCallbacks(
-        taskStatusCallback: _handleBdStatusUpdate,
-        taskProgressCallback: _handleBdProgressUpdate,
+    // 配置通知（Android 前台服务需要通知栏显示）
+    if (Platform.isAndroid) {
+      bd.FileDownloader().configureNotification(
+        running: const bd.TaskNotification(
+            '正在下载', '文件: {filename} - {progress}'),
+        complete:
+            const bd.TaskNotification('下载完成', '文件: {filename} 已保存'),
+        error: const bd.TaskNotification('下载失败', '文件: {filename} 下载出错'),
+        paused: const bd.TaskNotification('已暂停', '文件: {filename} 已暂停'),
+        progressBar: true,
+        tapOpensFile: true,
       );
-      AppLogger.d('background_downloader 回调已注册');
-    } else {
-      // Android: 使用 flutter_downloader
-      IsolateNameServer.registerPortWithName(_port!.sendPort, 'download_service_port');
-      AppLogger.d('已注册 ReceivePort 到 IsolateNameServer');
-
-      await FlutterDownloader.initialize(
-        debug: kDebugMode,
-      );
-      FlutterDownloader.registerCallback(_staticCallback);
+      AppLogger.d('background_downloader 通知已配置');
     }
+
+    bd.FileDownloader().registerCallbacks(
+      taskStatusCallback: _handleBdStatusUpdate,
+      taskProgressCallback: _handleBdProgressUpdate,
+    );
 
     _isInitialized = true;
-    AppLogger.d('DownloadService 初始化完成 (${_useBackgroundDownloader ? "background_downloader" : "flutter_downloader"})');
-  }
-
-  /// flutter_downloader 静态回调
-  @pragma('vm:entry-point')
-  static void _staticCallback(String id, int status, int progress) {
-    AppLogger.d('flutter_downloader 静态回调: id=$id, status=$status, progress=$progress');
-    final sendPort = IsolateNameServer.lookupPortByName('download_service_port');
-    if (sendPort != null) {
-      sendPort.send([id, status, progress]);
-    } else {
-      _callbackHandler?.call(id, status, progress);
-    }
+    AppLogger.d('DownloadService 初始化完成 (background_downloader)');
   }
 
   /// background_downloader 状态回调
   void _handleBdStatusUpdate(bd.TaskStatusUpdate update) {
     final internalId = _externalTaskIdToInternalId[update.task.taskId];
     if (internalId == null) {
-      AppLogger.d('background_downloader 状态回调: 未找到内部任务ID, taskId=${update.task.taskId}');
+      AppLogger.d(
+          'background_downloader 状态回调: 未找到内部任务ID, taskId=${update.task.taskId}');
       return;
     }
 
-    // 映射为 flutter_downloader 兼容的状态码
-    // 0=undefined, 1=enqueued, 2=running, 3=complete, 4=failed, 5=canceled, 6=paused
-    int status;
+    DownloadStatus status;
     switch (update.status) {
       case bd.TaskStatus.enqueued:
-        status = 1;
-        break;
+        status = DownloadStatus.waiting;
       case bd.TaskStatus.running:
-        status = 2;
-        break;
+        status = DownloadStatus.downloading;
       case bd.TaskStatus.complete:
-        status = 3;
-        break;
+        status = DownloadStatus.completed;
       case bd.TaskStatus.notFound:
       case bd.TaskStatus.failed:
-        status = 4;
-        break;
+        status = DownloadStatus.failed;
       case bd.TaskStatus.canceled:
-        status = 5;
-        break;
+        status = DownloadStatus.cancelled;
       case bd.TaskStatus.paused:
-        status = 6;
-        break;
+        status = DownloadStatus.paused;
       case bd.TaskStatus.waitingToRetry:
-        status = 1;
-        break;
+        status = DownloadStatus.waiting;
     }
 
-    AppLogger.d('background_downloader 状态更新: taskId=${update.task.taskId}, internalId=$internalId, status=$status');
+    AppLogger.d(
+        'background_downloader 状态更新: taskId=${update.task.taskId}, internalId=$internalId, status=$status');
 
-    // 状态变化时，进度设为完成(100)或当前值
-    final progress = status == 3 ? 100 : 0;
-    _callbackHandler?.call(update.task.taskId, status, progress);
+    final progress = status == DownloadStatus.completed ? 100 : 0;
+    _callbackHandler?.call(internalId, status, progress);
   }
 
   /// background_downloader 进度回调
@@ -213,7 +187,7 @@ class DownloadService {
     if (internalId == null) return;
 
     final progress = (update.progress * 100).toInt().clamp(0, 100);
-    _callbackHandler?.call(update.task.taskId, 2, progress);
+    _callbackHandler?.call(internalId, DownloadStatus.downloading, progress);
   }
 
   /// 开始下载
@@ -223,7 +197,7 @@ class DownloadService {
         await initialize();
       }
 
-      // 获取下载 URL（共用逻辑）
+      // 获取下载 URL
       String url = task.downloadUrl ?? '';
       if (url.isEmpty) {
         final response = await _fileService.getDownloadUrls(
@@ -252,11 +226,7 @@ class DownloadService {
         await file.delete();
       }
 
-      if (_useBackgroundDownloader) {
-        return _startBdDownload(task, url, dir);
-      } else {
-        return _startFlutterDownloader(task, url, dir, file);
-      }
+      return _startBdDownload(task, url, dir);
     } catch (e) {
       AppLogger.d('下载失败: $e');
       rethrow;
@@ -264,7 +234,9 @@ class DownloadService {
   }
 
   /// 使用 background_downloader 开始下载
-  Future<String?> _startBdDownload(DownloadTaskModel task, String url, Directory dir) async {
+  Future<String?> _startBdDownload(
+      DownloadTaskModel task, String url, Directory dir) async {
+    final wifiOnly = await isWifiOnlyEnabled();
     final bdTask = bd.DownloadTask(
       url: url,
       filename: task.fileName,
@@ -272,6 +244,8 @@ class DownloadService {
       baseDirectory: bd.BaseDirectory.root,
       updates: bd.Updates.statusAndProgress,
       allowPause: true,
+      retries: 3,
+      requiresWiFi: wifiOnly,
       metaData: task.id,
     );
 
@@ -286,50 +260,17 @@ class DownloadService {
     _internalIdToExternalTaskId[task.id] = bdTask.taskId;
     _bdTasks[task.id] = bdTask;
 
-    AppLogger.d('background_downloader 任务已添加: taskId=${bdTask.taskId}, internalId=${task.id}');
+    AppLogger.d(
+        'background_downloader 任务已添加: taskId=${bdTask.taskId}, internalId=${task.id}, requiresWiFi=$wifiOnly');
 
     return bdTask.taskId;
   }
 
-  /// 使用 flutter_downloader 开始下载
-  Future<String?> _startFlutterDownloader(DownloadTaskModel task, String url, Directory dir, File file) async {
-    final flutterTaskId = await FlutterDownloader.enqueue(
-      url: url,
-      savedDir: dir.path,
-      fileName: file.uri.pathSegments.last,
-      showNotification: true,
-      openFileFromNotification: true,
-    );
-
-    if (flutterTaskId == null || flutterTaskId.isEmpty) {
-      throw Exception('创建下载任务失败');
-    }
-
-    _externalTaskIdToInternalId[flutterTaskId] = task.id;
-    _internalIdToExternalTaskId[task.id] = flutterTaskId;
-
-    AppLogger.d('flutter_downloader 任务已添加: flutterTaskId=$flutterTaskId, internalId=${task.id}');
-
-    return flutterTaskId;
-  }
-
-  /// 根据外部下载器 task ID 获取内部任务 ID
-  String? getInternalTaskId(String externalTaskId) {
-    return _externalTaskIdToInternalId[externalTaskId];
-  }
-
   /// 暂停下载
   Future<void> pauseDownload(String taskId) async {
-    if (_useBackgroundDownloader) {
-      final bdTask = _bdTasks[taskId];
-      if (bdTask != null) {
-        await bd.FileDownloader().pause(bdTask);
-      }
-    } else {
-      final externalId = _internalIdToExternalTaskId[taskId];
-      if (externalId != null) {
-        await FlutterDownloader.pause(taskId: externalId);
-      }
+    final bdTask = _bdTasks[taskId];
+    if (bdTask != null) {
+      await bd.FileDownloader().pause(bdTask);
     }
   }
 
@@ -338,31 +279,17 @@ class DownloadService {
     if (!_isInitialized) {
       await initialize();
     }
-    if (_useBackgroundDownloader) {
-      final bdTask = _bdTasks[taskId];
-      if (bdTask != null) {
-        await bd.FileDownloader().resume(bdTask);
-      }
-    } else {
-      final externalId = _internalIdToExternalTaskId[taskId];
-      if (externalId != null) {
-        await FlutterDownloader.resume(taskId: externalId);
-      }
+    final bdTask = _bdTasks[taskId];
+    if (bdTask != null) {
+      await bd.FileDownloader().resume(bdTask);
     }
   }
 
   /// 取消下载
   Future<void> cancelDownload(String taskId) async {
-    if (_useBackgroundDownloader) {
-      final bdTask = _bdTasks[taskId];
-      if (bdTask != null) {
-        await bd.FileDownloader().cancel(bdTask);
-      }
-    } else {
-      final externalId = _internalIdToExternalTaskId[taskId];
-      if (externalId != null) {
-        await FlutterDownloader.cancel(taskId: externalId);
-      }
+    final bdTask = _bdTasks[taskId];
+    if (bdTask != null) {
+      await bd.FileDownloader().cancel(bdTask);
     }
   }
 

@@ -31,6 +31,7 @@ class AdminGroupModel {
   final DateTime? createdAt;
   final DateTime? updatedAt;
   final Map<String, dynamic>? storagePolicy;
+  final int? totalUsers;
 
   AdminGroupModel({
     required this.id,
@@ -42,6 +43,7 @@ class AdminGroupModel {
     this.createdAt,
     this.updatedAt,
     this.storagePolicy,
+    this.totalUsers,
   });
 
   factory AdminGroupModel.fromJson(Map<String, dynamic> json) {
@@ -64,6 +66,7 @@ class AdminGroupModel {
           ? DateTime.parse(json['updated_at'] as String)
           : null,
       storagePolicy: storagePolicy,
+      totalUsers: json['total_users'] as int?,
     );
   }
 

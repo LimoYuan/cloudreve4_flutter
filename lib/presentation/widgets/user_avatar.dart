@@ -81,7 +81,7 @@ class _UserAvatarState extends State<UserAvatar> {
             'Authorization': 'Bearer ${context.read<AuthProvider>().token?.accessToken ?? ''}',
           },
         ),
-        onBackgroundImageError: (_, __) {
+        onBackgroundImageError: (_, _) {
           if (!_serverAvatarFailed) {
             setState(() => _serverAvatarFailed = true);
           }
@@ -96,7 +96,7 @@ class _UserAvatarState extends State<UserAvatar> {
         radius: widget.radius,
         backgroundColor: colorScheme.primaryContainer,
         backgroundImage: CachedNetworkImageProvider(_gravatarUrl!),
-        onBackgroundImageError: (_, __) {
+        onBackgroundImageError: (_, _) {
           if (!_gravatarFailed) {
             setState(() => _gravatarFailed = true);
           }

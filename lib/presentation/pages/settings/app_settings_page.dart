@@ -31,6 +31,8 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
   bool _wifiOnlyEnabled = false;
   int _downloadRetries = 3;
   int _taskRetentionDays = 7;
+  bool _gravatarMirrorEnabled = true;
+  String _gravatarMirrorUrl = 'https://weavatar.com';
   String _logFilePath = '';
   int? _logFileSize;
 
@@ -39,6 +41,7 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
     super.initState();
     _loadCacheSettings();
     _loadWifiOnlySetting();
+    _loadGravatarMirrorSetting();
     _loadLogInfo();
   }
 
@@ -100,6 +103,21 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
     }
   }
 
+  Future<void> _loadGravatarMirrorSetting() async {
+    final enabled = await StorageService.instance
+            .getBool(StorageKeys.gravatarMirrorEnabled) ??
+        true;
+    final url = await StorageService.instance
+            .getString(StorageKeys.gravatarMirrorUrl) ??
+        'https://weavatar.com';
+    if (mounted) {
+      setState(() {
+        _gravatarMirrorEnabled = enabled;
+        _gravatarMirrorUrl = url;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -142,6 +160,29 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () => _showLanguageDialog(context),
                     ),
+                  ],
+                ),
+                _buildSection(
+                  title: 'Gravatar 镜像',
+                  children: [
+                    SwitchListTile(
+                      title: const Text('启用 Gravatar 镜像'),
+                      subtitle: const Text('国内网络建议启用，加速 Gravatar 头像加载'),
+                      value: _gravatarMirrorEnabled,
+                      onChanged: (value) async {
+                        setState(() => _gravatarMirrorEnabled = value);
+                        await StorageService.instance
+                            .setBool(StorageKeys.gravatarMirrorEnabled, value);
+                      },
+                    ),
+                    if (_gravatarMirrorEnabled)
+                      ListTile(
+                        leading: const Icon(Icons.dns_outlined),
+                        title: const Text('镜像地址'),
+                        subtitle: Text(_gravatarMirrorUrl),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => _showGravatarMirrorUrlDialog(context),
+                      ),
                   ],
                 ),
                 _buildSection(
@@ -575,6 +616,64 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
       setState(() => _taskRetentionDays = selected);
       await StorageService.instance
           .setInt(StorageKeys.taskRetentionDays, selected);
+    }
+  }
+
+  Future<void> _showGravatarMirrorUrlDialog(BuildContext context) async {
+    final controller = TextEditingController(text: _gravatarMirrorUrl);
+    final presets = [
+      'https://weavatar.com',
+      'https://gravatar.loli.net',
+      'https://cdn.v2ex.com/gravatar',
+    ];
+
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Gravatar 镜像地址'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: controller,
+              decoration: const InputDecoration(
+                labelText: '镜像地址',
+                hintText: '例如: https://weavatar.com',
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text('常用镜像：', style: TextStyle(fontSize: 12, color: Colors.grey)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: presets.map((url) => ActionChip(
+                label: Text(url, style: const TextStyle(fontSize: 11)),
+                onPressed: () => controller.text = url,
+              )).toList(),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+
+    if (selected != null && selected.isNotEmpty && mounted) {
+      var url = selected;
+      if (url.endsWith('/')) url = url.substring(0, url.length - 1);
+      setState(() => _gravatarMirrorUrl = url);
+      await StorageService.instance
+          .setString(StorageKeys.gravatarMirrorUrl, url);
     }
   }
 

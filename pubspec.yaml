@@ -99,6 +99,7 @@ dependencies:
   flutter_single_instance: ^1.7.0
   path: ^1.9.1
   flutter_acrylic: ^1.1.4
+  crypto: ^3.0.7
 
 dev_dependencies:
   flutter_test:

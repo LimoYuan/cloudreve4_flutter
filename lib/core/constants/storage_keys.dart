@@ -20,4 +20,8 @@ class StorageKeys {
 
   // 缓存相关
   static const String cacheSettings = 'cache_settings';
+
+  // Gravatar 镜像
+  static const String gravatarMirrorEnabled = 'gravatar_mirror_enabled';
+  static const String gravatarMirrorUrl = 'gravatar_mirror_url';
 }

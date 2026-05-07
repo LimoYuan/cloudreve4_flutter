@@ -1,6 +1,7 @@
 import 'package:cloudreve4_flutter/presentation/providers/auth_provider.dart';
 import 'package:cloudreve4_flutter/presentation/providers/user_setting_provider.dart';
 import 'package:cloudreve4_flutter/presentation/pages/profile/widgets/thick_storage_bar.dart';
+import 'package:cloudreve4_flutter/presentation/widgets/user_avatar.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -15,7 +16,6 @@ class ProfileInfoCard extends StatelessWidget {
     final authProvider = context.watch<AuthProvider>();
     final user = authProvider.user;
     final displayName = user?.nickname ?? '用户';
-    final initial = displayName.isNotEmpty ? displayName[0].toUpperCase() : 'U';
 
     return Card(
       child: Padding(
@@ -25,17 +25,11 @@ class ProfileInfoCard extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                CircleAvatar(
+                UserAvatar(
+                  userId: user?.id ?? '',
+                  email: user?.email,
+                  displayName: displayName,
                   radius: 32,
-                  backgroundColor: colorScheme.primaryContainer,
-                  child: Text(
-                    initial,
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: colorScheme.onPrimaryContainer,
-                    ),
-                  ),
                 ),
                 const SizedBox(width: 16),
                 Expanded(

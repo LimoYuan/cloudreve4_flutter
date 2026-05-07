@@ -6,6 +6,7 @@ import 'package:cloudreve4_flutter/presentation/providers/navigation_provider.da
 import 'package:cloudreve4_flutter/presentation/providers/upload_manager_provider.dart';
 import 'package:cloudreve4_flutter/presentation/widgets/gesture_handler_mixin.dart';
 import 'package:cloudreve4_flutter/presentation/widgets/glassmorphism_container.dart';
+import 'package:cloudreve4_flutter/presentation/widgets/user_avatar.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:provider/provider.dart';
@@ -135,7 +136,6 @@ class _AppShellState extends State<AppShell> with GestureHandlerMixin {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final user = authProvider.user;
     final displayName = user?.nickname ?? '用户';
-    final initial = displayName.isNotEmpty ? displayName[0].toUpperCase() : 'U';
 
     return Scaffold(
       body: Row(
@@ -157,17 +157,11 @@ class _AppShellState extends State<AppShell> with GestureHandlerMixin {
                           )
                         : null,
                   ),
-                  child: CircleAvatar(
+                  child: UserAvatar(
+                    userId: user?.id ?? '',
+                    email: user?.email,
+                    displayName: displayName,
                     radius: 20,
-                    backgroundColor: theme.colorScheme.primaryContainer,
-                    child: Text(
-                      initial,
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: theme.colorScheme.onPrimaryContainer,
-                      ),
-                    ),
                   ),
                 ),
               ),

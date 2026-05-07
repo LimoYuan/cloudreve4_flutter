@@ -7,6 +7,7 @@ import '../../../data/models/user_setting_model.dart';
 import '../../../services/user_setting_service.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/user_setting_provider.dart';
+import '../../widgets/user_avatar.dart';
 import '../../widgets/toast_helper.dart';
 import '../../widgets/desktop_constrained.dart';
 import 'profile_edit_page.dart';
@@ -269,23 +270,11 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Widget _buildAvatar(BuildContext context, UserModel? user, double size) {
-    final avatarUrl = user?.avatar;
-    if (avatarUrl != null && avatarUrl.isNotEmpty) {
-      return CircleAvatar(
-        radius: size / 2,
-        backgroundImage: NetworkImage(avatarUrl),
-        onBackgroundImageError: (_, _) {},
-        child: Container(),
-      );
-    }
-    return CircleAvatar(
+    return UserAvatar(
+      userId: user?.id ?? '',
+      email: user?.email,
+      displayName: user?.nickname ?? '用户',
       radius: size / 2,
-      backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-      child: Icon(
-        Icons.person,
-        size: size * 0.5,
-        color: Theme.of(context).colorScheme.onPrimaryContainer,
-      ),
     );
   }
 

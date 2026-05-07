@@ -1,5 +1,6 @@
 import 'package:cloudreve4_flutter/data/models/admin_model.dart';
 import 'package:cloudreve4_flutter/presentation/providers/admin_provider.dart';
+import 'package:cloudreve4_flutter/presentation/widgets/user_avatar.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:provider/provider.dart';
@@ -237,17 +238,11 @@ class _UserItem extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         children: [
-          CircleAvatar(
+          UserAvatar(
+            userId: user.id.toString(),
+            email: user.email,
+            displayName: user.nick,
             radius: 18,
-            backgroundColor: colorScheme.primaryContainer,
-            child: Text(
-              user.initial,
-              style: TextStyle(
-                color: colorScheme.onPrimaryContainer,
-                fontWeight: FontWeight.w600,
-                fontSize: 13,
-              ),
-            ),
           ),
           const SizedBox(width: 12),
           Expanded(

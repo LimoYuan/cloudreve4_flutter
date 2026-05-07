@@ -13,6 +13,7 @@ import '../../../router/app_router.dart';
 import '../files/files_page.dart';
 import '../overview/overview_page.dart';
 import '../tasks/tasks_page.dart';
+import '../profile/profile_page.dart';
 
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
@@ -36,6 +37,8 @@ class _AppShellState extends State<AppShell> with GestureHandlerMixin {
 
           if (navProvider.currentIndex == 1 && fileManager.currentPath != '/') {
             await fileManager.goBack();
+          } else if (navProvider.currentIndex != 0 && navProvider.currentIndex != 1) {
+            navProvider.setIndex(0);
           } else {
             await checkExitApp(context);
           }
@@ -57,6 +60,7 @@ class _AppShellState extends State<AppShell> with GestureHandlerMixin {
       OverviewPage(),
       FilesPage(),
       TasksPage(),
+      ProfilePage(),
     ];
 
     return PageTransitionSwitcher(
@@ -113,6 +117,11 @@ class _AppShellState extends State<AppShell> with GestureHandlerMixin {
                   ),
                   label: '任务',
                 ),
+                const NavigationDestination(
+                  icon: Icon(LucideIcons.user),
+                  selectedIcon: Icon(LucideIcons.user, weight: 700),
+                  label: '我的',
+                ),
               ],
             );
           },
@@ -136,15 +145,29 @@ class _AppShellState extends State<AppShell> with GestureHandlerMixin {
             onDestinationSelected: (i) => navProvider.setIndex(i),
             leading: Padding(
               padding: const EdgeInsets.symmetric(vertical: 16),
-              child: CircleAvatar(
-                radius: 20,
-                backgroundColor: theme.colorScheme.primaryContainer,
-                child: Text(
-                  initial,
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: theme.colorScheme.onPrimaryContainer,
+              child: GestureDetector(
+                onTap: () => navProvider.setIndex(3),
+                child: Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: navProvider.currentIndex == 3
+                        ? Border.all(
+                            color: theme.colorScheme.primary,
+                            width: 2.5,
+                          )
+                        : null,
+                  ),
+                  child: CircleAvatar(
+                    radius: 20,
+                    backgroundColor: theme.colorScheme.primaryContainer,
+                    child: Text(
+                      initial,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.onPrimaryContainer,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -173,6 +196,11 @@ class _AppShellState extends State<AppShell> with GestureHandlerMixin {
                 ),
                 selectedIcon: const Icon(LucideIcons.listChecks, weight: 700),
                 label: const Text('任务'),
+              ),
+              const NavigationRailDestination(
+                icon: Icon(LucideIcons.user),
+                selectedIcon: Icon(LucideIcons.user, weight: 700),
+                label: Text('我的'),
               ),
             ],
             trailing: Expanded(

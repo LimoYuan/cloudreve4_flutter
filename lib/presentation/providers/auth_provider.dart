@@ -25,6 +25,10 @@ class AuthProvider extends ChangeNotifier {
   bool get isAuthenticated => _state == AuthState.authenticated;
   bool get isLoading => _state == AuthState.loading;
   bool get hasRefreshTokenExpired => _hasRefreshTokenExpired;
+  bool get isAdmin {
+    final name = _user?.group?.name.toLowerCase();
+    return name == 'admin' || name == '管理员';
+  }
 
   /// 当前选中的服务器
   ServerModel? get currentServer => ServerService.instance.currentServer;

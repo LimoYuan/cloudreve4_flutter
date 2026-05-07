@@ -250,17 +250,19 @@ class DownloadProgressItem extends StatelessWidget {
           ),
         ];
       case DownloadStatus.completed:
+        final showOpenFolder = !Platform.isAndroid;
         return [
           IconButton(
             icon: const Icon(Icons.open_in_new, size: 20),
             onPressed: () => _openDownloadedFile(context, task),
             tooltip: '打开',
           ),
-          IconButton(
-            icon: const Icon(Icons.folder_open, size: 20),
-            onPressed: () => _openFileFolder(context, task),
-            tooltip: '打开文件夹',
-          ),
+          if (showOpenFolder)
+            IconButton(
+              icon: const Icon(Icons.folder_open, size: 20),
+              onPressed: () => _openFileFolder(context, task),
+              tooltip: '打开文件夹',
+            ),
           IconButton(
             icon: Icon(Icons.delete_outline, size: 20, color: errorColor),
             onPressed: onDelete,

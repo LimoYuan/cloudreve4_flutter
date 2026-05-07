@@ -116,34 +116,32 @@ class _GroupsCard extends StatelessWidget {
     final controller = TextEditingController();
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('创建用户组'),
-        content: TextField(
+      builder: (ctx) => _StyledDialog(
+        title: '创建用户组',
+        icon: LucideIcons.users,
+        child: TextField(
           controller: controller,
           autofocus: true,
-          decoration: const InputDecoration(
+          decoration: _StyledInputDecoration(
             labelText: '用户组名称',
             hintText: '请输入用户组名称',
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              final name = controller.text.trim();
-              if (name.isEmpty) return;
-              Navigator.of(ctx).pop();
-              final success = await context.read<AdminProvider>().createGroup(name);
-              if (context.mounted) {
-                if (success) ToastHelper.success('创建成功'); else ToastHelper.failure('创建失败');
+        onConfirm: () {
+          final name = controller.text.trim();
+          if (name.isEmpty) return false;
+          Navigator.of(ctx).pop();
+          context.read<AdminProvider>().createGroup(name).then((success) {
+            if (context.mounted) {
+              if (success) {
+                ToastHelper.success('创建成功');
+              } else {
+                ToastHelper.failure('创建失败');
               }
-            },
-            child: const Text('创建'),
-          ),
-        ],
+            }
+          });
+          return true;
+        },
       ),
     );
   }
@@ -228,32 +226,23 @@ class _GroupItem extends StatelessWidget {
   void _confirmDeleteGroup(BuildContext context, AdminGroupModel group) {
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('删除用户组'),
-        content: Text('确定要删除用户组「${group.name}」吗？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(ctx).colorScheme.error,
-            ),
-            onPressed: () async {
-              Navigator.of(ctx).pop();
-              final error = await context.read<AdminProvider>().deleteGroup(group.id);
-              if (context.mounted) {
-                if (error != null) {
-                  ToastHelper.failure(error);
-                } else {
-                  ToastHelper.success('已删除');
-                }
+      builder: (ctx) => _StyledConfirmDialog(
+        title: '删除用户组',
+        message: '确定要删除用户组「${group.name}」吗？',
+        icon: LucideIcons.trash2,
+        isDestructive: true,
+        onConfirm: () {
+          Navigator.of(ctx).pop();
+          context.read<AdminProvider>().deleteGroup(group.id).then((error) {
+            if (context.mounted) {
+              if (error != null) {
+                ToastHelper.failure(error);
+              } else {
+                ToastHelper.success('已删除');
               }
-            },
-            child: const Text('删除'),
-          ),
-        ],
+            }
+          });
+        },
       ),
     );
   }
@@ -376,78 +365,73 @@ class _UsersCard extends StatelessWidget {
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: const Text('创建用户'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: emailController,
-                  decoration: const InputDecoration(
-                    labelText: '邮箱',
-                    hintText: 'user@example.com',
-                  ),
-                  keyboardType: TextInputType.emailAddress,
+        builder: (ctx, setDialogState) => _StyledDialog(
+          title: '创建用户',
+          icon: LucideIcons.userPlus,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: emailController,
+                decoration: _StyledInputDecoration(
+                  labelText: '邮箱',
+                  hintText: 'user@example.com',
+                  prefixIcon: Icon(LucideIcons.mail, size: 18),
                 ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: nickController,
-                  decoration: const InputDecoration(
-                    labelText: '昵称',
-                  ),
+                keyboardType: TextInputType.emailAddress,
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: nickController,
+                decoration: _StyledInputDecoration(
+                  labelText: '昵称',
+                  hintText: '请输入昵称',
+                  prefixIcon: Icon(LucideIcons.user, size: 18),
                 ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: passwordController,
-                  decoration: const InputDecoration(
-                    labelText: '密码',
-                  ),
-                  obscureText: true,
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: passwordController,
+                decoration: _StyledInputDecoration(
+                  labelText: '密码',
+                  hintText: '请输入密码',
+                  prefixIcon: Icon(LucideIcons.lock, size: 18),
                 ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<int>(
-                  value: selectedGroupId,
-                  decoration: const InputDecoration(
-                    labelText: '用户组',
-                  ),
-                  items: groups.map((g) => DropdownMenuItem(
-                    value: g.id,
-                    child: Text(g.name),
-                  )).toList(),
-                  onChanged: (v) => setDialogState(() => selectedGroupId = v),
-                ),
-              ],
-            ),
+                obscureText: true,
+              ),
+              const SizedBox(height: 20),
+              _GroupChipSelector(
+                groups: groups,
+                selectedGroupId: selectedGroupId,
+                onChanged: (id) => setDialogState(() => selectedGroupId = id),
+              ),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () async {
-                final email = emailController.text.trim();
-                final nick = nickController.text.trim();
-                final password = passwordController.text.trim();
-                if (email.isEmpty || nick.isEmpty || password.isEmpty || selectedGroupId == null) {
-                  ToastHelper.error('请填写完整信息');
-                  return;
+          onConfirm: () {
+            final email = emailController.text.trim();
+            final nick = nickController.text.trim();
+            final password = passwordController.text.trim();
+            if (email.isEmpty || nick.isEmpty || password.isEmpty || selectedGroupId == null) {
+              ToastHelper.error('请填写完整信息');
+              return false;
+            }
+            Navigator.of(ctx).pop();
+            context.read<AdminProvider>().createUser(
+              email: email,
+              nick: nick,
+              password: password,
+              groupId: selectedGroupId!,
+            ).then((success) {
+              if (context.mounted) {
+                if (success) {
+                  ToastHelper.success('创建成功');
+                } else {
+                  ToastHelper.failure('创建失败');
                 }
-                Navigator.of(ctx).pop();
-                final success = await context.read<AdminProvider>().createUser(
-                  email: email,
-                  nick: nick,
-                  password: password,
-                  groupId: selectedGroupId!,
-                );
-                if (context.mounted) {
-                  if (success) ToastHelper.success('创建成功'); else ToastHelper.failure('创建失败');
-                }
-              },
-              child: const Text('创建'),
-            ),
-          ],
+              }
+            });
+            return true;
+          },
         ),
       ),
     );
@@ -456,29 +440,95 @@ class _UsersCard extends StatelessWidget {
   void _confirmBatchDelete(BuildContext context, List<int> ids) {
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('批量删除用户'),
-        content: Text('确定要删除选中的 ${ids.length} 个用户吗？此操作不可撤销。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(ctx).colorScheme.error,
-            ),
-            onPressed: () async {
-              Navigator.of(ctx).pop();
-              final success = await context.read<AdminProvider>().batchDeleteUsers(ids);
-              if (context.mounted) {
-                if (success) ToastHelper.success('已删除'); else ToastHelper.failure('删除失败');
+      builder: (ctx) => _StyledConfirmDialog(
+        title: '批量删除用户',
+        message: '确定要删除选中的 ${ids.length} 个用户吗？此操作不可撤销。',
+        icon: LucideIcons.trash2,
+        isDestructive: true,
+        onConfirm: () {
+          Navigator.of(ctx).pop();
+          context.read<AdminProvider>().batchDeleteUsers(ids).then((success) {
+            if (context.mounted) {
+              if (success) {
+                ToastHelper.success('已删除');
+              } else {
+                ToastHelper.failure('删除失败');
               }
-            },
-            child: const Text('删除'),
-          ),
-        ],
+            }
+          });
+        },
       ),
+    );
+  }
+}
+
+/// 用户组 Chip 选择器 — 替代 DropdownButtonFormField
+class _GroupChipSelector extends StatelessWidget {
+  final List<AdminGroupModel> groups;
+  final int? selectedGroupId;
+  final ValueChanged<int?> onChanged;
+
+  const _GroupChipSelector({
+    required this.groups,
+    this.selectedGroupId,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('用户组',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.hintColor,
+              fontWeight: FontWeight.w500,
+            )),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: groups.map((group) {
+            final selected = selectedGroupId == group.id;
+            return ChoiceChip(
+              label: Text(group.name),
+              selected: selected,
+              onSelected: (_) => onChanged(selected ? null : group.id),
+              avatar: selected
+                  ? null
+                  : CircleAvatar(
+                      radius: 10,
+                      backgroundColor: colorScheme.primaryContainer,
+                      child: Text(
+                        group.name[0],
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: colorScheme.onPrimaryContainer,
+                        ),
+                      ),
+                    ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            );
+          }).toList(),
+        ),
+        if (selectedGroupId == null)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              '请选择用户组',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colorScheme.error.withValues(alpha: 0.7),
+                fontSize: 12,
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -572,4 +622,191 @@ class _UserItem extends StatelessWidget {
       ),
     );
   }
+}
+
+// ==================== 统一风格对话框组件 ====================
+
+/// 圆角风格对话框 — 与页面 Card 风格统一
+class _StyledDialog extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final Widget child;
+  final bool Function() onConfirm;
+
+  const _StyledDialog({
+    required this.title,
+    required this.icon,
+    required this.child,
+    required this.onConfirm,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: colorScheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(icon, size: 18, color: colorScheme.onPrimaryContainer),
+                ),
+                const SizedBox(width: 12),
+                Text(title,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    )),
+              ],
+            ),
+            const SizedBox(height: 20),
+            child,
+            const SizedBox(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  style: TextButton.styleFrom(
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  ),
+                  child: const Text('取消'),
+                ),
+                const SizedBox(width: 8),
+                FilledButton(
+                  onPressed: () => onConfirm(),
+                  style: FilledButton.styleFrom(
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  ),
+                  child: const Text('确认'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 圆角确认对话框
+class _StyledConfirmDialog extends StatelessWidget {
+  final String title;
+  final String message;
+  final IconData icon;
+  final bool isDestructive;
+  final VoidCallback onConfirm;
+
+  const _StyledConfirmDialog({
+    required this.title,
+    required this.message,
+    required this.icon,
+    this.isDestructive = false,
+    required this.onConfirm,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: isDestructive
+                        ? colorScheme.errorContainer
+                        : colorScheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(icon,
+                      size: 18,
+                      color: isDestructive
+                          ? colorScheme.onErrorContainer
+                          : colorScheme.onPrimaryContainer),
+                ),
+                const SizedBox(width: 12),
+                Text(title,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    )),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Text(message, style: theme.textTheme.bodyMedium),
+            const SizedBox(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  style: TextButton.styleFrom(
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  ),
+                  child: const Text('取消'),
+                ),
+                const SizedBox(width: 8),
+                FilledButton(
+                  onPressed: onConfirm,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: isDestructive ? colorScheme.error : null,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  ),
+                  child: const Text('确认'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 统一输入框装饰 — 填充背景 + 圆角
+class _StyledInputDecoration extends InputDecoration {
+  _StyledInputDecoration({
+    super.labelText,
+    super.hintText,
+    super.prefixIcon,
+  }) : super(
+         filled: true,
+         border: const OutlineInputBorder(
+           borderRadius: BorderRadius.all(Radius.circular(12)),
+         ),
+         enabledBorder: const OutlineInputBorder(
+           borderRadius: BorderRadius.all(Radius.circular(12)),
+           borderSide: BorderSide.none,
+         ),
+         focusedBorder: const OutlineInputBorder(
+           borderRadius: BorderRadius.all(Radius.circular(12)),
+         ),
+         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+       );
 }

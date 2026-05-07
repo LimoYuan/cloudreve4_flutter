@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui';
 import 'package:cloudreve4_flutter/core/utils/app_logger.dart';
 import 'package:cloudreve4_flutter/presentation/widgets/desktop_title_bar.dart';
 import 'package:flutter/material.dart';
@@ -9,6 +10,7 @@ import 'package:provider/provider.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:oktoast/oktoast.dart';
 import 'package:window_manager/window_manager.dart';
+import 'package:path_provider/path_provider.dart';
 import 'config/app_config.dart';
 import 'presentation/providers/auth_provider.dart';
 import 'presentation/providers/file_manager_provider.dart';
@@ -28,6 +30,22 @@ import 'presentation/widgets/toast_helper.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // 捕获 flutter_cache_manager 在 Windows 上删除缓存文件时的文件占用异常
+  // 该异常是后台异步抛出的，无法通过 try-catch 拦截，需绑定错误处理器静默忽略
+  FlutterError.onError = (details) {
+    final msg = details.exceptionAsString();
+    if (msg.contains('PathAccessException') || msg.contains('errno = 32')) {
+      return; // Windows 文件占用，忽略
+    }
+    FlutterError.presentError(details);
+  };
+  PlatformDispatcher.instance.onError = (error, stack) {
+    if (error is PathAccessException) {
+      return true; // 已处理，不传播
+    }
+    return false;
+  };
 
   // 初始化日志
   await AppLogger.init();

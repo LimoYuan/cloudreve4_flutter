@@ -81,14 +81,16 @@ class _FileInfoPanelState extends State<FileInfoPanel> {
     final colorScheme = theme.colorScheme;
 
     return Drawer(
-      child: Column(
+      child: SafeArea(
+        right: false,
+        child: Column(
         children: [
-          // 抽屉头部（与 AppBar 同级）
+          // 抽屉头部
           Container(
-            padding: EdgeInsets.only(
+            padding: const EdgeInsets.only(
               left: 16,
               right: 8,
-              top: MediaQuery.of(context).padding.top > 0 ? 8 : 0,
+              top: 8,
               bottom: 12,
             ),
             decoration: BoxDecoration(
@@ -130,6 +132,7 @@ class _FileInfoPanelState extends State<FileInfoPanel> {
                     : _buildContent(theme, colorScheme),
           ),
         ],
+        ),
       ),
     );
   }

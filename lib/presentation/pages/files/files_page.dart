@@ -71,7 +71,10 @@ class _FilesPageState extends State<FilesPage> {
 
   void _showFileInfo(FileModel file) {
     setState(() => _infoFile = file);
-    _scaffoldKey.currentState?.openEndDrawer();
+    // 等待下一帧 rebuild 完成，endDrawer 从 null 变为非 null 后再打开
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scaffoldKey.currentState?.openEndDrawer();
+    });
   }
 
   // ---- FAB 显隐控制 ----

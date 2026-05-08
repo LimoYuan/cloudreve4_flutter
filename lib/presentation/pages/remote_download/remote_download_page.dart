@@ -986,6 +986,7 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
                 left: Radius.circular(16)),
             child: SafeArea(
               right: false,
+              bottom: false,
               child: Container(
               width: isDesktop ? 420 : MediaQuery.of(context).size.width * 0.85,
               height: MediaQuery.of(context).size.height,

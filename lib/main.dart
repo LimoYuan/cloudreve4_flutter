@@ -10,7 +10,6 @@ import 'package:provider/provider.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:oktoast/oktoast.dart';
 import 'package:window_manager/window_manager.dart';
-import 'package:path_provider/path_provider.dart';
 import 'config/app_config.dart';
 import 'presentation/providers/auth_provider.dart';
 import 'presentation/providers/file_manager_provider.dart';
@@ -24,6 +23,7 @@ import 'services/upload_service.dart';
 import 'services/api_service.dart';
 import 'services/server_service.dart';
 import 'services/cache_manager_service.dart';
+import 'services/avatar_cache_service.dart';
 import 'services/desktop_service.dart';
 import 'router/app_router.dart';
 import 'presentation/widgets/toast_helper.dart';
@@ -102,6 +102,9 @@ void main() async {
 
   // 初始化缓存管理器
   await CacheManagerService.instance.initialize();
+
+  // 初始化头像缓存服务
+  await AvatarCacheService.instance.init();
 
   // 设置横竖屏方向（仅移动端）
   if (Platform.isAndroid || Platform.isIOS) {

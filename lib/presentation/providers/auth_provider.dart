@@ -1,4 +1,5 @@
 import 'package:cloudreve4_flutter/presentation/widgets/toast_helper.dart';
+import 'package:cloudreve4_flutter/presentation/widgets/user_avatar.dart';
 import 'package:flutter/foundation.dart';
 import '../../data/models/server_model.dart';
 import '../../data/models/user_model.dart';
@@ -179,6 +180,8 @@ class AuthProvider extends ChangeNotifier {
       await ServerService.instance.clearCurrentServerLogin();
 
       _clearUserData();
+      // 清除头像缓存
+      await UserAvatar.clearAllCache();
       setState(AuthState.unauthenticated);
     } catch (e) {
       // 即使出错也要清除本地状态

@@ -35,6 +35,7 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
   String _gravatarMirrorUrl = 'https://weavatar.com';
   String _logFilePath = '';
   int? _logFileSize;
+  String _cacheDirPath = '';
 
   @override
   void initState() {
@@ -60,7 +61,13 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
 
       Future.delayed(const Duration(milliseconds: 100), () async {
         final cacheSize = await service.getCacheSize();
-        if (mounted) setState(() => _currentCacheSize = cacheSize);
+        final cacheDir = await service.getCacheDir();
+        if (mounted) {
+          setState(() {
+            _currentCacheSize = cacheSize;
+            _cacheDirPath = cacheDir.path;
+          });
+        }
       });
     } catch (e) {
       if (mounted) setState(() => _isLoading = false);
@@ -265,6 +272,22 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
                           : const Icon(Icons.chevron_right),
                       onTap: _isCleaning ? null : _clearCache,
                     ),
+                    if (_cacheDirPath.isNotEmpty)
+                      ListTile(
+                        title: const Text('缓存目录'),
+                        subtitle: Text(
+                          _cacheDirPath,
+                          style: const TextStyle(fontSize: 11),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        trailing: (Platform.isWindows || Platform.isLinux)
+                            ? const Icon(Icons.open_in_new, size: 18)
+                            : null,
+                        onTap: (Platform.isWindows || Platform.isLinux)
+                            ? _openCacheDir
+                            : null,
+                      ),
                   ],
                 ),
                 _buildSection(
@@ -736,6 +759,21 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
       }
       final dir = File(path).parent.path;
       final result = await OpenFile.open(dir);
+      if (result.type != ResultType.done) {
+        if (mounted) ToastHelper.error('无法打开目录：${result.message}');
+      }
+    } catch (e) {
+      if (mounted) ToastHelper.error('打开目录失败：$e');
+    }
+  }
+
+  Future<void> _openCacheDir() async {
+    try {
+      if (_cacheDirPath.isEmpty) {
+        ToastHelper.error('缓存目录路径未获取');
+        return;
+      }
+      final result = await OpenFile.open(_cacheDirPath);
       if (result.type != ResultType.done) {
         if (mounted) ToastHelper.error('无法打开目录：${result.message}');
       }

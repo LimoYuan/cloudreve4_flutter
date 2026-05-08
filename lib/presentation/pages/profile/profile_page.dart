@@ -4,6 +4,7 @@ import 'package:cloudreve4_flutter/presentation/providers/user_setting_provider.
 import 'package:cloudreve4_flutter/presentation/pages/profile/widgets/profile_info_card.dart';
 import 'package:cloudreve4_flutter/presentation/pages/profile/widgets/quick_functions_section.dart';
 import 'package:cloudreve4_flutter/presentation/pages/profile/widgets/admin_section.dart';
+import 'package:cloudreve4_flutter/services/avatar_cache_service.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -28,7 +29,19 @@ class _ProfilePageState extends State<ProfilePage> {
       if (authProvider.isAdmin) {
         final adminProvider = context.read<AdminProvider>();
         if (adminProvider.groups.isEmpty && adminProvider.users.isEmpty) {
-          adminProvider.loadAll();
+          adminProvider.loadAll().then((_) {
+            if (!mounted) return;
+            // 加载完用户列表后，检查管理员用户的头像是否需要更新
+            final users = adminProvider.users;
+            final baseUrl = authProvider.currentServer?.baseUrl ?? '';
+            final token = authProvider.token?.accessToken ?? '';
+            for (final user in users) {
+              final userId = user.hashId ?? user.id.toString();
+              if (AvatarCacheService.instance.avatarIsExist(userId)) {
+                AvatarCacheService.instance.avatarIsUpdated(userId, baseUrl, token);
+              }
+            }
+          });
         }
       }
     });

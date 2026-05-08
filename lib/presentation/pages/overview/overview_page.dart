@@ -1,4 +1,6 @@
+import 'package:cloudreve4_flutter/presentation/providers/auth_provider.dart';
 import 'package:cloudreve4_flutter/presentation/providers/user_setting_provider.dart';
+import 'package:cloudreve4_flutter/services/avatar_cache_service.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'widgets/storage_usage_card.dart';
@@ -22,6 +24,27 @@ class _OverviewPageState extends State<OverviewPage> {
         final userSetting = Provider.of<UserSettingProvider>(
             context, listen: false);
         userSetting.loadCapacity();
+
+        // 初始化/更新当前用户头像
+        final auth = Provider.of<AuthProvider>(context, listen: false);
+        final userId = auth.user?.id ?? '';
+        if (userId.isNotEmpty) {
+          final service = AvatarCacheService.instance;
+          if (service.avatarIsExist(userId)) {
+            service.avatarIsUpdated(
+              userId,
+              auth.currentServer?.baseUrl ?? '',
+              auth.token?.accessToken ?? '',
+            );
+          } else {
+            service.getAvatar(
+              userId,
+              baseUrl: auth.currentServer?.baseUrl,
+              token: auth.token?.accessToken,
+              email: auth.user?.email,
+            );
+          }
+        }
       }
     });
   }

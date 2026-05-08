@@ -13,7 +13,7 @@ class AvatarUtils {
     final hash = md5.convert(utf8.encode(cleanEmail)).toString();
     final mirror = await getGravatarMirror();
     final base = mirror ?? 'https://www.gravatar.com';
-    return '$base/avatar/$hash?s=$size&d=404';
+    return '$base/avatar/$hash?s=$size&d=identicon';
   }
 
   /// 获取服务器头像 URL

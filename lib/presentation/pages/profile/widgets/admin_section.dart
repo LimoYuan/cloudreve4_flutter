@@ -567,7 +567,7 @@ class _UserItem extends StatelessWidget {
                 ),
               ),
             UserAvatar(
-              userId: user.id.toString(),
+              userId: user.hashId ?? user.id.toString(),
               email: user.email,
               displayName: user.nick,
               radius: 18,

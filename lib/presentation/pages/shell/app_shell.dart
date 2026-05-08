@@ -133,7 +133,7 @@ class _AppShellState extends State<AppShell> with GestureHandlerMixin {
 
   Widget _buildDesktopLayout(BuildContext context, NavigationProvider navProvider) {
     final theme = Theme.of(context);
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final authProvider = context.watch<AuthProvider>();
     final user = authProvider.user;
     final displayName = user?.nickname ?? '用户';
 

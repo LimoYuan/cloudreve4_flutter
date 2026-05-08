@@ -72,6 +72,9 @@ class ApiService {
   /// 是否正在刷新token
   bool get isRefreshing => _isRefreshing;
 
+  /// 暴露 Dio 实例（用于二进制下载等不走 _parseResponse 的场景）
+  Dio get dio => _dio;
+
   /// 获取单例
   static ApiService get instance {
     _instance ??= ApiService._();

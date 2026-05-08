@@ -1,12 +1,12 @@
-import 'package:cached_network_image/cached_network_image.dart';
-import 'package:cloudreve4_flutter/config/api_config.dart';
-import 'package:cloudreve4_flutter/core/utils/avatar_utils.dart';
+import 'dart:io';
 import 'package:cloudreve4_flutter/presentation/providers/auth_provider.dart';
+import 'package:cloudreve4_flutter/services/avatar_cache_service.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 /// 用户头像组件
-/// 优先加载服务器头像，失败后尝试 Gravatar，再失败显示首字母
+/// 1. 缓存存在 → 直接 FileImage 显示
+/// 2. 缓存不存在 → 默认显示首字母 fallback，异步 getAvatar，成功后更新 UI
 class UserAvatar extends StatefulWidget {
   final String userId;
   final String? email;
@@ -25,41 +25,21 @@ class UserAvatar extends StatefulWidget {
 
   @override
   State<UserAvatar> createState() => _UserAvatarState();
+
+  /// 清除指定用户的头像缓存（头像上传/切换后调用）
+  static Future<void> evictCache(String userId) async {
+    await AvatarCacheService.instance.evictCache(userId);
+  }
+
+  /// 清除所有头像缓存（登出时调用）
+  static Future<void> clearAllCache() async {
+    await AvatarCacheService.instance.clearAllCache();
+  }
 }
 
 class _UserAvatarState extends State<UserAvatar> {
-  String? _serverAvatarUrl;
-  String? _gravatarUrl;
-  bool _serverAvatarFailed = false;
-  bool _gravatarFailed = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _initUrls();
-  }
-
-  @override
-  void didUpdateWidget(UserAvatar oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.userId != widget.userId ||
-        oldWidget.email != widget.email) {
-      _serverAvatarFailed = false;
-      _gravatarFailed = false;
-      _initUrls();
-    }
-  }
-
-  Future<void> _initUrls() async {
-    final baseUrl = await ApiConfig.baseUrl;
-    _serverAvatarUrl = AvatarUtils.getServerAvatarUrl(baseUrl, widget.userId);
-
-    if (widget.email != null && widget.email!.isNotEmpty) {
-      _gravatarUrl = await AvatarUtils.getGravatarUrl(widget.email!, size: (widget.radius * 4).toInt());
-    }
-
-    if (mounted) setState(() {});
-  }
+  File? _avatarFile;
+  bool _loadTriggered = false;
 
   String get _initial {
     final name = widget.displayName;
@@ -67,49 +47,74 @@ class _UserAvatarState extends State<UserAvatar> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    _checkCache();
+    AvatarCacheService.instance.addListener(_onServiceNotify);
+  }
+
+  @override
+  void didUpdateWidget(UserAvatar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.userId != widget.userId || oldWidget.email != widget.email) {
+      _avatarFile = null;
+      _loadTriggered = false;
+      _checkCache();
+    }
+  }
+
+  @override
+  void dispose() {
+    AvatarCacheService.instance.removeListener(_onServiceNotify);
+    super.dispose();
+  }
+
+  void _checkCache() {
+    if (widget.userId.isEmpty) return;
+    final file = AvatarCacheService.instance.getCachedFile(widget.userId);
+    if (file != null) {
+      _avatarFile = file;
+    }
+  }
+
+  void _onServiceNotify() {
+    final file = AvatarCacheService.instance.getCachedFile(widget.userId);
+    if (file != null && _avatarFile?.path != file.path) {
+      setState(() => _avatarFile = file);
+    }
+  }
+
+  Future<void> _loadIfMissing() async {
+    if (_loadTriggered || widget.userId.isEmpty) return;
+    _loadTriggered = true;
+
+    final auth = context.read<AuthProvider>();
+    await AvatarCacheService.instance.getAvatar(
+      widget.userId,
+      baseUrl: auth.currentServer?.baseUrl,
+      token: auth.token?.accessToken,
+      email: widget.email,
+    );
+    // getAvatar 成功后 notifyListeners → _onServiceNotify 更新 _avatarFile
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    // 1. 尝试服务器头像
-    if (!_serverAvatarFailed && _serverAvatarUrl != null) {
+    // 有缓存文件，显示图片
+    if (_avatarFile != null) {
       return CircleAvatar(
         radius: widget.radius,
         backgroundColor: colorScheme.primaryContainer,
-        backgroundImage: CachedNetworkImageProvider(
-          _serverAvatarUrl!,
-          headers: {
-            'Authorization': 'Bearer ${context.read<AuthProvider>().token?.accessToken ?? ''}',
-          },
-        ),
-        onBackgroundImageError: (_, _) {
-          if (!_serverAvatarFailed) {
-            setState(() => _serverAvatarFailed = true);
-          }
-        },
-        child: _serverAvatarFailed ? _buildFallback(colorScheme) : null,
+        backgroundImage: FileImage(_avatarFile!),
       );
     }
 
-    // 2. 尝试 Gravatar
-    if (!_gravatarFailed && _gravatarUrl != null) {
-      return CircleAvatar(
-        radius: widget.radius,
-        backgroundColor: colorScheme.primaryContainer,
-        backgroundImage: CachedNetworkImageProvider(_gravatarUrl!),
-        onBackgroundImageError: (_, _) {
-          if (!_gravatarFailed) {
-            setState(() => _gravatarFailed = true);
-          }
-        },
-        child: _gravatarFailed ? _buildFallback(colorScheme) : null,
-      );
-    }
+    // 缓存不存在，触发异步加载
+    _loadIfMissing();
 
-    // 3. Fallback: 首字母
-    return _buildFallback(colorScheme);
-  }
-
-  Widget _buildFallback(ColorScheme colorScheme) {
+    // Fallback: 首字母（默认展示，避免空白）
     return CircleAvatar(
       radius: widget.radius,
       backgroundColor: colorScheme.primaryContainer,

@@ -1,11 +1,14 @@
+import 'dart:io';
 import 'package:cloudreve4_flutter/data/models/download_task_model.dart';
 import 'package:cloudreve4_flutter/data/models/upload_task_model.dart';
 import 'package:cloudreve4_flutter/presentation/providers/download_manager_provider.dart';
 import 'package:cloudreve4_flutter/presentation/providers/file_manager_provider.dart';
 import 'package:cloudreve4_flutter/presentation/providers/navigation_provider.dart';
 import 'package:cloudreve4_flutter/presentation/providers/upload_manager_provider.dart';
+import 'package:cloudreve4_flutter/core/utils/app_logger.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+import 'package:open_file/open_file.dart';
 import 'package:provider/provider.dart';
 
 class RecentActivityList extends StatelessWidget {
@@ -50,6 +53,7 @@ class RecentActivityList extends StatelessWidget {
             }
 
             return Card(
+              clipBehavior: Clip.antiAlias,
               child: Column(
                 children: activities.take(10).map((item) => _buildActivityItem(context, item)).toList(),
               ),
@@ -71,7 +75,7 @@ class RecentActivityList extends StatelessWidget {
         name: u.fileName,
         type: _ActivityType.upload,
         status: _mapUploadStatus(u.status),
-        createdAt: DateTime.now(), // UploadTaskModel 可能没有 createdAt
+        createdAt: DateTime.now(),
         path: u.targetPath.replaceFirst('cloudreve://my', ''),
       ));
     }
@@ -83,6 +87,7 @@ class RecentActivityList extends StatelessWidget {
         status: _mapDownloadStatus(d.status),
         createdAt: d.createdAt,
         path: d.fileUri,
+        savePath: d.savePath,
       ));
     }
 
@@ -120,38 +125,99 @@ class RecentActivityList extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final isUpload = item.type == _ActivityType.upload;
+    final icon = isUpload ? LucideIcons.upload : LucideIcons.download;
+    final statusColor = _statusColor(item.status, colorScheme);
 
-    return ListTile(
-      dense: true,
-      leading: Icon(
-        isUpload ? LucideIcons.upload : LucideIcons.download,
-        size: 20,
-        color: _statusColor(item.status, colorScheme),
+    // 判断点击行为
+    final bool canTap;
+    if (item.status == _ActivityStatus.completed) {
+      if (isUpload) {
+        canTap = true; // 上传完成 → 跳转目录
+      } else {
+        // 下载完成 → 仅桌面端可打开文件夹
+        canTap = Platform.isWindows || Platform.isLinux;
+      }
+    } else {
+      canTap = false;
+    }
+
+    return InkWell(
+      onTap: canTap ? () => _handleTap(context, item) : null,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: statusColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, size: 18, color: statusColor),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    _statusLabel(item),
+                    style: theme.textTheme.bodySmall?.copyWith(color: statusColor),
+                  ),
+                ],
+              ),
+            ),
+            if (canTap) ...[
+              const SizedBox(width: 8),
+              Icon(
+                isUpload ? LucideIcons.folderOpen : LucideIcons.externalLink,
+                size: 16,
+                color: theme.hintColor,
+              ),
+            ],
+          ],
+        ),
       ),
-      title: Text(
-        item.name,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: theme.textTheme.bodyMedium,
-      ),
-      subtitle: Text(
-        _statusLabel(item),
-        style: theme.textTheme.bodySmall?.copyWith(color: _statusColor(item.status, colorScheme)),
-      ),
-      trailing: item.status == _ActivityStatus.completed
-          ? IconButton(
-              icon: Icon(LucideIcons.folderOpen, size: 18, color: theme.hintColor),
-              tooltip: '打开目录',
-              onPressed: () {
-                final navProvider = Provider.of<NavigationProvider>(context, listen: false);
-                final fileManager = Provider.of<FileManagerProvider>(context, listen: false);
-                navProvider.setIndex(1);
-                final parentPath = _getParentPath(item.path);
-                fileManager.enterFolder(parentPath);
-              },
-            )
-          : null,
     );
+  }
+
+  void _handleTap(BuildContext context, _ActivityItem item) {
+    if (item.type == _ActivityType.upload) {
+      _navigateToFolder(context, item.path);
+    } else {
+      _openLocalFolder(item.savePath);
+    }
+  }
+
+  void _navigateToFolder(BuildContext context, String path) {
+    final parentPath = _getParentPath(path);
+    final navProvider = Provider.of<NavigationProvider>(context, listen: false);
+    final fileManager = Provider.of<FileManagerProvider>(context, listen: false);
+
+    // 先设置目标路径，再切换 Tab
+    fileManager.enterFolder(parentPath);
+    navProvider.setIndex(1);
+  }
+
+  Future<void> _openLocalFolder(String? savePath) async {
+    if (savePath == null || savePath.isEmpty) return;
+    try {
+      final dir = File(savePath).parent.path;
+      final result = await OpenFile.open(dir);
+      if (result.type != ResultType.done) {
+        AppLogger.d('打开文件夹失败: ${result.message}');
+      }
+    } catch (e) {
+      AppLogger.d('打开文件夹失败: $e');
+    }
   }
 
   String _getParentPath(String path) {
@@ -199,6 +265,7 @@ class _ActivityItem {
   final _ActivityStatus status;
   final DateTime createdAt;
   final String path;
+  final String? savePath;
 
   _ActivityItem({
     required this.name,
@@ -206,5 +273,6 @@ class _ActivityItem {
     required this.status,
     required this.createdAt,
     required this.path,
+    this.savePath,
   });
 }

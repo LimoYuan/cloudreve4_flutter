@@ -256,22 +256,6 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
                 _buildSection(
                   title: '缓存信息',
                   children: [
-                    ListTile(
-                      title: const Text('当前缓存大小'),
-                      subtitle: Text(_formatBytes(_currentCacheSize)),
-                    ),
-                    ListTile(
-                      title: const Text('清空缓存'),
-                      leading: const Icon(Icons.delete_outline, color: Colors.red),
-                      trailing: _isCleaning
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.chevron_right),
-                      onTap: _isCleaning ? null : _clearCache,
-                    ),
                     if (_cacheDirPath.isNotEmpty)
                       ListTile(
                         title: const Text('缓存目录'),
@@ -288,6 +272,22 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
                             ? _openCacheDir
                             : null,
                       ),
+                    ListTile(
+                      title: const Text('当前缓存大小'),
+                      subtitle: Text(_formatBytes(_currentCacheSize)),
+                    ),
+                    ListTile(
+                      title: const Text('清空缓存'),
+                      leading: const Icon(Icons.delete_outline, color: Colors.red),
+                      trailing: _isCleaning
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.chevron_right),
+                      onTap: _isCleaning ? null : _clearCache,
+                    ),
                   ],
                 ),
                 _buildSection(
@@ -306,12 +306,13 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
                       title: const Text('日志文件大小'),
                       subtitle: Text(_formatBytes(_logFileSize)),
                     ),
-                    ListTile(
-                      title: const Text('打开日志目录'),
-                      leading: const Icon(Icons.folder_open),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: _openLogFolder,
-                    ),
+                    if (!Platform.isAndroid)
+                      ListTile(
+                        title: const Text('打开日志目录'),
+                        leading: const Icon(Icons.folder_open),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: _openLogFolder,
+                      ),
                     ListTile(
                       title: const Text('导出日志'),
                       leading: const Icon(Icons.file_download_outlined),

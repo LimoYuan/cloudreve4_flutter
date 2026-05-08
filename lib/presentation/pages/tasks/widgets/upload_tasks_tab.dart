@@ -1,5 +1,6 @@
 import 'package:cloudreve4_flutter/data/models/upload_task_model.dart';
 import 'package:cloudreve4_flutter/presentation/providers/upload_manager_provider.dart';
+import 'package:cloudreve4_flutter/presentation/widgets/desktop_constrained.dart';
 import 'package:cloudreve4_flutter/presentation/widgets/upload_progress_item.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
@@ -34,41 +35,332 @@ class UploadTasksTab extends StatelessWidget {
           );
         }
 
-        return ListView(
-          padding: const EdgeInsets.only(top: 8, bottom: 80),
-          children: [
-            if (activeTasks.isNotEmpty) ...[
-              _buildSectionHeader(context, '进行中', activeTasks.length),
-              ...activeTasks.map((task) => UploadProgressItem(
-                task: task,
-                onPause: () => uploadManager.cancelUpload(task.id),
-                onResume: () => uploadManager.retryUpload(task.id),
-                onCancel: () => uploadManager.cancelUpload(task.id),
-              )),
-            ],
-            if (failedTasks.isNotEmpty) ...[
-              _buildSectionHeader(context, '失败', failedTasks.length,
-                  actionLabel: '清除失败',
-                  onAction: () => _confirmClear(context, '失败', failedTasks.length, () => uploadManager.clearFailedTasks())),
-              ...failedTasks.map((task) => UploadProgressItem(
-                task: task,
-                onRetry: () => uploadManager.retryUpload(task.id),
-                onDelete: () => _confirmDeleteUploadTask(context, task, uploadManager),
-              )),
-            ],
-            if (completedTasks.isNotEmpty) ...[
-              _buildSectionHeader(context, '已完成', completedTasks.length,
-                  actionLabel: '清除已完成',
-                  onAction: () => _confirmClear(context, '已完成', completedTasks.length, () => uploadManager.clearCompletedTasks())),
-              ...completedTasks.map((task) => UploadProgressItem(
-                task: task,
-                onDelete: () => _confirmDeleteUploadTask(context, task, uploadManager),
-              )),
-            ],
-          ],
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final isDesktop = constraints.maxWidth >= 800;
+
+            if (isDesktop) {
+              return _buildDesktopLayout(
+                context,
+                uploadManager,
+                allTasks: allTasks,
+                activeTasks: activeTasks,
+                failedTasks: failedTasks,
+                completedTasks: completedTasks,
+              );
+            }
+
+            return _buildMobileLayout(
+              context,
+              uploadManager,
+              activeTasks: activeTasks,
+              failedTasks: failedTasks,
+              completedTasks: completedTasks,
+            );
+          },
         );
       },
     );
+  }
+
+  Widget _buildMobileLayout(
+    BuildContext context,
+    UploadManagerProvider uploadManager, {
+    required List<UploadTaskModel> activeTasks,
+    required List<UploadTaskModel> failedTasks,
+    required List<UploadTaskModel> completedTasks,
+  }) {
+    return ListView(
+      padding: const EdgeInsets.only(top: 8, bottom: 80),
+      children: [
+        if (activeTasks.isNotEmpty) ...[
+          _buildSectionHeader(context, '进行中', activeTasks.length),
+          ...activeTasks.map((task) => UploadProgressItem(
+            task: task,
+            onPause: () => uploadManager.cancelUpload(task.id),
+            onResume: () => uploadManager.retryUpload(task.id),
+            onCancel: () => uploadManager.cancelUpload(task.id),
+          )),
+        ],
+        if (failedTasks.isNotEmpty) ...[
+          _buildSectionHeader(context, '失败', failedTasks.length,
+              actionLabel: '清除失败',
+              onAction: () => _confirmClear(context, '失败', failedTasks.length, () => uploadManager.clearFailedTasks())),
+          ...failedTasks.map((task) => UploadProgressItem(
+            task: task,
+            onRetry: () => uploadManager.retryUpload(task.id),
+            onDelete: () => _confirmDeleteUploadTask(context, task, uploadManager),
+          )),
+        ],
+        if (completedTasks.isNotEmpty) ...[
+          _buildSectionHeader(context, '已完成', completedTasks.length,
+              actionLabel: '清除已完成',
+              onAction: () => _confirmClear(context, '已完成', completedTasks.length, () => uploadManager.clearCompletedTasks())),
+          ...completedTasks.map((task) => UploadProgressItem(
+            task: task,
+            onDelete: () => _confirmDeleteUploadTask(context, task, uploadManager),
+          )),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildDesktopLayout(
+    BuildContext context,
+    UploadManagerProvider uploadManager, {
+    required List<UploadTaskModel> allTasks,
+    required List<UploadTaskModel> activeTasks,
+    required List<UploadTaskModel> failedTasks,
+    required List<UploadTaskModel> completedTasks,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    final sortedTasks = [
+      ...activeTasks,
+      ...failedTasks,
+      ...completedTasks,
+    ];
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: DesktopConstrained(
+        child: Column(
+          children: [
+            if (failedTasks.isNotEmpty)
+              Align(
+                alignment: Alignment.centerRight,
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: TextButton.icon(
+                    icon: const Icon(LucideIcons.trash2, size: 14),
+                    label: const Text('清除失败', style: TextStyle(fontSize: 12)),
+                    onPressed: () => _confirmClear(context, '失败', failedTasks.length, () => uploadManager.clearFailedTasks()),
+                    style: TextButton.styleFrom(
+                      foregroundColor: colorScheme.error,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+                ),
+              ),
+            if (completedTasks.isNotEmpty && failedTasks.isEmpty)
+              Align(
+                alignment: Alignment.centerRight,
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: TextButton.icon(
+                    icon: const Icon(LucideIcons.trash2, size: 14),
+                    label: const Text('清除已完成', style: TextStyle(fontSize: 12)),
+                    onPressed: () => _confirmClear(context, '已完成', completedTasks.length, () => uploadManager.clearCompletedTasks()),
+                    style: TextButton.styleFrom(
+                      foregroundColor: colorScheme.error,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+                ),
+              ),
+            Card(
+              margin: EdgeInsets.zero,
+              clipBehavior: Clip.antiAlias,
+              child: DataTable(
+                headingRowColor: WidgetStateProperty.all(colorScheme.surfaceContainerHighest),
+                columnSpacing: 24,
+                columns: const [
+                  DataColumn(label: Text('名称')),
+                  DataColumn(label: Text('状态')),
+                  DataColumn(label: Text('进度')),
+                  DataColumn(label: Text('大小')),
+                  DataColumn(label: Text('操作')),
+                ],
+                rows: sortedTasks.map((task) => _buildUploadDataRow(context, task, uploadManager)).toList(),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  DataRow _buildUploadDataRow(
+    BuildContext context,
+    UploadTaskModel task,
+    UploadManagerProvider uploadManager,
+  ) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final errorColor = colorScheme.error;
+    final statusColor = _getStatusColor(task.status);
+    final statusIcon = _getStatusIcon(task.status);
+    final isActive = task.status == UploadStatus.uploading ||
+        task.status == UploadStatus.waiting ||
+        task.status == UploadStatus.paused;
+
+    return DataRow(
+      cells: [
+        // 名称 (with status icon)
+        DataCell(
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: statusColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(statusIcon, size: 18, color: statusColor),
+              ),
+              const SizedBox(width: 10),
+              Flexible(
+                child: Text(
+                  task.fileName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ),
+        // 状态
+        DataCell(
+          Text(
+            task.statusText,
+            style: TextStyle(color: statusColor, fontSize: 13),
+          ),
+        ),
+        // 进度
+        DataCell(
+          isActive
+              ? Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 80,
+                      child: LinearProgressIndicator(
+                        value: task.status == UploadStatus.paused ? null : task.progress,
+                        backgroundColor: colorScheme.surfaceContainerHighest,
+                        valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      task.status == UploadStatus.paused ? '已暂停' : task.progressText,
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ],
+                )
+              : Text(
+                  task.status == UploadStatus.completed ? '100%' : '-',
+                  style: const TextStyle(fontSize: 12),
+                ),
+        ),
+        // 大小
+        DataCell(Text(task.readableFileSize, style: const TextStyle(fontSize: 13))),
+        // 操作
+        DataCell(
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: _buildDesktopActionButtons(context, task, uploadManager, errorColor),
+          ),
+        ),
+      ],
+    );
+  }
+
+  List<Widget> _buildDesktopActionButtons(
+    BuildContext context,
+    UploadTaskModel task,
+    UploadManagerProvider uploadManager,
+    Color errorColor,
+  ) {
+    switch (task.status) {
+      case UploadStatus.waiting:
+      case UploadStatus.uploading:
+        return [
+          IconButton(
+            icon: const Icon(Icons.pause, size: 18),
+            onPressed: () => uploadManager.cancelUpload(task.id),
+            tooltip: '暂停',
+          ),
+        ];
+      case UploadStatus.paused:
+        return [
+          IconButton(
+            icon: const Icon(Icons.play_arrow, size: 18),
+            onPressed: () => uploadManager.retryUpload(task.id),
+            tooltip: '继续',
+          ),
+          IconButton(
+            icon: Icon(Icons.cancel, size: 18, color: errorColor),
+            onPressed: () => uploadManager.cancelUpload(task.id),
+            tooltip: '取消',
+          ),
+        ];
+      case UploadStatus.failed:
+        return [
+          IconButton(
+            icon: const Icon(Icons.refresh, size: 18),
+            onPressed: () => uploadManager.retryUpload(task.id),
+            tooltip: '重试',
+          ),
+          IconButton(
+            icon: Icon(Icons.delete, size: 18, color: errorColor),
+            onPressed: () => _confirmDeleteUploadTask(context, task, uploadManager),
+            tooltip: '删除',
+          ),
+        ];
+      case UploadStatus.completed:
+        return [
+          IconButton(
+            icon: Icon(Icons.delete_outline, size: 18, color: errorColor),
+            onPressed: () => _confirmDeleteUploadTask(context, task, uploadManager),
+            tooltip: '删除',
+          ),
+        ];
+      case UploadStatus.cancelled:
+        return [
+          IconButton(
+            icon: Icon(Icons.delete, size: 18, color: errorColor),
+            onPressed: () => _confirmDeleteUploadTask(context, task, uploadManager),
+            tooltip: '删除',
+          ),
+        ];
+    }
+  }
+
+  IconData _getStatusIcon(UploadStatus status) {
+    switch (status) {
+      case UploadStatus.waiting:
+        return LucideIcons.clock;
+      case UploadStatus.uploading:
+        return LucideIcons.upload;
+      case UploadStatus.completed:
+        return LucideIcons.checkCircle2;
+      case UploadStatus.paused:
+        return LucideIcons.pause;
+      case UploadStatus.failed:
+      case UploadStatus.cancelled:
+        return LucideIcons.xCircle;
+    }
+  }
+
+  Color _getStatusColor(UploadStatus status) {
+    switch (status) {
+      case UploadStatus.waiting:
+        return Colors.orange;
+      case UploadStatus.uploading:
+        return Colors.blue;
+      case UploadStatus.completed:
+        return Colors.green;
+      case UploadStatus.paused:
+        return Colors.orange;
+      case UploadStatus.failed:
+      case UploadStatus.cancelled:
+        return Colors.red;
+    }
   }
 
   Widget _buildSectionHeader(

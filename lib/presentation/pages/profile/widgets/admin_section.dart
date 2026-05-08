@@ -791,7 +791,7 @@ class _StyledConfirmDialog extends StatelessWidget {
 
 /// 统一输入框装饰 — 填充背景 + 圆角
 class _StyledInputDecoration extends InputDecoration {
-  _StyledInputDecoration({
+  const _StyledInputDecoration({
     super.labelText,
     super.hintText,
     super.prefixIcon,

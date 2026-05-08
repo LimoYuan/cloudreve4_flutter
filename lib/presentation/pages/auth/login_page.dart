@@ -1,4 +1,6 @@
+import 'package:cloudreve4_flutter/presentation/widgets/desktop_constrained.dart';
 import 'package:flutter/material.dart';
+import 'package:lucide_icons/lucide_icons.dart';
 import 'package:provider/provider.dart';
 import '../../../core/validators/string_validator.dart';
 import '../../../data/models/server_model.dart';
@@ -9,7 +11,6 @@ import 'forgot_password_page.dart';
 import 'register_page.dart';
 import '../../widgets/toast_helper.dart';
 
-/// 登录页
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
 
@@ -29,7 +30,6 @@ class _LoginPageState extends State<LoginPage> {
   @override
   void initState() {
     super.initState();
-    // 初始化API服务
     _loadRememberedInfo();
   }
 
@@ -41,7 +41,6 @@ class _LoginPageState extends State<LoginPage> {
     super.dispose();
   }
 
-  /// 加载记住我的信息
   Future<void> _loadRememberedInfo() async {
     final server = ServerService.instance.currentServer;
     if (server != null) {
@@ -57,41 +56,31 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
-  /// 显示服务器选择器
   Future<void> _showServerSelector() async {
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       builder: (context) => ServerSelectorSheet(),
     );
-
-    // 服务器选择后重新加载信息
     await _loadRememberedInfo();
   }
 
-  /// 显示服务器管理对话框
   Future<void> _showServerManagement() async {
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       builder: (context) => ServerManagementSheet(),
     );
-
-    // 服务器管理后重新加载信息
     await _loadRememberedInfo();
   }
 
   Future<void> _login() async {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
+    if (!_formKey.currentState!.validate()) return;
 
     final navigator = Navigator.of(context);
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
 
-    setState(() {
-      _isLoading = true;
-    });
+    setState(() => _isLoading = true);
 
     try {
       final success = await authProvider.passwordLogin(
@@ -100,25 +89,16 @@ class _LoginPageState extends State<LoginPage> {
         rememberMe: _rememberMe,
       ).timeout(
         const Duration(seconds: 5),
-        onTimeout: () {
-          throw Exception('请求超时');
-        },
+        onTimeout: () => throw Exception('请求超时'),
       );
 
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      if (mounted) setState(() => _isLoading = false);
 
       if (success && mounted) {
         _focusNode.unfocus();
         ToastHelper.success('登录成功');
-
         await Future.delayed(const Duration(seconds: 1));
-        if (mounted) {
-          navigator.pushReplacementNamed(RouteNames.home);
-        }
+        if (mounted) navigator.pushReplacementNamed(RouteNames.home);
       } else if (mounted) {
         final errorMessage = authProvider.errorMessage;
         if (errorMessage != null && errorMessage.isNotEmpty) {
@@ -130,9 +110,7 @@ class _LoginPageState extends State<LoginPage> {
       }
     } catch (e) {
       if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
+        setState(() => _isLoading = false);
         final errorMsg = _parseErrorMessage(e.toString());
         ToastHelper.failure(errorMsg);
       }
@@ -151,18 +129,14 @@ class _LoginPageState extends State<LoginPage> {
       final parts = error.split(':');
       if (parts.length > 1) {
         final msg = parts.sublist(1).join(':').trim();
-        if (msg.isNotEmpty) {
-          return '登录失败: $msg';
-        }
+        if (msg.isNotEmpty) return '登录失败: $msg';
       }
     }
     if (error.contains('"') && error.split('"').length >= 2) {
       final parts = error.split('"');
       if (parts.length >= 2) {
         final msg = parts[1].trim();
-        if (msg.isNotEmpty && msg != 'login') {
-          return '登录失败: $msg';
-        }
+        if (msg.isNotEmpty && msg != 'login') return '登录失败: $msg';
       }
     }
     return error.isEmpty ? '登录失败: 未知原因' : '登录失败: $error';
@@ -170,149 +144,163 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(24),
-            child: Form(
-              key: _formKey,
+            child: DesktopConstrained(
+              maxContentWidth: 480,
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Logo或应用名称
                   Center(child: _buildLogo()),
-
-                  const SizedBox(height: 48),
-
-                  // 标题
+                  const SizedBox(height: 32),
                   Center(
                     child: Text(
                       'Cloudreve V4.0',
-                      style: Theme.of(context).textTheme.headlineMedium,
+                      style: theme.textTheme.headlineMedium,
                     ),
                   ),
-
                   const SizedBox(height: 32),
-
-                  // 服务器选择器
-                  _ServerSelector(
-                    onTap: _showServerSelector,
-                    onManage: _showServerManagement,
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  // 邮箱输入框
-                  TextFormField(
-                    controller: _emailController,
-                    keyboardType: TextInputType.emailAddress,
-                    textInputAction: TextInputAction.next,
-                    validator: StringValidator.validateEmail,
-                    decoration: const InputDecoration(
-                      labelText: '邮箱',
-                      hintText: '请输入邮箱地址',
-                      prefixIcon: Icon(Icons.email_outlined),
+                  Card(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
                     ),
-                    onFieldSubmitted: (_) {
-                      _focusNode.requestFocus();
-                    },
-                  ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Form(
+                        key: _formKey,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            // 服务器选择器
+                            _ServerSelector(
+                              onTap: _showServerSelector,
+                              onManage: _showServerManagement,
+                            ),
 
-                  const SizedBox(height: 16),
+                            const SizedBox(height: 16),
 
-                  // 密码输入框
-                  TextFormField(
-                    controller: _passwordController,
-                    focusNode: _focusNode,
-                    obscureText: _obscurePassword,
-                    validator: StringValidator.validatePassword,
-                    decoration: InputDecoration(
-                      labelText: '密码',
-                      hintText: '请输入密码',
-                      prefixIcon: const Icon(Icons.lock_outlined),
-                      suffixIcon: IconButton(
-                        icon: Icon(
-                          _obscurePassword
-                              ? Icons.visibility_outlined
-                              : Icons.visibility_off_outlined,
+                            // 邮箱
+                            TextFormField(
+                              controller: _emailController,
+                              keyboardType: TextInputType.emailAddress,
+                              textInputAction: TextInputAction.next,
+                              validator: StringValidator.validateEmail,
+                              decoration: const InputDecoration(
+                                labelText: '邮箱',
+                                hintText: '请输入邮箱地址',
+                                prefixIcon: Icon(LucideIcons.mail),
+                              ),
+                              onFieldSubmitted: (_) => _focusNode.requestFocus(),
+                            ),
+
+                            const SizedBox(height: 16),
+
+                            // 密码
+                            TextFormField(
+                              controller: _passwordController,
+                              focusNode: _focusNode,
+                              obscureText: _obscurePassword,
+                              validator: StringValidator.validatePassword,
+                              decoration: InputDecoration(
+                                labelText: '密码',
+                                hintText: '请输入密码',
+                                prefixIcon: const Icon(LucideIcons.lock),
+                                suffixIcon: IconButton(
+                                  icon: Icon(
+                                    _obscurePassword
+                                        ? LucideIcons.eye
+                                        : LucideIcons.eyeOff,
+                                    size: 20,
+                                  ),
+                                  onPressed: () {
+                                    setState(() => _obscurePassword = !_obscurePassword);
+                                  },
+                                ),
+                              ),
+                              onFieldSubmitted: (_) => _login(),
+                            ),
+
+                            const SizedBox(height: 12),
+
+                            // 记住我
+                            InkWell(
+                              onTap: () => setState(() => _rememberMe = !_rememberMe),
+                              borderRadius: BorderRadius.circular(8),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  SizedBox(
+                                    width: 24,
+                                    height: 24,
+                                    child: Checkbox(
+                                      value: _rememberMe,
+                                      onChanged: (v) => setState(() => _rememberMe = v ?? false),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  const Text('记住我'),
+                                ],
+                              ),
+                            ),
+
+                            const SizedBox(height: 20),
+
+                            // 链接按钮
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                TextButton(
+                                  onPressed: () {
+                                    Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (context) => const ForgotPasswordPage(),
+                                      ),
+                                    );
+                                  },
+                                  child: const Text('忘记密码？'),
+                                ),
+                                TextButton(
+                                  onPressed: () {
+                                    Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (context) => const RegisterPage(),
+                                      ),
+                                    );
+                                  },
+                                  child: const Text('注册账号'),
+                                ),
+                              ],
+                            ),
+
+                            const SizedBox(height: 16),
+
+                            // 登录按钮
+                            FilledButton(
+                              onPressed: _isLoading ? null : _login,
+                              style: FilledButton.styleFrom(
+                                minimumSize: const Size(double.infinity, 48),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              child: _isLoading
+                                  ? const SizedBox(
+                                      width: 24,
+                                      height: 24,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    )
+                                  : const Text('登录'),
+                            ),
+                          ],
                         ),
-                        onPressed: () {
-                          setState(() {
-                            _obscurePassword = !_obscurePassword;
-                          });
-                        },
                       ),
                     ),
-                    onFieldSubmitted: (_) {
-                      _login();
-                    },
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  // 记住我
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Checkbox(
-                        value: _rememberMe,
-                        onChanged: (value) {
-                          setState(() {
-                            _rememberMe = value ?? false;
-                          });
-                        },
-                      ),
-                      const SizedBox(width: 8),
-                      const Text('记住我'),
-                    ],
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  // 链接按钮
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      TextButton(
-                        onPressed: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (context) => const ForgotPasswordPage(),
-                            ),
-                          );
-                        },
-                        child: const Text('忘记密码？'),
-                      ),
-                      TextButton(
-                        onPressed: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (context) => const RegisterPage(),
-                            ),
-                          );
-                        },
-                        child: const Text('注册账号'),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  // 登录按钮
-                  FilledButton(
-                    onPressed: _isLoading ? null : _login,
-                    style: FilledButton.styleFrom(
-                      minimumSize: const Size(double.infinity, 48),
-                    ),
-                    child: _isLoading
-                        ? const SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text('登录'),
                   ),
                 ],
               ),
@@ -327,15 +315,14 @@ class _LoginPageState extends State<LoginPage> {
     return ClipOval(
       child: Image.asset(
         'assets/images/app_logo.png',
-        width: 120,
-        height: 120,
+        width: 96,
+        height: 96,
         fit: BoxFit.cover,
       ),
     );
   }
 }
 
-/// 服务器选择器组件
 class _ServerSelector extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onManage;
@@ -348,21 +335,22 @@ class _ServerSelector extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final currentServer = ServerService.instance.currentServer;
+    final theme = Theme.of(context);
 
     return GestureDetector(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          color: theme.colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
+            color: theme.colorScheme.outline.withValues(alpha: 0.3),
           ),
         ),
         child: Row(
           children: [
-            const Icon(Icons.dns, size: 20),
+            Icon(LucideIcons.server, size: 20, color: theme.colorScheme.onSurfaceVariant),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -370,19 +358,13 @@ class _ServerSelector extends StatelessWidget {
                 children: [
                   Text(
                     currentServer?.label ?? '选择服务器',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                    ),
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
                   ),
                   if (currentServer != null) ...[
                     const SizedBox(height: 2),
                     Text(
                       currentServer.baseUrl,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[600],
-                      ),
+                      style: TextStyle(fontSize: 12, color: theme.hintColor),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -391,7 +373,7 @@ class _ServerSelector extends StatelessWidget {
               ),
             ),
             IconButton(
-              icon: const Icon(Icons.edit_outlined, size: 20),
+              icon: Icon(LucideIcons.pencil, size: 20, color: theme.colorScheme.onSurfaceVariant),
               onPressed: onManage,
               tooltip: '管理服务器',
             ),
@@ -402,7 +384,6 @@ class _ServerSelector extends StatelessWidget {
   }
 }
 
-/// 服务器选择器BottomSheet
 class ServerSelectorSheet extends StatelessWidget {
   const ServerSelectorSheet({super.key});
 
@@ -423,13 +404,10 @@ class ServerSelectorSheet extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                '选择服务器',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
+              Text('选择服务器', style: Theme.of(context).textTheme.titleLarge),
               IconButton(
                 onPressed: () => Navigator.of(context).pop(),
-                icon: const Icon(Icons.close),
+                icon: const Icon(LucideIcons.x),
               ),
             ],
           ),
@@ -438,19 +416,16 @@ class ServerSelectorSheet extends StatelessWidget {
             child: ListView.separated(
               shrinkWrap: true,
               itemCount: servers.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 8),
+              separatorBuilder: (_, __) => const SizedBox(height: 8),
               itemBuilder: (context, index) {
                 final server = servers[index];
                 final isSelected = currentServer?.label == server.label;
-
                 return _ServerListItem(
                   server: server,
                   isSelected: isSelected,
                   onTap: () async {
                     await ServerService.instance.selectServer(server.label);
-                    if (context.mounted) {
-                      Navigator.of(context).pop();
-                    }
+                    if (context.mounted) Navigator.of(context).pop();
                   },
                 );
               },
@@ -462,7 +437,6 @@ class ServerSelectorSheet extends StatelessWidget {
   }
 }
 
-/// 服务器列表项
 class _ServerListItem extends StatelessWidget {
   final ServerModel server;
   final bool isSelected;
@@ -476,6 +450,7 @@ class _ServerListItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return ListTile(
       leading: Radio<String>(
         value: server.label,
@@ -484,28 +459,20 @@ class _ServerListItem extends StatelessWidget {
       ),
       title: Text(
         server.label,
-        style: TextStyle(
-          fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-        ),
+        style: TextStyle(fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal),
       ),
       subtitle: Text(
         server.baseUrl,
-        style: TextStyle(
-          fontSize: 12,
-          color: Colors.grey[600],
-        ),
+        style: TextStyle(fontSize: 12, color: theme.hintColor),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
-      tileColor: isSelected
-          ? Theme.of(context).colorScheme.primaryContainer
-          : null,
+      tileColor: isSelected ? Theme.of(context).colorScheme.primaryContainer : null,
       onTap: onTap,
     );
   }
 }
 
-/// 服务器管理BottomSheet
 class ServerManagementSheet extends StatefulWidget {
   const ServerManagementSheet({super.key});
 
@@ -517,6 +484,7 @@ class _ServerManagementSheetState extends State<ServerManagementSheet> {
   @override
   Widget build(BuildContext context) {
     final servers = ServerService.instance.servers;
+    final theme = Theme.of(context);
 
     return Container(
       constraints: BoxConstraints(
@@ -530,13 +498,10 @@ class _ServerManagementSheetState extends State<ServerManagementSheet> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                '管理服务器',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
+              Text('管理服务器', style: theme.textTheme.titleLarge),
               IconButton(
                 onPressed: () => Navigator.of(context).pop(),
-                icon: const Icon(Icons.close),
+                icon: const Icon(LucideIcons.x),
               ),
             ],
           ),
@@ -545,7 +510,7 @@ class _ServerManagementSheetState extends State<ServerManagementSheet> {
             child: ListView.separated(
               shrinkWrap: true,
               itemCount: servers.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 8),
+              separatorBuilder: (_, __) => const SizedBox(height: 8),
               itemBuilder: (context, index) {
                 final server = servers[index];
                 return _ServerManagementItem(
@@ -561,7 +526,7 @@ class _ServerManagementSheetState extends State<ServerManagementSheet> {
             width: double.infinity,
             child: FilledButton.icon(
               onPressed: () => _showAddServerDialog(context),
-              icon: const Icon(Icons.add),
+              icon: const Icon(LucideIcons.plus),
               label: const Text('添加服务器'),
             ),
           ),
@@ -586,6 +551,7 @@ class _ServerManagementSheetState extends State<ServerManagementSheet> {
               decoration: const InputDecoration(
                 labelText: '服务器名称',
                 hintText: '例如: 我的服务器',
+                prefixIcon: Icon(LucideIcons.tag),
               ),
             ),
             const SizedBox(height: 16),
@@ -595,6 +561,7 @@ class _ServerManagementSheetState extends State<ServerManagementSheet> {
               decoration: const InputDecoration(
                 labelText: '服务器地址',
                 hintText: 'https://example.com/api/v4',
+                prefixIcon: Icon(LucideIcons.link),
               ),
             ),
           ],
@@ -607,9 +574,7 @@ class _ServerManagementSheetState extends State<ServerManagementSheet> {
           FilledButton(
             onPressed: () {
               if (labelController.text.trim().isEmpty ||
-                  urlController.text.trim().isEmpty) {
-                return;
-              }
+                  urlController.text.trim().isEmpty) return;
               Navigator.of(dialogContext).pop(true);
             },
             child: const Text('保存'),
@@ -627,21 +592,14 @@ class _ServerManagementSheetState extends State<ServerManagementSheet> {
           ),
         );
         setState(() {});
-        if (context.mounted) {
-          ToastHelper.success('服务器已添加');
-        }
+        if (context.mounted) ToastHelper.success('服务器已添加');
       } catch (e) {
-        if (context.mounted) {
-          ToastHelper.failure('添加失败: $e');
-        }
+        if (context.mounted) ToastHelper.failure('添加失败: $e');
       }
     }
   }
 
-  Future<void> _showEditServerDialog(
-    BuildContext context,
-    ServerModel server,
-  ) async {
+  Future<void> _showEditServerDialog(BuildContext context, ServerModel server) async {
     final labelController = TextEditingController(text: server.label);
     final urlController = TextEditingController(text: server.baseUrl);
 
@@ -656,6 +614,7 @@ class _ServerManagementSheetState extends State<ServerManagementSheet> {
               controller: labelController,
               decoration: const InputDecoration(
                 labelText: '服务器名称',
+                prefixIcon: Icon(LucideIcons.tag),
               ),
             ),
             const SizedBox(height: 16),
@@ -664,6 +623,7 @@ class _ServerManagementSheetState extends State<ServerManagementSheet> {
               keyboardType: TextInputType.url,
               decoration: const InputDecoration(
                 labelText: '服务器地址',
+                prefixIcon: Icon(LucideIcons.link),
               ),
             ),
           ],
@@ -676,9 +636,7 @@ class _ServerManagementSheetState extends State<ServerManagementSheet> {
           FilledButton(
             onPressed: () {
               if (labelController.text.trim().isEmpty ||
-                  urlController.text.trim().isEmpty) {
-                return;
-              }
+                  urlController.text.trim().isEmpty) return;
               Navigator.of(dialogContext).pop(true);
             },
             child: const Text('保存'),
@@ -697,21 +655,15 @@ class _ServerManagementSheetState extends State<ServerManagementSheet> {
           ),
         );
         setState(() {});
-        if (context.mounted) {
-          ToastHelper.success('服务器已更新');
-        }
+        if (context.mounted) ToastHelper.success('服务器已更新');
       } catch (e) {
-        if (context.mounted) {
-          ToastHelper.failure('更新失败: $e');
-        }
+        if (context.mounted) ToastHelper.failure('更新失败: $e');
       }
     }
   }
 
-  Future<void> _showDeleteConfirmDialog(
-    BuildContext context,
-    ServerModel server,
-  ) async {
+  Future<void> _showDeleteConfirmDialog(BuildContext context, ServerModel server) async {
+    final colorScheme = Theme.of(context).colorScheme;
     final result = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -724,9 +676,7 @@ class _ServerManagementSheetState extends State<ServerManagementSheet> {
           ),
           FilledButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
-            ),
+            style: FilledButton.styleFrom(backgroundColor: colorScheme.error),
             child: const Text('删除'),
           ),
         ],
@@ -737,19 +687,14 @@ class _ServerManagementSheetState extends State<ServerManagementSheet> {
       try {
         await ServerService.instance.deleteServer(server.label);
         setState(() {});
-        if (context.mounted) {
-          ToastHelper.success('服务器已删除');
-        }
+        if (context.mounted) ToastHelper.success('服务器已删除');
       } catch (e) {
-        if (context.mounted) {
-          ToastHelper.failure('删除失败: $e');
-        }
+        if (context.mounted) ToastHelper.failure('删除失败: $e');
       }
     }
   }
 }
 
-/// 服务器管理列表项
 class _ServerManagementItem extends StatelessWidget {
   final ServerModel server;
   final VoidCallback onEdit;
@@ -763,17 +708,12 @@ class _ServerManagementItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return ListTile(
-      title: Text(
-        server.label,
-        style: const TextStyle(fontWeight: FontWeight.w500),
-      ),
+      title: Text(server.label, style: const TextStyle(fontWeight: FontWeight.w500)),
       subtitle: Text(
         server.baseUrl,
-        style: TextStyle(
-          fontSize: 12,
-          color: Colors.grey[600],
-        ),
+        style: TextStyle(fontSize: 12, color: theme.hintColor),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
@@ -781,15 +721,14 @@ class _ServerManagementItem extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           IconButton(
-            icon: const Icon(Icons.edit_outlined, size: 20),
+            icon: Icon(LucideIcons.pencil, size: 20, color: theme.colorScheme.onSurfaceVariant),
             onPressed: onEdit,
             tooltip: '编辑',
           ),
           IconButton(
-            icon: const Icon(Icons.delete_outline, size: 20),
+            icon: Icon(LucideIcons.trash2, size: 20, color: theme.colorScheme.error),
             onPressed: onDelete,
             tooltip: '删除',
-            color: Theme.of(context).colorScheme.error,
           ),
         ],
       ),

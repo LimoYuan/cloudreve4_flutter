@@ -107,7 +107,9 @@ class CacheManagerService {
     }
     try {
       await _manager?.emptyCache();
-    } on PathAccessException {}
+    } on PathAccessException {
+      // nothing to do
+    }
     await _initializeManager();
   }
 

@@ -106,6 +106,12 @@ class _SettingsPageState extends State<SettingsPage> {
             title: '偏好',
             children: [
               _SettingsTile(
+                icon: Icons.apps_outlined,
+                title: '快捷入口',
+                subtitle: '自定义概览页快捷目录',
+                onTap: () => _navigateTo(context, const QuickAccessSettingsPage()),
+              ),
+              _SettingsTile(
                 icon: Icons.folder_outlined,
                 title: '文件偏好',
                 subtitle: '版本保留、视图同步、分享可见性',
@@ -116,12 +122,6 @@ class _SettingsPageState extends State<SettingsPage> {
                 title: '应用设置',
                 subtitle: '缓存、主题、语言',
                 onTap: () => _navigateTo(context, const AppSettingsPage()),
-              ),
-              _SettingsTile(
-                icon: Icons.apps_outlined,
-                title: '快捷入口',
-                subtitle: '自定义概览页快捷目录',
-                onTap: () => _navigateTo(context, const QuickAccessSettingsPage()),
               ),
             ],
           ),

@@ -3,7 +3,6 @@ import 'package:cloudreve4_flutter/router/app_router.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
-/// 快捷功能项配置
 class _QuickFunction {
   final IconData icon;
   final String label;
@@ -16,7 +15,6 @@ class _QuickFunction {
   });
 }
 
-/// 快捷功能区 — 毛玻璃卡片
 class QuickFunctionsSection extends StatelessWidget {
   const QuickFunctionsSection({super.key});
 
@@ -27,6 +25,9 @@ class QuickFunctionsSection extends StatelessWidget {
     _QuickFunction(icon: LucideIcons.trash2, label: '回收站', route: RouteNames.recycleBin),
     _QuickFunction(icon: LucideIcons.settings, label: '设置', route: RouteNames.settings),
   ];
+
+  static const double _spacing = 12;
+  static const double _minItemWidth = 120;
 
   @override
   Widget build(BuildContext context) {
@@ -48,16 +49,34 @@ class QuickFunctionsSection extends StatelessWidget {
             ],
           ),
         ),
-        Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: _functions.map((fn) {
-            return _QuickFunctionCard(
-              icon: fn.icon,
-              label: fn.label,
-              onTap: () => Navigator.of(context).pushNamed(fn.route),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final availableWidth = constraints.maxWidth;
+            // 计算每行能放几个
+            int perRow = 1;
+            while (perRow < _functions.length) {
+              final next = perRow + 1;
+              final itemWidth = (availableWidth - _spacing * (next - 1)) / next;
+              if (itemWidth < _minItemWidth) break;
+              perRow = next;
+            }
+            final itemWidth = (availableWidth - _spacing * (perRow - 1)) / perRow;
+
+            return Wrap(
+              spacing: _spacing,
+              runSpacing: _spacing,
+              children: _functions.map((fn) {
+                return SizedBox(
+                  width: itemWidth,
+                  child: _QuickFunctionCard(
+                    icon: fn.icon,
+                    label: fn.label,
+                    onTap: () => Navigator.of(context).pushNamed(fn.route),
+                  ),
+                );
+              }).toList(),
             );
-          }).toList(),
+          },
         ),
       ],
     );
@@ -101,7 +120,6 @@ class _QuickFunctionCardState extends State<_QuickFunctionCard> {
             sigmaY: 10,
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
             child: Row(
-              mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
                   widget.icon,
@@ -111,13 +129,16 @@ class _QuickFunctionCardState extends State<_QuickFunctionCard> {
                       : colorScheme.onSurface.withValues(alpha: 0.7),
                 ),
                 const SizedBox(width: 10),
-                Text(
-                  widget.label,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w500,
-                    color: _hovered
-                        ? colorScheme.primary
-                        : colorScheme.onSurface,
+                Flexible(
+                  child: Text(
+                    widget.label,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w500,
+                      color: _hovered
+                          ? colorScheme.primary
+                          : colorScheme.onSurface,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ],

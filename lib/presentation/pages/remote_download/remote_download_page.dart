@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'package:cloudreve4_flutter/core/utils/app_logger.dart';
+import 'package:cloudreve4_flutter/presentation/widgets/desktop_constrained.dart';
 import 'package:cloudreve4_flutter/presentation/widgets/folder_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:lucide_icons/lucide_icons.dart';
 import 'package:provider/provider.dart';
 import '../../../data/models/remote_download_task_model.dart';
 import '../../../services/remote_download_service.dart';
@@ -160,16 +162,16 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
   IconData _getStatusIcon(RemoteDownloadStatus status) {
     switch (status) {
       case RemoteDownloadStatus.queued:
-        return Icons.schedule;
+        return LucideIcons.clock;
       case RemoteDownloadStatus.running:
-        return Icons.downloading;
+        return LucideIcons.download;
       case RemoteDownloadStatus.completed:
-        return Icons.check_circle_outline;
+        return LucideIcons.checkCircle2;
       case RemoteDownloadStatus.error:
-        return Icons.error_outline;
+        return LucideIcons.alertCircle;
       case RemoteDownloadStatus.suspending:
       case RemoteDownloadStatus.suspended:
-        return Icons.pause_circle_outline;
+        return LucideIcons.pause;
     }
   }
 
@@ -220,13 +222,13 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
   Widget _buildLeadingIcon(RemoteDownloadStatus status) {
     final colors = _getStatusColors(status);
     return Container(
-      width: 40,
-      height: 40,
+      width: 36,
+      height: 36,
       decoration: BoxDecoration(
         color: colors.background,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(8),
       ),
-      child: Icon(_getStatusIcon(status), color: colors.icon, size: 20),
+      child: Icon(_getStatusIcon(status), color: colors.icon, size: 18),
     );
   }
 
@@ -270,7 +272,7 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(LucideIcons.refreshCw),
             onPressed: () => _loadTasks(),
             tooltip: '刷新',
           ),
@@ -280,7 +282,11 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
       body: Column(
         children: [
           _buildHeaderBar(isDesktop),
-          Expanded(child: _buildBody(context, isDesktop)),
+          Expanded(
+            child: DesktopConstrained(
+              child: _buildBody(context, isDesktop),
+            ),
+          ),
         ],
       ),
       floatingActionButton: isDesktop
@@ -288,7 +294,7 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
           : FloatingActionButton.extended(
               onPressed: () => _showCreateDialog(context),
               label: const Text('新建任务'),
-              icon: const Icon(Icons.add),
+              icon: const Icon(LucideIcons.plus),
             ),
     );
   }
@@ -296,33 +302,27 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
   Widget _buildHeaderBar(bool isDesktop) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return Container(
+    return Padding(
       padding: EdgeInsets.symmetric(
           horizontal: isDesktop ? 32 : 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
-        border: Border(
-          bottom: BorderSide(
-              color: colorScheme.outlineVariant.withValues(alpha: 0.5)),
-        ),
-      ),
       child: Row(
         children: [
           Expanded(
-            child: Container(
+            child: SizedBox(
               height: 40,
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHighest
-                    .withValues(alpha: 0.5),
-                borderRadius: BorderRadius.circular(8),
-              ),
               child: TextField(
                 controller: _searchController,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   hintText: '搜索任务...',
-                  prefixIcon: Icon(Icons.search, size: 20),
-                  border: InputBorder.none,
-                  contentPadding: EdgeInsets.symmetric(vertical: 8),
+                  filled: true,
+                  fillColor: colorScheme.surfaceContainerHighest
+                      .withValues(alpha: 0.5),
+                  prefixIcon: const Icon(LucideIcons.search, size: 20),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide.none,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 8),
                 ),
                 onChanged: (value) {
                   _searchQuery = value.toLowerCase();
@@ -341,7 +341,7 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
             const SizedBox(width: 16),
             FilledButton.icon(
               onPressed: () => _showCreateDialog(context),
-              icon: const Icon(Icons.add, size: 18),
+              icon: const Icon(LucideIcons.plus, size: 18),
               label: const Text('新建任务'),
             ),
           ],
@@ -408,45 +408,15 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
 
   Widget _buildDesktopLayout(
       List<RemoteDownloadTaskModel> tasks, bool isOngoing) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final screenWidth = constraints.maxWidth;
-        final contentWidth = screenWidth * 0.8;
-        final horizontalPadding = (screenWidth - contentWidth) / 2;
-
-        return SingleChildScrollView(
-          padding: EdgeInsets.symmetric(
-              horizontal: horizontalPadding, vertical: 24
-          ),
-          child: SizedBox(
-            width: contentWidth,
-            child: Container(
-              decoration: BoxDecoration(
-                color: Theme.of(context).cardColor,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .outlineVariant
-                        .withValues(alpha: 0.5)),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.03),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  )
-                ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: isOngoing
-                    ? _buildDownloadingTable(tasks)
-                    : _buildCompletedTable(tasks),
-              ),
-            ),
-          ),
-        );
-      },
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(vertical: 24),
+      child: Card(
+        margin: EdgeInsets.zero,
+        clipBehavior: Clip.antiAlias,
+        child: isOngoing
+            ? _buildDownloadingTable(tasks)
+            : _buildCompletedTable(tasks),
+      ),
     );
   }
 
@@ -561,7 +531,7 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
                 children: [
                   if (download != null && download.files.isNotEmpty)
                     IconButton(
-                      icon: const Icon(Icons.list_alt, size: 18),
+                      icon: const Icon(LucideIcons.layoutList, size: 18),
                       onPressed: () {
                         if (!mounted) return;
                         Future.microtask(() {
@@ -577,7 +547,7 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
                     ),
                   if (task.status.isOngoing)
                     IconButton(
-                      icon: Icon(Icons.cancel_outlined,
+                      icon: Icon(LucideIcons.xCircle,
                           size: 18, color: colorScheme.error),
                       onPressed: () => _cancelTask(task),
                       tooltip: '取消任务',
@@ -657,7 +627,7 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
             DataCell(
               download != null && download.files.isNotEmpty
                   ? IconButton(
-                      icon: const Icon(Icons.list_alt, size: 18),
+                      icon: const Icon(LucideIcons.layoutList, size: 18),
                       onPressed: () => _showFilesDialog(context, task),
                       tooltip: '查看文件',
                       style: IconButton.styleFrom(
@@ -677,9 +647,15 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
 
   Widget _buildMobileLayout(
       List<RemoteDownloadTaskModel> tasks, bool isOngoing) {
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+    final theme = Theme.of(context);
+    return ListView.separated(
+      padding: const EdgeInsets.symmetric(vertical: 4),
       itemCount: tasks.length,
+      separatorBuilder: (_, _) => Divider(
+        height: 1,
+        indent: 64,
+        color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+      ),
       itemBuilder: (context, index) =>
           _buildTaskCard(tasks[index], isOngoing),
     );
@@ -689,149 +665,116 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
     final download = task.summary?.download;
     final hasFiles = download != null && download.files.isNotEmpty;
     final colorScheme = Theme.of(context).colorScheme;
+    final colors = _getStatusColors(task.status);
+    final theme = Theme.of(context);
 
-    return Card(
-      elevation: 0,
-      margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-            color: colorScheme.outlineVariant.withValues(alpha: 0.5)),
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: () => _showTaskDetail(task),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 标题行：图标 + 名称 + 状态徽章 + 更多按钮
-              Row(
-                children: [
-                  _buildLeadingIcon(task.status),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          task.displayName,
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w600, fontSize: 15),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        if (task.error == null)
-                          Text(
-                            _formatTime(task.createdAt),
-                            style: TextStyle(
-                                fontSize: 12,
-                                color: colorScheme.onSurfaceVariant),
-                          ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  _buildStatusBadge(task.status),
-                  IconButton(
-                    icon: const Icon(Icons.more_vert, size: 20),
-                    onPressed: () =>
-                        _showMobileActionMenu(task, isOngoing, hasFiles),
-                    style: IconButton.styleFrom(
-                      padding: const EdgeInsets.all(4),
-                      minimumSize: const Size(32, 32),
-                    ),
-                  ),
-                ],
-              ),
-
-              // 进度信息（下载中任务）
-              if (isOngoing && download != null) ...[
-                const Divider(height: 24),
-                if (download.total > 0) ...[
-                  Row(
-                    children: [
-                      Expanded(
-                        child: LinearProgressIndicator(
-                          value: download.progress.clamp(0.0, 1.0),
-                          backgroundColor:
-                              colorScheme.surfaceContainerHighest,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                              colorScheme.primary),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Text(
-                        '${(download.progress * 100).toStringAsFixed(1)}%',
-                        style: const TextStyle(
-                            fontSize: 12, fontWeight: FontWeight.w600),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                ],
-                Row(
-                  children: [
-                    Text(
-                      '${_formatSize(download.downloaded)} / ${_formatSize(download.total)}',
-                      style: TextStyle(
-                          fontSize: 12, color: colorScheme.onSurfaceVariant),
-                    ),
-                    const Spacer(),
-                    if (download.speedText.isNotEmpty)
-                      Text(
-                        download.speedText,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: colorScheme.primary,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                  ],
-                ),
-              ] else if (!isOngoing && download != null) ...[
-                const Divider(height: 24),
-                Text(
-                  _formatSize(download.total),
-                  style: TextStyle(
-                      fontSize: 12, color: colorScheme.onSurfaceVariant),
-                ),
-              ],
-
-              // 错误信息
-              if (task.error != null && task.error!.isNotEmpty) ...[
-                const SizedBox(height: 8),
+    return InkWell(
+      onTap: () => _showTaskDetail(task),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                // Left: status icon
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  width: 36,
+                  height: 36,
                   decoration: BoxDecoration(
-                    color: colorScheme.errorContainer,
+                    color: colors.background,
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Row(
+                  child: Icon(_getStatusIcon(task.status),
+                      color: colors.icon, size: 18),
+                ),
+                const SizedBox(width: 12),
+                // Middle: name + status/speed/size
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(Icons.error_outline,
-                          size: 14, color: colorScheme.error),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          task.error!,
-                          style: TextStyle(
-                              fontSize: 12, color: colorScheme.onErrorContainer),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                      Text(
+                        task.displayName,
+                        style: theme.textTheme.bodyMedium
+                            ?.copyWith(fontWeight: FontWeight.w500),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        _buildMobileSubtitle(task, isOngoing),
+                        style: theme.textTheme.bodySmall
+                            ?.copyWith(color: Theme.of(context).hintColor),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ),
                 ),
+                const SizedBox(width: 8),
+                // Right: more button
+                IconButton(
+                  icon: const Icon(LucideIcons.moreVertical, size: 18),
+                  onPressed: () =>
+                      _showMobileActionMenu(task, isOngoing, hasFiles),
+                  style: IconButton.styleFrom(
+                    padding: const EdgeInsets.all(4),
+                    minimumSize: const Size(32, 32),
+                  ),
+                ),
               ],
+            ),
+            // Progress bar for downloading tasks
+            if (isOngoing && download != null && download.total > 0) ...[
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.only(left: 48),
+                child: LinearProgressIndicator(
+                  value: download.progress.clamp(0.0, 1.0),
+                  minHeight: 4,
+                  backgroundColor: colorScheme.surfaceContainerHighest,
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                      colorScheme.primary),
+                ),
+              ),
             ],
-          ),
+            // Error text
+            if (task.error != null && task.error!.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Padding(
+                padding: const EdgeInsets.only(left: 48),
+                child: Text(
+                  task.error!,
+                  style: TextStyle(fontSize: 12, color: colorScheme.error),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ],
         ),
       ),
     );
+  }
+
+  String _buildMobileSubtitle(RemoteDownloadTaskModel task, bool isOngoing) {
+    final download = task.summary?.download;
+    final parts = <String>[task.status.text];
+
+    if (isOngoing && download != null) {
+      if (download.speedText.isNotEmpty) {
+        parts.add(download.speedText);
+      }
+      if (download.total > 0) {
+        parts.add(
+            '${_formatSize(download.downloaded)} / ${_formatSize(download.total)}');
+      }
+    } else if (!isOngoing && download != null) {
+      parts.add(_formatSize(download.total));
+    }
+
+    return parts.join(' · ');
   }
 
   // ─── 空状态 / 搜索无结果 ───
@@ -850,8 +793,8 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
               children: [
                 Icon(
                   isOngoing
-                      ? Icons.download_for_offline_outlined
-                      : Icons.task_alt_outlined,
+                      ? LucideIcons.download
+                      : LucideIcons.checkCircle2,
                   size: 80,
                   color: colorScheme.outline,
                 ),
@@ -859,14 +802,14 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
                 Text(
                   isOngoing ? '暂无下载中的任务' : '暂无已完成的任务',
                   style: TextStyle(
-                      fontSize: 16, color: colorScheme.onSurfaceVariant),
+                      fontSize: 16, color: Theme.of(context).hintColor),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   isOngoing ? '点击右下角按钮新建任务' : '下载完成的任务将显示在这里',
                   style: TextStyle(
                     fontSize: 12,
-                    color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                    color: Theme.of(context).hintColor.withValues(alpha: 0.7),
                   ),
                 ),
               ],
@@ -885,12 +828,12 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.search_off, size: 64, color: colorScheme.outline),
+          Icon(LucideIcons.searchX, size: 64, color: colorScheme.outline),
           const SizedBox(height: 16),
           Text(
             '没有找到 "$_searchQuery"',
             style: TextStyle(
-                fontSize: 16, color: colorScheme.onSurfaceVariant),
+                fontSize: 16, color: Theme.of(context).hintColor),
           ),
         ],
       ),
@@ -923,7 +866,7 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
             ),
             const Divider(height: 1),
             ListTile(
-              leading: const Icon(Icons.info_outline),
+              leading: const Icon(LucideIcons.info),
               title: const Text('查看详情'),
               onTap: () {
                 Navigator.pop(context);
@@ -932,7 +875,7 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
             ),
             if (hasFiles)
               ListTile(
-                leading: const Icon(Icons.list_alt),
+                leading: const Icon(LucideIcons.layoutList),
                 title: const Text('查看文件'),
                 onTap: () {
                   Navigator.pop(context);
@@ -941,7 +884,7 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
               ),
             if (isOngoing && task.status.isOngoing)
               ListTile(
-                leading: Icon(Icons.cancel_outlined, color: colorScheme.error),
+                leading: Icon(LucideIcons.xCircle, color: colorScheme.error),
                 title: Text('取消任务',
                     style: TextStyle(color: colorScheme.error)),
                 onTap: () {
@@ -1008,12 +951,12 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
                       children: [
                         _buildDetailSection('基本信息', [
                           _buildDetailRow(
-                            icon: Icons.schedule,
+                            icon: LucideIcons.clock,
                             label: '创建于',
                             value: _formatDateTime(task.createdAt),
                           ),
                           _buildDetailRow(
-                            icon: Icons.update,
+                            icon: LucideIcons.refreshCw,
                             label: '更新于',
                             value: _formatDateTime(task.updatedAt),
                           ),
@@ -1025,7 +968,7 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
                           ),
                           if (task.node != null)
                             _buildDetailRow(
-                              icon: Icons.dns_outlined,
+                              icon: LucideIcons.server,
                               label: '处理节点',
                               value: task.node!.displayName,
                             ),
@@ -1033,13 +976,13 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
                         const SizedBox(height: 20),
                         _buildDetailSection('下载信息', [
                           _buildDetailRow(
-                            icon: Icons.input,
+                            icon: LucideIcons.logIn,
                             label: '输入',
                             value: task.srcDisplayText,
                             copyable: true,
                           ),
                           _buildDetailRow(
-                            icon: Icons.output,
+                            icon: LucideIcons.logOut,
                             label: '输出',
                             value: task.dstDisplayText,
                             navigable: true,
@@ -1049,31 +992,31 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
                             },
                           ),
                           _buildDetailRow(
-                            icon: Icons.timer_outlined,
+                            icon: LucideIcons.timer,
                             label: '执行净耗时',
                             value: task.durationText,
                           ),
                           _buildDetailRow(
-                            icon: Icons.refresh,
+                            icon: LucideIcons.refreshCw,
                             label: '重试次数',
                             value: '${task.retryCount}',
                           ),
                           if (download != null && download.numPieces > 0)
                             _buildDetailRow(
-                              icon: Icons.grid_view_outlined,
+                              icon: LucideIcons.layoutGrid,
                               label: '分片数量',
                               value: '${download.numPieces}',
                             ),
                           if (download != null && download.total > 0) ...[
                             _buildDetailRow(
-                              icon: Icons.data_usage,
+                              icon: LucideIcons.hardDrive,
                               label: '总大小',
                               value:
                                   '${_formatSize(download.downloaded)} / ${_formatSize(download.total)}',
                             ),
                             if (download.speedText.isNotEmpty)
                               _buildDetailRow(
-                                icon: Icons.speed,
+                                icon: LucideIcons.gauge,
                                 label: '下载速度',
                                 value: download.speedText,
                               ),
@@ -1110,7 +1053,7 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
                                     Navigator.of(context).pop();
                                     _showFilesDialog(this.context, task);
                                   },
-                                  icon: const Icon(Icons.list_alt, size: 18),
+                                  icon: const Icon(LucideIcons.layoutList, size: 18),
                                   label: const Text('查看文件'),
                                 ),
                               ),
@@ -1124,7 +1067,7 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
                                     Navigator.of(context).pop();
                                     _cancelTask(task);
                                   },
-                                  icon: Icon(Icons.cancel_outlined, size: 18),
+                                  icon: Icon(LucideIcons.xCircle, size: 18),
                                   label: const Text('取消任务'),
                                   style: FilledButton.styleFrom(
                                       backgroundColor: colorScheme.error),
@@ -1176,7 +1119,7 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.close),
+            icon: const Icon(LucideIcons.x),
             onPressed: () => Navigator.of(context).pop(),
             style: IconButton.styleFrom(
               backgroundColor: colorScheme.surfaceContainerHighest,
@@ -1223,7 +1166,7 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 18, color: colorScheme.onSurfaceVariant),
+          Icon(icon, size: 16, color: colorScheme.onSurfaceVariant),
           const SizedBox(width: 10),
           SizedBox(
             width: 80,
@@ -1255,7 +1198,7 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
                         borderRadius: BorderRadius.circular(4),
                         child: Padding(
                           padding: const EdgeInsets.all(2),
-                          child: Icon(Icons.copy,
+                          child: Icon(LucideIcons.copy,
                               size: 14, color: colorScheme.primary),
                         ),
                       ),
@@ -1266,7 +1209,7 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
                         borderRadius: BorderRadius.circular(4),
                         child: Padding(
                           padding: const EdgeInsets.all(2),
-                          child: Icon(Icons.open_in_new,
+                          child: Icon(LucideIcons.externalLink,
                               size: 14, color: colorScheme.primary),
                         ),
                       ),
@@ -1346,7 +1289,7 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
                     ),
                     child: Row(
                       children: [
-                        Icon(Icons.folder, size: 18, color: Theme.of(ctx).colorScheme.primary),
+                        Icon(LucideIcons.folder, size: 18, color: Theme.of(ctx).colorScheme.primary),
                         const SizedBox(width: 8),
                         Expanded(
                           child: SingleChildScrollView(
@@ -1383,10 +1326,10 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
                           selectedDst = path;
                           folderSelected = true;
                         });
-                        },
-                      ),
+                      },
                     ),
-                  ],
+                  ),
+                ],
 
                 const SizedBox(height: 16),
                 // 下方：下载链接
@@ -1395,7 +1338,7 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
                   decoration: const InputDecoration(
                     labelText: '下载链接',
                     hintText: '输入 URL 或磁力链接，每行一个',
-                    prefixIcon: Icon(Icons.link),
+                    prefixIcon: Icon(LucideIcons.link),
                     alignLabelWithHint: true,
                   ),
                   maxLines: 3,

@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import '../../../core/utils/app_logger.dart';
 import '../../widgets/toast_helper.dart';
@@ -14,7 +13,7 @@ class LogViewerPage extends StatefulWidget {
 class _LogViewerPageState extends State<LogViewerPage> {
   String _logContent = '';
   bool _isLoading = true;
-  bool _isAutoScroll = true;
+  final bool _isAutoScroll = true;
   final ScrollController _scrollController = ScrollController();
 
   @override

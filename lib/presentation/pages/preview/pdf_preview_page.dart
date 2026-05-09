@@ -6,8 +6,9 @@ import '../../../services/file_service.dart';
 /// PDF预览页面
 class PdfPreviewPage extends StatefulWidget {
   final FileModel file;
+  final String? entityId;
 
-  const PdfPreviewPage({super.key, required this.file});
+  const PdfPreviewPage({super.key, required this.file, this.entityId});
 
   @override
   State<PdfPreviewPage> createState() => _PdfPreviewPageState();
@@ -29,6 +30,7 @@ class _PdfPreviewPageState extends State<PdfPreviewPage> {
       final response = await FileService().getDownloadUrls(
         uris: [widget.file.relativePath],
         download: false,
+        entity: widget.entityId,
       );
 
       final urls = response['urls'] as List<dynamic>? ?? [];

@@ -11,8 +11,9 @@ import '../../widgets/toast_helper.dart';
 /// 图片预览页面
 class ImagePreviewPage extends StatefulWidget {
   final FileModel file;
+  final String? entityId;
 
-  const ImagePreviewPage({super.key, required this.file});
+  const ImagePreviewPage({super.key, required this.file, this.entityId});
 
   @override
   State<ImagePreviewPage> createState() => _ImagePreviewPageState();
@@ -36,6 +37,7 @@ class _ImagePreviewPageState extends State<ImagePreviewPage> {
       final response = await FileService().getDownloadUrls(
         uris: [widget.file.relativePath],
         download: false,
+        entity: widget.entityId,
       );
 
       final urls = response['urls'] as List<dynamic>? ?? [];

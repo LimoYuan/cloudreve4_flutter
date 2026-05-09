@@ -7,8 +7,9 @@ import '../../../services/file_service.dart';
 /// 视频预览页面
 class VideoPreviewPage extends StatefulWidget {
   final FileModel file;
+  final String? entityId;
 
-  const VideoPreviewPage({super.key, required this.file});
+  const VideoPreviewPage({super.key, required this.file, this.entityId});
 
   @override
   State<VideoPreviewPage> createState() => _VideoPreviewPageState();
@@ -34,6 +35,7 @@ class _VideoPreviewPageState extends State<VideoPreviewPage> {
       final response = await FileService().getDownloadUrls(
         uris: [widget.file.relativePath],
         download: false,
+        entity: widget.entityId,
       );
 
       final urls = response['urls'] as List<dynamic>? ?? [];

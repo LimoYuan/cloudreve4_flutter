@@ -96,42 +96,102 @@ class AppRouter {
         );
 
       case RouteNames.imagePreview:
-        final file = settings.arguments as FileModel;
+        final args = settings.arguments;
+        if (args is Map<String, dynamic>) {
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => ImagePreviewPage(
+              file: args['file'] as FileModel,
+              entityId: args['entityId'] as String?,
+            ),
+          );
+        }
+        final file = args as FileModel;
         return MaterialPageRoute(
           settings: settings,
           builder: (context) => ImagePreviewPage(file: file),
         );
 
       case RouteNames.pdfPreview:
-        final file = settings.arguments as FileModel;
+        final args = settings.arguments;
+        if (args is Map<String, dynamic>) {
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => PdfPreviewPage(
+              file: args['file'] as FileModel,
+              entityId: args['entityId'] as String?,
+            ),
+          );
+        }
+        final file = args as FileModel;
         return MaterialPageRoute(
           settings: settings,
           builder: (context) => PdfPreviewPage(file: file),
         );
 
       case RouteNames.videoPreview:
-        final file = settings.arguments as FileModel;
+        final args = settings.arguments;
+        if (args is Map<String, dynamic>) {
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => VideoPreviewPage(
+              file: args['file'] as FileModel,
+              entityId: args['entityId'] as String?,
+            ),
+          );
+        }
+        final file = args as FileModel;
         return MaterialPageRoute(
           settings: settings,
           builder: (context) => VideoPreviewPage(file: file),
         );
 
       case RouteNames.audioPreview:
-        final file = settings.arguments as FileModel;
+        final args = settings.arguments;
+        if (args is Map<String, dynamic>) {
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => AudioPreviewPage(
+              file: args['file'] as FileModel,
+              entityId: args['entityId'] as String?,
+            ),
+          );
+        }
+        final file = args as FileModel;
         return MaterialPageRoute(
           settings: settings,
           builder: (context) => AudioPreviewPage(file: file),
         );
 
       case RouteNames.documentPreview:
-        final file = settings.arguments as FileModel;
+        final args = settings.arguments;
+        if (args is Map<String, dynamic>) {
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => DocumentPreviewPage(
+              file: args['file'] as FileModel,
+              entityId: args['entityId'] as String?,
+            ),
+          );
+        }
+        final file = args as FileModel;
         return MaterialPageRoute(
           settings: settings,
           builder: (context) => DocumentPreviewPage(file: file),
         );
 
       case RouteNames.markdownPreview:
-        final file = settings.arguments as FileModel;
+        final args = settings.arguments;
+        if (args is Map<String, dynamic>) {
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => MarkdownPreviewPage(
+              file: args['file'] as FileModel,
+              entityId: args['entityId'] as String?,
+            ),
+          );
+        }
+        final file = args as FileModel;
         return MaterialPageRoute(
           settings: settings,
           builder: (context) => MarkdownPreviewPage(file: file),

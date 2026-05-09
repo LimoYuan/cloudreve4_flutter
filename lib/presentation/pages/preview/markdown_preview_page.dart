@@ -15,8 +15,9 @@ import '../../../services/file_service.dart';
 
 class MarkdownPreviewPage extends StatefulWidget {
   final FileModel file;
+  final String? entityId;
 
-  const MarkdownPreviewPage({super.key, required this.file});
+  const MarkdownPreviewPage({super.key, required this.file, this.entityId});
 
   @override
   State<MarkdownPreviewPage> createState() => _MarkdownPreviewPageState();
@@ -53,6 +54,7 @@ class _MarkdownPreviewPageState extends State<MarkdownPreviewPage> {
       final response = await FileService().getDownloadUrls(
         uris: [widget.file.relativePath],
         download: true,
+        entity: widget.entityId,
       );
 
       final urls = response['urls'] as List<dynamic>? ?? [];

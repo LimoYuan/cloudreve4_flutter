@@ -120,11 +120,15 @@ class FolderSummaryModel {
 
 /// 扩展信息模型
 class ExtendedInfoModel {
+  final StoragePolicyModel? storagePolicy;
+  final int? storageUsed;
   final List<ShareModel>? shares;
   final List<EntityModel>? entities;
   final List<DirectLinkModel>? directLinks;
 
   ExtendedInfoModel({
+    this.storagePolicy,
+    this.storageUsed,
     this.shares,
     this.entities,
     this.directLinks,
@@ -132,6 +136,10 @@ class ExtendedInfoModel {
 
   factory ExtendedInfoModel.fromJson(Map<String, dynamic> json) {
     return ExtendedInfoModel(
+      storagePolicy: json['storage_policy'] is Map<String, dynamic>
+          ? StoragePolicyModel.fromJson(json['storage_policy'] as Map<String, dynamic>)
+          : null,
+      storageUsed: (json['storage_used'] as num?)?.toInt(),
       shares: json['shares'] != null
           ? (json['shares'] as List)
               .map((e) => ShareModel.fromJson(e as Map<String, dynamic>))
@@ -152,6 +160,8 @@ class ExtendedInfoModel {
 
   Map<String, dynamic> toJson() {
     return {
+      'storage_policy': storagePolicy?.toJson(),
+      'storage_used': storageUsed,
       'shares': shares?.map((e) => e.toJson()).toList(),
       'entities': entities?.map((e) => e.toJson()).toList(),
       'direct_links': directLinks?.map((e) => e.toJson()).toList(),
@@ -226,13 +236,81 @@ class ShareModel {
   }
 }
 
-/// 实体模型
+/// 存储策略模型
+class StoragePolicyModel {
+  final String id;
+  final String name;
+  final String type;
+  final int? maxSize;
+
+  StoragePolicyModel({
+    required this.id,
+    required this.name,
+    required this.type,
+    this.maxSize,
+  });
+
+  factory StoragePolicyModel.fromJson(Map<String, dynamic> json) {
+    return StoragePolicyModel(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      type: json['type'] as String,
+      maxSize: (json['max_size'] as num?)?.toInt(),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'type': type,
+      'max_size': maxSize,
+    };
+  }
+}
+
+/// 实体创建者模型
+class EntityCreatedByModel {
+  final String id;
+  final String nickname;
+  final String? avatar;
+  final DateTime createdAt;
+
+  EntityCreatedByModel({
+    required this.id,
+    required this.nickname,
+    this.avatar,
+    required this.createdAt,
+  });
+
+  factory EntityCreatedByModel.fromJson(Map<String, dynamic> json) {
+    return EntityCreatedByModel(
+      id: json['id'] as String,
+      nickname: json['nickname'] as String,
+      avatar: json['avatar'] as String?,
+      createdAt: DateTime.parse(json['created_at'] as String),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'nickname': nickname,
+      'avatar': avatar,
+      'created_at': createdAt.toIso8601String(),
+    };
+  }
+}
+
+/// 实体模型（文件版本/Blob）
 class EntityModel {
   final String id;
   final int type;
   final DateTime createdAt;
   final int size;
   final String? encryptedWith;
+  final StoragePolicyModel? storagePolicy;
+  final EntityCreatedByModel? createdBy;
 
   EntityModel({
     required this.id,
@@ -240,6 +318,8 @@ class EntityModel {
     required this.createdAt,
     required this.size,
     this.encryptedWith,
+    this.storagePolicy,
+    this.createdBy,
   });
 
   factory EntityModel.fromJson(Map<String, dynamic> json) {
@@ -249,6 +329,12 @@ class EntityModel {
       createdAt: DateTime.parse(json['created_at'] as String),
       size: json['size'] as int,
       encryptedWith: json['encrypted_with'] as String?,
+      storagePolicy: json['storage_policy'] is Map<String, dynamic>
+          ? StoragePolicyModel.fromJson(json['storage_policy'] as Map<String, dynamic>)
+          : null,
+      createdBy: json['created_by'] is Map<String, dynamic>
+          ? EntityCreatedByModel.fromJson(json['created_by'] as Map<String, dynamic>)
+          : null,
     );
   }
 
@@ -259,6 +345,8 @@ class EntityModel {
       'created_at': createdAt.toIso8601String(),
       'size': size,
       'encrypted_with': encryptedWith,
+      'storage_policy': storagePolicy?.toJson(),
+      'created_by': createdBy?.toJson(),
     };
   }
 }
@@ -314,7 +402,9 @@ class FileInfoModel {
       folderSummary: json['folder_summary'] is Map<String, dynamic>
           ? FolderSummaryModel.fromJson(json['folder_summary'] as Map<String, dynamic>)
           : null,
-      extendedInfo: null,
+      extendedInfo: json['extended_info'] is Map<String, dynamic>
+          ? ExtendedInfoModel.fromJson(json['extended_info'] as Map<String, dynamic>)
+          : null,
     );
   }
 }

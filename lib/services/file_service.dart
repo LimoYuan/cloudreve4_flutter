@@ -234,4 +234,30 @@ class FileService {
     AppLogger.d("getFileInfo --> $response");
     return response;
   }
+
+  /// 设为当前版本
+  Future<void> setFileVersion({
+    required String uri,
+    required String version,
+  }) async {
+    final data = <String, dynamic>{
+      'uri': _toCloudreveUri(uri),
+      'version': version,
+    };
+
+    await ApiService.instance.post<void>('/file/version/current', data: data);
+  }
+
+  /// 删除版本
+  Future<void> deleteFileVersion({
+    required String uri,
+    required String version,
+  }) async {
+    final data = <String, dynamic>{
+      'uri': _toCloudreveUri(uri),
+      'version': version,
+    };
+
+    await ApiService.instance.delete<void>('/file/version', data: data);
+  }
 }

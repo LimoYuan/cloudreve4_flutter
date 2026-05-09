@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../data/models/file_model.dart';
 import '../../core/utils/date_utils.dart' as date_utils;
 import '../../core/utils/file_icon_utils.dart';
+import '../../core/utils/file_type_utils.dart';
 import '../../services/file_service.dart';
+import '../../router/app_router.dart';
 import 'toast_helper.dart';
 
 /// 文件/文件夹详情（右侧抽屉）
@@ -24,6 +27,7 @@ class _FileInfoPanelState extends State<FileInfoPanel> {
   FileInfoModel? _fileInfo;
   bool _isLoading = true;
   bool _isCalculatingFolder = false;
+  bool _isVersionLoading = false;
   String? _error;
 
   @override
@@ -36,12 +40,14 @@ class _FileInfoPanelState extends State<FileInfoPanel> {
     try {
       final response = await FileService().getFileInfo(
         uri: widget.file.relativePath,
+        extended: widget.file.isFile,
         folderSummary: false,
       );
       if (mounted) {
         setState(() {
           _fileInfo = FileInfoModel.fromJson(response);
           _isLoading = false;
+          _isVersionLoading = false;
         });
       }
     } catch (e) {
@@ -59,6 +65,7 @@ class _FileInfoPanelState extends State<FileInfoPanel> {
     try {
       final response = await FileService().getFileInfo(
         uri: widget.file.relativePath,
+        extended: true,
         folderSummary: true,
       );
       if (mounted) {
@@ -85,7 +92,6 @@ class _FileInfoPanelState extends State<FileInfoPanel> {
         right: false,
         child: Column(
         children: [
-          // 抽屉头部
           Container(
             padding: const EdgeInsets.only(
               left: 16,
@@ -117,13 +123,12 @@ class _FileInfoPanelState extends State<FileInfoPanel> {
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close),
+                  icon: const Icon(LucideIcons.x),
                   onPressed: () => Navigator.of(context).pop(),
                 ),
               ],
             ),
           ),
-          // 内容区
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
@@ -142,7 +147,7 @@ class _FileInfoPanelState extends State<FileInfoPanel> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.error_outline, size: 48, color: theme.colorScheme.error),
+          Icon(LucideIcons.alertCircle, size: 48, color: theme.colorScheme.error),
           const SizedBox(height: 12),
           Text('加载失败', style: theme.textTheme.titleSmall),
           const SizedBox(height: 4),
@@ -162,6 +167,11 @@ class _FileInfoPanelState extends State<FileInfoPanel> {
     final typeLabel = file.isFolder
         ? '文件夹'
         : FileIconUtils.getFileTypeLabel(file.name);
+    final extendedInfo = _fileInfo?.extendedInfo;
+    final versionEntities = extendedInfo?.entities
+            ?.where((e) => e.type == 0)
+            .toList() ??
+        [];
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -188,16 +198,49 @@ class _FileInfoPanelState extends State<FileInfoPanel> {
           const SizedBox(height: 16),
 
           // 基本信息
-          _buildInfoRow(LucideIcons.folderOpen, '位置', file.relativePath),
-          _buildInfoRow(
-            LucideIcons.hardDrive,
-            '大小',
-            file.isFolder ? '--' : date_utils.DateUtils.formatFileSize(file.size),
-          ),
+          _buildInfoRow(LucideIcons.folderOpen, '位置', Uri.decodeComponent(file.relativePath)),
+          if (file.isFile)
+            _buildInfoRow(
+              LucideIcons.hardDrive,
+              '大小',
+              date_utils.DateUtils.formatFileSize(file.size),
+            ),
           _buildInfoRow(LucideIcons.calendarPlus, '创建时间', date_utils.DateUtils.formatDateTime(file.createdAt)),
           _buildInfoRow(LucideIcons.calendar, '修改时间', date_utils.DateUtils.formatDateTime(file.updatedAt)),
           if (file.owned != null)
             _buildInfoRow(LucideIcons.shield, '所有者', file.owned! ? '是' : '否'),
+
+          // 文件扩展信息
+          if (file.isFile && extendedInfo != null) ...[
+            const SizedBox(height: 12),
+            Divider(color: theme.dividerColor.withValues(alpha: 0.3)),
+            const SizedBox(height: 8),
+            Text('扩展信息', style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            _buildInfoRow(LucideIcons.fingerprint, '文件ID', file.id),
+            if (file.primaryEntity != null)
+              _buildInfoRow(LucideIcons.hash, '主版本', file.primaryEntity!),
+            if (extendedInfo.storagePolicy != null)
+              _buildInfoRow(
+                LucideIcons.server,
+                '存储策略',
+                '${extendedInfo.storagePolicy!.name} (${extendedInfo.storagePolicy!.type})',
+              ),
+            if (extendedInfo.storageUsed != null)
+              _buildInfoRow(
+                LucideIcons.database,
+                '总占用',
+                date_utils.DateUtils.formatFileSize(extendedInfo.storageUsed!),
+              ),
+          ],
+
+          // 版本历史
+          if (file.isFile && versionEntities.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Divider(color: theme.dividerColor.withValues(alpha: 0.3)),
+            const SizedBox(height: 8),
+            _buildVersionSection(theme, colorScheme, versionEntities),
+          ],
 
           // 文件夹信息
           if (file.isFolder) ...[
@@ -212,6 +255,329 @@ class _FileInfoPanelState extends State<FileInfoPanel> {
       ),
     );
   }
+
+  Widget _buildVersionSection(
+    ThemeData theme,
+    ColorScheme colorScheme,
+    List<EntityModel> entities,
+  ) {
+    final file = _fileInfo!.file;
+    final primaryEntity = file.primaryEntity;
+    final isPreviewable = FileTypeUtils.isPreviewable(file.name);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text('版本历史', style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              decoration: BoxDecoration(
+                color: colorScheme.primaryContainer,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                '${entities.length}',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: colorScheme.onPrimaryContainer,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        ...entities.asMap().entries.map((entry) {
+          final index = entry.key;
+          final entity = entry.value;
+          final isCurrent = entity.id == primaryEntity;
+          final versionNumber = entities.length - index;
+          return _buildVersionItem(
+            theme,
+            colorScheme,
+            entity: entity,
+            versionNumber: versionNumber,
+            isCurrent: isCurrent,
+            isPreviewable: isPreviewable,
+            file: file,
+          );
+        }),
+      ],
+    );
+  }
+
+  Widget _buildVersionItem(
+    ThemeData theme,
+    ColorScheme colorScheme, {
+    required EntityModel entity,
+    required int versionNumber,
+    required bool isCurrent,
+    required bool isPreviewable,
+    required FileModel file,
+  }) {
+    final shortId = entity.id.length > 6 ? entity.id.substring(0, 6) : entity.id;
+    final createdBy = entity.createdBy?.nickname ?? '未知';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+      decoration: BoxDecoration(
+        color: isCurrent
+            ? colorScheme.primaryContainer.withValues(alpha: 0.15)
+            : null,
+        border: Border(
+          bottom: BorderSide(color: theme.dividerColor.withValues(alpha: 0.15)),
+        ),
+      ),
+      child: Row(
+        children: [
+          // 版本序号/当前标识
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: isCurrent
+                  ? colorScheme.primaryContainer
+                  : colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(
+              isCurrent ? '当前' : 'v$versionNumber',
+              style: TextStyle(
+                fontSize: 11,
+                color: isCurrent
+                    ? colorScheme.onPrimaryContainer
+                    : theme.hintColor,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+
+          // 版本信息
+          Expanded(
+            child: GestureDetector(
+              onTap: () => _showVersionDetail(entity),
+              onLongPress: () => _showVersionDetail(entity),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '$shortId · ${date_utils.DateUtils.formatFileSize(entity.size)}',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w500,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 1),
+                  Text(
+                    '${date_utils.DateUtils.formatDateTime(entity.createdAt)} · $createdBy',
+                    style: const TextStyle(fontSize: 11, color: null)
+                        .copyWith(color: theme.hintColor),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // 操作按钮
+          if (isPreviewable)
+            _buildVersionActionButton(
+              icon: LucideIcons.externalLink,
+              tooltip: '打开',
+              onPressed: _isVersionLoading ? null : () => _openVersion(entity),
+            ),
+          _buildVersionActionButton(
+            icon: LucideIcons.download,
+            tooltip: '下载',
+            onPressed: _isVersionLoading ? null : () => _downloadVersion(entity),
+          ),
+          if (!isCurrent) ...[
+            _buildVersionActionButton(
+              icon: LucideIcons.pin,
+              tooltip: '设为当前版本',
+              onPressed: _isVersionLoading ? null : () => _setCurrentVersion(entity),
+            ),
+            _buildVersionActionButton(
+              icon: LucideIcons.trash2,
+              tooltip: '删除',
+              color: colorScheme.error,
+              onPressed: _isVersionLoading ? null : () => _deleteVersion(entity),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  void _showVersionDetail(EntityModel entity) {
+    final createdBy = entity.createdBy;
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('版本详情'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildInfoRow(LucideIcons.hash, 'ID', entity.id),
+            _buildInfoRow(LucideIcons.hardDrive, '大小', date_utils.DateUtils.formatFileSize(entity.size)),
+            _buildInfoRow(LucideIcons.calendarPlus, '创建时间', date_utils.DateUtils.formatDateTime(entity.createdAt)),
+            if (createdBy != null) ...[
+              _buildInfoRow(LucideIcons.user, '创建者', createdBy.nickname),
+              _buildInfoRow(LucideIcons.fingerprint, '创建者ID', createdBy.id),
+            ],
+            if (entity.storagePolicy != null)
+              _buildInfoRow(LucideIcons.server, '存储策略', '${entity.storagePolicy!.name} (${entity.storagePolicy!.type})'),
+            if (entity.encryptedWith != null)
+              _buildInfoRow(LucideIcons.lock, '加密', entity.encryptedWith!),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVersionActionButton({
+    required IconData icon,
+    required String tooltip,
+    Color? color,
+    required VoidCallback? onPressed,
+  }) {
+    return IconButton(
+      icon: Icon(icon, size: 16, color: color),
+      onPressed: onPressed,
+      tooltip: tooltip,
+      style: IconButton.styleFrom(
+        padding: const EdgeInsets.all(4),
+        minimumSize: const Size(28, 28),
+      ),
+    );
+  }
+
+  // ─── 版本操作 ───
+
+  void _openVersion(EntityModel entity) {
+    final file = _fileInfo!.file;
+    if (!FileTypeUtils.isPreviewable(file.name)) {
+      ToastHelper.info('暂不支持预览此文件类型');
+      return;
+    }
+
+    final args = {'file': file, 'entityId': entity.id};
+
+    if (FileTypeUtils.isImage(file.name)) {
+      Navigator.of(context).pushNamed(RouteNames.imagePreview, arguments: args);
+    } else if (FileTypeUtils.isPdf(file.name)) {
+      Navigator.of(context).pushNamed(RouteNames.pdfPreview, arguments: args);
+    } else if (FileTypeUtils.isVideo(file.name)) {
+      Navigator.of(context).pushNamed(RouteNames.videoPreview, arguments: args);
+    } else if (FileTypeUtils.isAudio(file.name)) {
+      Navigator.of(context).pushNamed(RouteNames.audioPreview, arguments: args);
+    } else if (FileTypeUtils.isMarkdown(file.name)) {
+      Navigator.of(context).pushNamed(RouteNames.markdownPreview, arguments: args);
+    } else if (FileTypeUtils.isTextCode(file.name)) {
+      Navigator.of(context).pushNamed(RouteNames.documentPreview, arguments: args);
+    }
+  }
+
+  Future<void> _downloadVersion(EntityModel entity) async {
+    try {
+      final response = await FileService().getDownloadUrls(
+        uris: [widget.file.relativePath],
+        entity: entity.id,
+        download: true,
+      );
+
+      final urls = response['urls'] as List<dynamic>? ?? [];
+      if (urls.isNotEmpty) {
+        final urlData = urls[0] as Map<String, dynamic>;
+        final url = urlData['url'] as String;
+        final uri = Uri.parse(url);
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri, mode: LaunchMode.platformDefault);
+        } else {
+          if (mounted) ToastHelper.error('无法打开下载链接');
+        }
+      } else {
+        if (mounted) ToastHelper.error('获取下载链接失败');
+      }
+    } catch (e) {
+      if (mounted) ToastHelper.failure('获取下载链接失败: $e');
+    }
+  }
+
+  Future<void> _setCurrentVersion(EntityModel entity) async {
+    setState(() => _isVersionLoading = true);
+    try {
+      await FileService().setFileVersion(
+        uri: widget.file.relativePath,
+        version: entity.id,
+      );
+      if (mounted) {
+        ToastHelper.success('已设为当前版本');
+        _loadFileInfo();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isVersionLoading = false);
+        ToastHelper.failure('操作失败: $e');
+      }
+    }
+  }
+
+  Future<void> _deleteVersion(EntityModel entity) async {
+    final colorScheme = Theme.of(context).colorScheme;
+    final shortId = entity.id.length > 6 ? entity.id.substring(0, 6) : entity.id;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('删除版本'),
+        content: Text('确定要删除版本 "$shortId" (${date_utils.DateUtils.formatFileSize(entity.size)}) 吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: FilledButton.styleFrom(backgroundColor: colorScheme.error),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => _isVersionLoading = true);
+    try {
+      await FileService().deleteFileVersion(
+        uri: widget.file.relativePath,
+        version: entity.id,
+      );
+      if (mounted) {
+        ToastHelper.success('版本已删除');
+        _loadFileInfo();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isVersionLoading = false);
+        ToastHelper.failure('删除失败: $e');
+      }
+    }
+  }
+
+  // ─── 文件夹摘要 ───
 
   Widget _buildFolderSummary(ThemeData theme, ColorScheme colorScheme) {
     final summary = _fileInfo?.folderSummary;

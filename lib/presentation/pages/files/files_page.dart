@@ -19,6 +19,7 @@ import '../../widgets/empty_folder_view.dart';
 import '../../widgets/upload_dialog.dart';
 import '../../widgets/file_operation_dialogs.dart';
 import '../../widgets/file_info_dialog.dart';
+import '../../widgets/search_dialog.dart';
 import '../../widgets/toast_helper.dart';
 import '../../../router/app_router.dart';
 import '../../../core/utils/file_type_utils.dart';
@@ -236,8 +237,8 @@ class _FilesPageState extends State<FilesPage> {
   List<Widget> _buildDesktopActions() {
     return [
       IconButton(
-        icon: const Icon(Icons.search),
-        onPressed: () => Navigator.of(context).pushNamed(RouteNames.search),
+        icon: const Icon(LucideIcons.search),
+        onPressed: () => SearchDialog.show(context),
         tooltip: '搜索',
       ),
       Consumer<FileManagerProvider>(
@@ -337,7 +338,7 @@ class _FilesPageState extends State<FilesPage> {
               label: '搜索',
               isDark: isDark,
               colorScheme: colorScheme,
-              onTap: () => _onFabSubAction(() => Navigator.of(context).pushNamed(RouteNames.search)),
+              onTap: () => _onFabSubAction(() => SearchDialog.show(context)),
             ),
             _buildFabSubItem(
               context: context,
@@ -591,6 +592,7 @@ class _FilesPageState extends State<FilesPage> {
                     key: ValueKey('file_${file.id}'),
                     file: file,
                     isSelected: isSelected,
+                    isHighlighted: file.path == fileManager.highlightPath,
                     showCheckbox: showCheckbox,
                     index: index,
                     isDesktop: isDesktop,
@@ -666,6 +668,7 @@ class _FilesPageState extends State<FilesPage> {
               key: ValueKey('file_grid_${file.id}'),
               file: file,
               isSelected: isSelected,
+              isHighlighted: file.path == fileManager.highlightPath,
               showCheckbox: showCheckbox,
               onTap: () {
                 _hideFab();

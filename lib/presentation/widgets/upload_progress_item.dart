@@ -12,6 +12,7 @@ class UploadProgressItem extends StatelessWidget {
   final VoidCallback? onCancel;
   final VoidCallback? onDelete;
   final VoidCallback? onRetry;
+  final VoidCallback? onNavigate;
 
   const UploadProgressItem({
     super.key,
@@ -21,6 +22,7 @@ class UploadProgressItem extends StatelessWidget {
     this.onCancel,
     this.onDelete,
     this.onRetry,
+    this.onNavigate,
   });
 
   @override
@@ -225,6 +227,12 @@ class UploadProgressItem extends StatelessWidget {
         ];
       case UploadStatus.completed:
         return [
+          if (onNavigate != null)
+            IconButton(
+              icon: const Icon(LucideIcons.folderOpen, size: 20),
+              onPressed: onNavigate,
+              tooltip: '打开文件夹',
+            ),
           IconButton(
             icon: Icon(Icons.delete_outline, size: 20, color: errorColor),
             onPressed: onDelete,

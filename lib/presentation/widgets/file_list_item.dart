@@ -10,6 +10,7 @@ import 'file_menu_helper.dart';
 class FileListItem extends StatelessWidget {
   final FileModel file;
   final bool isSelected;
+  final bool isHighlighted;
   final bool showCheckbox;
   final int index;
   final bool isDesktop;
@@ -30,6 +31,7 @@ class FileListItem extends StatelessWidget {
     super.key,
     required this.file,
     this.isSelected = false,
+    this.isHighlighted = false,
     this.showCheckbox = false,
     this.index = 0,
     this.isDesktop = true,
@@ -52,6 +54,7 @@ class FileListItem extends StatelessWidget {
     return _FileListItemHover(
       file: file,
       isSelected: isSelected,
+      isHighlighted: isHighlighted,
       index: index,
       isDesktop: isDesktop,
       showCheckbox: showCheckbox,
@@ -107,6 +110,7 @@ class FileListItem extends StatelessWidget {
 class _FileListItemHover extends StatefulWidget {
   final FileModel file;
   final bool isSelected;
+  final bool isHighlighted;
   final int index;
   final bool isDesktop;
   final VoidCallback? onTap;
@@ -118,6 +122,7 @@ class _FileListItemHover extends StatefulWidget {
   const _FileListItemHover({
     required this.file,
     required this.isSelected,
+    required this.isHighlighted,
     required this.index,
     required this.isDesktop,
     this.onTap,
@@ -167,6 +172,8 @@ class _FileListItemHoverState extends State<_FileListItemHover> {
     Color bgColor;
     if (widget.isSelected) {
       bgColor = colorScheme.primary.withValues(alpha: 0.08);
+    } else if (widget.isHighlighted) {
+      bgColor = colorScheme.primary.withValues(alpha: 0.06);
     } else if (_isHovered) {
       bgColor = colorScheme.primary.withValues(alpha: 0.05);
     } else if (widget.index.isOdd) {

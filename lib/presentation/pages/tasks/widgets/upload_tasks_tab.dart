@@ -1,4 +1,6 @@
 import 'package:cloudreve4_flutter/data/models/upload_task_model.dart';
+import 'package:cloudreve4_flutter/presentation/providers/file_manager_provider.dart';
+import 'package:cloudreve4_flutter/presentation/providers/navigation_provider.dart';
 import 'package:cloudreve4_flutter/presentation/providers/upload_manager_provider.dart';
 import 'package:cloudreve4_flutter/presentation/widgets/upload_progress_item.dart';
 import 'package:flutter/material.dart';
@@ -97,6 +99,7 @@ class UploadTasksTab extends StatelessWidget {
               onAction: () => _confirmClear(context, '已完成', completedTasks.length, () => uploadManager.clearCompletedTasks())),
           ...completedTasks.map((task) => UploadProgressItem(
             task: task,
+            onNavigate: () => _navigateToUploadedFile(context, task),
             onDelete: () => _confirmDeleteUploadTask(context, task, uploadManager),
           )),
         ],
@@ -315,6 +318,11 @@ class UploadTasksTab extends StatelessWidget {
       case UploadStatus.completed:
         return [
           IconButton(
+            icon: const Icon(LucideIcons.folderOpen, size: 18),
+            onPressed: () => _navigateToUploadedFile(context, task),
+            tooltip: '打开文件夹',
+          ),
+          IconButton(
             icon: Icon(Icons.delete_outline, size: 18, color: errorColor),
             onPressed: () => _confirmDeleteUploadTask(context, task, uploadManager),
             tooltip: '删除',
@@ -457,6 +465,28 @@ class UploadTasksTab extends StatelessWidget {
       ),
     );
     if (confirmed == true) uploadManager.removeTask(task.id);
+  }
+
+  void _navigateToUploadedFile(BuildContext context, UploadTaskModel task) {
+    // targetPath 格式: cloudreve://my/folder
+    final targetPath = task.targetPath;
+    String relativePath;
+    if (targetPath.startsWith('cloudreve://my')) {
+      relativePath = targetPath.replaceFirst('cloudreve://my', '');
+      if (relativePath.isEmpty) relativePath = '/';
+    } else {
+      relativePath = targetPath;
+    }
+
+    // 构造文件完整路径用于高亮
+    final filePath = targetPath.endsWith('/')
+        ? '$targetPath${task.fileName}'
+        : '$targetPath/${task.fileName}';
+
+    final fileManager = Provider.of<FileManagerProvider>(context, listen: false);
+    final navProvider = Provider.of<NavigationProvider>(context, listen: false);
+    fileManager.navigateAndHighlight(relativePath, filePath);
+    navProvider.setIndex(1);
   }
 
   String _formatDateTime(DateTime dateTime) {

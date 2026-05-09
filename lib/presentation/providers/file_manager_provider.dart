@@ -27,6 +27,8 @@ class FileManagerProvider extends ChangeNotifier {
   bool _hasMore = true;
   String? _errorMessage;
   String? _contextHint;
+  String? _highlightPath;
+  Timer? _highlightTimer;
 
   String get currentPath => _currentPath;
   List<FileModel> get files => _files;
@@ -37,6 +39,7 @@ class FileManagerProvider extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
   String? get contextHint => _contextHint;
   bool get hasSelection => _selectedFiles.isNotEmpty;
+  String? get highlightPath => _highlightPath;
 
   /// 加载文件列表
   Future<void> loadFiles({bool refresh = false, Duration timeout = const Duration(seconds: 5)}) async {
@@ -86,6 +89,8 @@ class FileManagerProvider extends ChangeNotifier {
   Future<void> enterFolder(String path) async {
     _currentPath = path;
     _selectedFiles.clear();
+    _highlightPath = null;
+    _highlightTimer?.cancel();
     await loadFiles();
   }
 
@@ -101,6 +106,8 @@ class FileManagerProvider extends ChangeNotifier {
       _currentPath = '/';
     }
     _selectedFiles.clear();
+    _highlightPath = null;
+    _highlightTimer?.cancel();
     notifyListeners();
     await loadFiles();
   }
@@ -217,6 +224,29 @@ class FileManagerProvider extends ChangeNotifier {
     }
   }
 
+  /// 高亮指定文件路径（3 秒后自动清除）
+  void setHighlightPath(String? path) {
+    _highlightTimer?.cancel();
+    _highlightPath = path;
+    notifyListeners();
+    if (path != null) {
+      _highlightTimer = Timer(const Duration(seconds: 3), () {
+        _highlightPath = null;
+        notifyListeners();
+      });
+    }
+  }
+
+  /// 导航到指定文件夹并高亮目标文件
+  Future<void> navigateAndHighlight(String folderPath, String filePath) async {
+    _currentPath = folderPath;
+    _selectedFiles.clear();
+    _highlightPath = null;
+    _highlightTimer?.cancel();
+    await loadFiles();
+    setHighlightPath(filePath);
+  }
+
   /// 清空文件列表
   void clearFiles() {
     setState(() {
@@ -305,5 +335,11 @@ class FileManagerProvider extends ChangeNotifier {
         _isLoading = false;
       });
     }
+  }
+
+  @override
+  void dispose() {
+    _highlightTimer?.cancel();
+    super.dispose();
   }
 }

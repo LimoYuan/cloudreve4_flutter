@@ -9,6 +9,7 @@ import 'file_menu_helper.dart';
 class FileGridItem extends StatelessWidget {
   final FileModel file;
   final bool isSelected;
+  final bool isHighlighted;
   final bool showCheckbox;
   final VoidCallback? onTap;
   final VoidCallback? onSelect;
@@ -27,6 +28,7 @@ class FileGridItem extends StatelessWidget {
     super.key,
     required this.file,
     this.isSelected = false,
+    this.isHighlighted = false,
     this.showCheckbox = false,
     this.tapToShowMenu = false,
     this.onTap,
@@ -52,6 +54,7 @@ class FileGridItem extends StatelessWidget {
           return _FileGridItemHover(
             file: file,
             isSelected: isSelected,
+            isHighlighted: isHighlighted,
             showCheckbox: showCheckbox,
             fontSize: fontSize,
             tapToShowMenu: tapToShowMenu,
@@ -110,6 +113,7 @@ class FileGridItem extends StatelessWidget {
 class _FileGridItemHover extends StatefulWidget {
   final FileModel file;
   final bool isSelected;
+  final bool isHighlighted;
   final bool showCheckbox;
   final double fontSize;
   final VoidCallback? onTap;
@@ -121,6 +125,7 @@ class _FileGridItemHover extends StatefulWidget {
   const _FileGridItemHover({
     required this.file,
     required this.isSelected,
+    required this.isHighlighted,
     required this.showCheckbox,
     required this.fontSize,
     this.onTap,
@@ -151,6 +156,16 @@ class _FileGridItemHoverState extends State<_FileGridItemHover> {
     if (widget.isSelected) {
       cardBg = colorScheme.primary.withValues(alpha: 0.06);
       border = Border.all(color: colorScheme.primary, width: 2);
+    } else if (widget.isHighlighted) {
+      cardBg = colorScheme.primary.withValues(alpha: 0.06);
+      border = Border.all(color: colorScheme.primary.withValues(alpha: 0.3));
+      shadows = [
+        BoxShadow(
+          color: colorScheme.primary.withValues(alpha: 0.12),
+          blurRadius: 8,
+          offset: const Offset(0, 2),
+        ),
+      ];
     } else if (_isHovered) {
       cardBg = isDark ? const Color(0xFF263548) : const Color(0xFFF1F5F9);
       border = Border.all(color: colorScheme.primary.withValues(alpha: 0.2));

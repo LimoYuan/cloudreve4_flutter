@@ -1244,13 +1244,23 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
         context,
         listen: false,
       );
-      fileManager.enterFolder(relativePath);
+
+      // 计算父目录路径用于导航，高亮该目录本身
+      final parentPath = _getParentPath(relativePath);
+      fileManager.navigateAndHighlight(parentPath, dst);
       navProvider.setIndex(1);
       Navigator.of(context).popUntil((route) =>
           route.settings.name == '/home' || route.isFirst);
     } catch (e) {
       ToastHelper.info('目标路径: $relativePath');
     }
+  }
+
+  String _getParentPath(String path) {
+    if (path.isEmpty || path == '/') return '/';
+    final parts = path.split('/')..removeLast();
+    final result = parts.join('/');
+    return result.isEmpty ? '/' : result;
   }
 
   // ─── 对话框 ───

@@ -1,6 +1,6 @@
-import 'package:cloudreve4_flutter/router/app_router.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+import '../../../widgets/search_dialog.dart';
 
 class SearchEntryCard extends StatelessWidget {
   const SearchEntryCard({super.key});
@@ -11,7 +11,7 @@ class SearchEntryCard extends StatelessWidget {
 
     return Card(
       child: InkWell(
-        onTap: () => Navigator.of(context).pushNamed(RouteNames.search),
+        onTap: () => SearchDialog.show(context),
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),

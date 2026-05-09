@@ -202,8 +202,12 @@ class RecentActivityList extends StatelessWidget {
     final navProvider = Provider.of<NavigationProvider>(context, listen: false);
     final fileManager = Provider.of<FileManagerProvider>(context, listen: false);
 
-    // 先设置目标路径，再切换 Tab
-    fileManager.enterFolder(parentPath);
+    // 构造高亮路径：还原为 cloudreve:// 格式
+    final highlightPath = path.startsWith('cloudreve://')
+        ? path
+        : 'cloudreve://my$path';
+
+    fileManager.navigateAndHighlight(parentPath, highlightPath);
     navProvider.setIndex(1);
   }
 

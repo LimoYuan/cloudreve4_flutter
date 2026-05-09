@@ -416,7 +416,7 @@ class ServerSelectorSheet extends StatelessWidget {
             child: ListView.separated(
               shrinkWrap: true,
               itemCount: servers.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              separatorBuilder: (_, _) => const SizedBox(height: 8),
               itemBuilder: (context, index) {
                 final server = servers[index];
                 final isSelected = currentServer?.label == server.label;
@@ -510,7 +510,7 @@ class _ServerManagementSheetState extends State<ServerManagementSheet> {
             child: ListView.separated(
               shrinkWrap: true,
               itemCount: servers.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              separatorBuilder: (_, _) => const SizedBox(height: 8),
               itemBuilder: (context, index) {
                 final server = servers[index];
                 return _ServerManagementItem(
@@ -574,7 +574,9 @@ class _ServerManagementSheetState extends State<ServerManagementSheet> {
           FilledButton(
             onPressed: () {
               if (labelController.text.trim().isEmpty ||
-                  urlController.text.trim().isEmpty) return;
+                  urlController.text.trim().isEmpty) {
+                return;
+              }
               Navigator.of(dialogContext).pop(true);
             },
             child: const Text('保存'),
@@ -636,7 +638,9 @@ class _ServerManagementSheetState extends State<ServerManagementSheet> {
           FilledButton(
             onPressed: () {
               if (labelController.text.trim().isEmpty ||
-                  urlController.text.trim().isEmpty) return;
+                  urlController.text.trim().isEmpty) {
+                return;
+              }
               Navigator.of(dialogContext).pop(true);
             },
             child: const Text('保存'),

@@ -24,4 +24,7 @@ class StorageKeys {
   // Gravatar 镜像
   static const String gravatarMirrorEnabled = 'gravatar_mirror_enabled';
   static const String gravatarMirrorUrl = 'gravatar_mirror_url';
+
+  // 搜索历史
+  static const String searchHistory = 'search_history';
 }

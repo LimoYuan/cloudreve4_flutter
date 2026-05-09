@@ -1,6 +1,5 @@
 import 'package:cloudreve4_flutter/data/models/upload_task_model.dart';
 import 'package:cloudreve4_flutter/presentation/providers/upload_manager_provider.dart';
-import 'package:cloudreve4_flutter/presentation/widgets/desktop_constrained.dart';
 import 'package:cloudreve4_flutter/presentation/widgets/upload_progress_item.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
@@ -123,9 +122,8 @@ class UploadTasksTab extends StatelessWidget {
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
-      child: DesktopConstrained(
-        child: Column(
-          children: [
+      child: Column(
+        children: [
             if (failedTasks.isNotEmpty)
               Align(
                 alignment: Alignment.centerRight,
@@ -162,10 +160,12 @@ class UploadTasksTab extends StatelessWidget {
                   ),
                 ),
               ),
-            Card(
-              margin: EdgeInsets.zero,
-              clipBehavior: Clip.antiAlias,
-              child: DataTable(
+            SizedBox(
+              width: double.infinity,
+              child: Card(
+                margin: EdgeInsets.zero,
+                clipBehavior: Clip.antiAlias,
+                child: DataTable(
                 headingRowColor: WidgetStateProperty.all(colorScheme.surfaceContainerHighest),
                 columnSpacing: 24,
                 columns: const [
@@ -178,9 +178,9 @@ class UploadTasksTab extends StatelessWidget {
                 rows: sortedTasks.map((task) => _buildUploadDataRow(context, task, uploadManager)).toList(),
               ),
             ),
+            ),
           ],
         ),
-      ),
     );
   }
 

@@ -391,10 +391,12 @@ class _SharesPageState extends State<SharesPage> {
     return SingleChildScrollView(
       controller: _scrollController,
       padding: const EdgeInsets.symmetric(vertical: 16),
-      child: Card(
-        margin: EdgeInsets.zero,
-        clipBehavior: Clip.antiAlias,
-        child: DataTable(
+      child: SizedBox(
+        width: double.infinity,
+        child: Card(
+          margin: EdgeInsets.zero,
+          clipBehavior: Clip.antiAlias,
+          child: DataTable(
           headingRowColor:
               WidgetStateProperty.all(colorScheme.surfaceContainerHighest),
           columnSpacing: 24,
@@ -455,6 +457,7 @@ class _SharesPageState extends State<SharesPage> {
             );
           }).toList(),
         ),
+      ),
       ),
     );
   }

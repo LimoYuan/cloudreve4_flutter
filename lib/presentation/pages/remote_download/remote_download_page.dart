@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:cloudreve4_flutter/core/utils/app_logger.dart';
-import 'package:cloudreve4_flutter/presentation/widgets/desktop_constrained.dart';
 import 'package:cloudreve4_flutter/presentation/widgets/folder_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -283,9 +282,7 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
         children: [
           _buildHeaderBar(isDesktop),
           Expanded(
-            child: DesktopConstrained(
-              child: _buildBody(context, isDesktop),
-            ),
+            child: _buildBody(context, isDesktop),
           ),
         ],
       ),
@@ -410,12 +407,15 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
       List<RemoteDownloadTaskModel> tasks, bool isOngoing) {
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(vertical: 24),
-      child: Card(
-        margin: EdgeInsets.zero,
-        clipBehavior: Clip.antiAlias,
-        child: isOngoing
-            ? _buildDownloadingTable(tasks)
-            : _buildCompletedTable(tasks),
+      child: SizedBox(
+        width: double.infinity,
+        child: Card(
+          margin: EdgeInsets.zero,
+          clipBehavior: Clip.antiAlias,
+          child: isOngoing
+              ? _buildDownloadingTable(tasks)
+              : _buildCompletedTable(tasks),
+        ),
       ),
     );
   }

@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:cloudreve4_flutter/data/models/download_task_model.dart';
 import 'package:cloudreve4_flutter/presentation/providers/download_manager_provider.dart';
-import 'package:cloudreve4_flutter/presentation/widgets/desktop_constrained.dart';
 import 'package:cloudreve4_flutter/presentation/widgets/download_progress_item.dart';
 import 'package:cloudreve4_flutter/core/utils/date_utils.dart' as date_utils;
 import 'package:cloudreve4_flutter/services/download_service.dart';
@@ -131,9 +130,8 @@ class DownloadTasksTab extends StatelessWidget {
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
-      child: DesktopConstrained(
-        child: Column(
-          children: [
+      child: Column(
+        children: [
             if (failedTasks.isNotEmpty)
               Align(
                 alignment: Alignment.centerRight,
@@ -170,10 +168,12 @@ class DownloadTasksTab extends StatelessWidget {
                   ),
                 ),
               ),
-            Card(
-              margin: EdgeInsets.zero,
-              clipBehavior: Clip.antiAlias,
-              child: DataTable(
+            SizedBox(
+              width: double.infinity,
+              child: Card(
+                margin: EdgeInsets.zero,
+                clipBehavior: Clip.antiAlias,
+                child: DataTable(
                 headingRowColor: WidgetStateProperty.all(colorScheme.surfaceContainerHighest),
                 columnSpacing: 24,
                 columns: const [
@@ -187,9 +187,9 @@ class DownloadTasksTab extends StatelessWidget {
                 rows: sortedTasks.map((task) => _buildDownloadDataRow(context, task, downloadManager)).toList(),
               ),
             ),
+            ),
           ],
         ),
-      ),
     );
   }
 

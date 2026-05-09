@@ -139,10 +139,12 @@ class _WebdavPageState extends State<WebdavPage> {
       padding: const EdgeInsets.symmetric(vertical: 16),
       child: Column(
         children: [
-          Card(
-            margin: EdgeInsets.zero,
-            clipBehavior: Clip.antiAlias,
-            child: DataTable(
+          SizedBox(
+            width: double.infinity,
+            child: Card(
+              margin: EdgeInsets.zero,
+              clipBehavior: Clip.antiAlias,
+              child: DataTable(
               headingRowColor:
                   WidgetStateProperty.all(colorScheme.surfaceContainerHighest),
               columnSpacing: 24,
@@ -199,6 +201,7 @@ class _WebdavPageState extends State<WebdavPage> {
                 );
               }).toList(),
             ),
+          ),
           ),
           const SizedBox(height: 16),
           FilledButton.icon(

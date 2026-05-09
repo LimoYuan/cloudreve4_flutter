@@ -331,10 +331,38 @@ class _FileInfoPanelState extends State<FileInfoPanel> {
           bottom: BorderSide(color: theme.dividerColor.withValues(alpha: 0.15)),
         ),
       ),
-      child: Row(
-        children: [
-          // 版本序号/当前标识
-          Container(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isNarrow = constraints.maxWidth < 380;
+
+          final actionButtons = <Widget>[
+            if (isPreviewable)
+              _buildVersionActionButton(
+                icon: LucideIcons.externalLink,
+                tooltip: '打开',
+                onPressed: _isVersionLoading ? null : () => _openVersion(entity),
+              ),
+            _buildVersionActionButton(
+              icon: LucideIcons.download,
+              tooltip: '下载',
+              onPressed: _isVersionLoading ? null : () => _downloadVersion(entity),
+            ),
+            if (!isCurrent) ...[
+              _buildVersionActionButton(
+                icon: LucideIcons.pin,
+                tooltip: '设为当前版本',
+                onPressed: _isVersionLoading ? null : () => _setCurrentVersion(entity),
+              ),
+              _buildVersionActionButton(
+                icon: LucideIcons.trash2,
+                tooltip: '删除',
+                color: colorScheme.error,
+                onPressed: _isVersionLoading ? null : () => _deleteVersion(entity),
+              ),
+            ],
+          ];
+
+          final versionBadge = Container(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
             decoration: BoxDecoration(
               color: isCurrent
@@ -352,64 +380,60 @@ class _FileInfoPanelState extends State<FileInfoPanel> {
                 fontWeight: FontWeight.w600,
               ),
             ),
-          ),
-          const SizedBox(width: 8),
+          );
 
-          // 版本信息
-          Expanded(
-            child: GestureDetector(
-              onTap: () => _showVersionDetail(entity),
-              onLongPress: () => _showVersionDetail(entity),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '$shortId · ${date_utils.DateUtils.formatFileSize(entity.size)}',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w500,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+          final versionInfo = Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                GestureDetector(
+                  onTap: () => _showVersionDetail(entity),
+                  onLongPress: () => _showVersionDetail(entity),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '$shortId · ${date_utils.DateUtils.formatFileSize(entity.size)}',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w500,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 1),
+                      Text(
+                        '${date_utils.DateUtils.formatDateTime(entity.createdAt)} · $createdBy',
+                        style: const TextStyle(fontSize: 11, color: null)
+                            .copyWith(color: theme.hintColor),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 1),
-                  Text(
-                    '${date_utils.DateUtils.formatDateTime(entity.createdAt)} · $createdBy',
-                    style: const TextStyle(fontSize: 11, color: null)
-                        .copyWith(color: theme.hintColor),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                ),
+                if (isNarrow) ...[
+                  const SizedBox(height: 4),
+                  Row(children: actionButtons),
                 ],
-              ),
+              ],
             ),
-          ),
+          );
 
-          // 操作按钮
-          if (isPreviewable)
-            _buildVersionActionButton(
-              icon: LucideIcons.externalLink,
-              tooltip: '打开',
-              onPressed: _isVersionLoading ? null : () => _openVersion(entity),
-            ),
-          _buildVersionActionButton(
-            icon: LucideIcons.download,
-            tooltip: '下载',
-            onPressed: _isVersionLoading ? null : () => _downloadVersion(entity),
-          ),
-          if (!isCurrent) ...[
-            _buildVersionActionButton(
-              icon: LucideIcons.pin,
-              tooltip: '设为当前版本',
-              onPressed: _isVersionLoading ? null : () => _setCurrentVersion(entity),
-            ),
-            _buildVersionActionButton(
-              icon: LucideIcons.trash2,
-              tooltip: '删除',
-              color: colorScheme.error,
-              onPressed: _isVersionLoading ? null : () => _deleteVersion(entity),
-            ),
-          ],
-        ],
+          if (isNarrow) {
+            return Row(
+              children: [versionBadge, const SizedBox(width: 8), versionInfo],
+            );
+          }
+
+          return Row(
+            children: [
+              versionBadge,
+              const SizedBox(width: 8),
+              versionInfo,
+              ...actionButtons,
+            ],
+          );
+        },
       ),
     );
   }

@@ -20,36 +20,48 @@ class _ProfilePageState extends State<ProfilePage> {
   @override
   void initState() {
     super.initState();
-    Future.microtask(() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final userSetting = context.read<UserSettingProvider>();
-      userSetting.loadCapacity();
-
-      final authProvider = context.read<AuthProvider>();
-      if (authProvider.isAdmin) {
-        final adminProvider = context.read<AdminProvider>();
-        if (adminProvider.groups.isEmpty && adminProvider.users.isEmpty) {
-          adminProvider.loadAll().then((_) {
-            if (!mounted) return;
-            // 加载完用户列表后，检查管理员用户的头像是否需要更新
-            final users = adminProvider.users;
-            final baseUrl = authProvider.currentServer?.baseUrl ?? '';
-            final token = authProvider.token?.accessToken ?? '';
-            for (final user in users) {
-              final userId = user.hashId ?? user.id.toString();
-              if (AvatarCacheService.instance.avatarIsExist(userId)) {
-                AvatarCacheService.instance.avatarIsUpdated(userId, baseUrl, token);
-              }
-            }
-          });
-        }
-      }
+      _initData();
     });
+  }
+
+  Future<void> _initData() async {
+    final userSetting = context.read<UserSettingProvider>();
+    userSetting.loadCapacity();
+
+    final authProvider = context.read<AuthProvider>();
+    if (!authProvider.isAdmin) return;
+
+    final adminProvider = context.read<AdminProvider>();
+    if (adminProvider.groups.isNotEmpty || adminProvider.users.isNotEmpty) return;
+
+    await adminProvider.loadAll();
+    if (!mounted) return;
+
+    // 批量检查头像更新，限制并发避免阻塞主线程
+    final users = adminProvider.users;
+    final baseUrl = authProvider.currentServer?.baseUrl ?? '';
+    final token = authProvider.token?.accessToken ?? '';
+    final needCheckIds = <String>[];
+    for (final user in users) {
+      final userId = user.hashId ?? user.id.toString();
+      if (AvatarCacheService.instance.avatarIsExist(userId)) {
+        needCheckIds.add(userId);
+      }
+    }
+    if (needCheckIds.isNotEmpty) {
+      AvatarCacheService.instance.batchCheckUpdates(
+        needCheckIds,
+        baseUrl: baseUrl,
+        token: token,
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final isAdmin = context.watch<AuthProvider>().isAdmin;
+    final isAdmin = context.select<AuthProvider, bool>((p) => p.isAdmin);
 
     return Scaffold(
       appBar: AppBar(title: const Text('我的')),

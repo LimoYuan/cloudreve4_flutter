@@ -225,6 +225,42 @@ class AvatarCacheService extends ChangeNotifier {
     return null;
   }
 
+  /// 批量检查头像是否需要更新（限制并发，避免密集 IO/网络阻塞主线程）
+  Future<void> batchCheckUpdates(
+    List<String> userIds, {
+    required String baseUrl,
+    required String token,
+    int concurrency = 3,
+  }) async {
+    var index = 0;
+    final completer = Completer<void>();
+    var activeCount = 0;
+    var completedCount = 0;
+    final total = userIds.length;
+
+    void scheduleNext() {
+      while (activeCount < concurrency && index < total) {
+        final userId = userIds[index++];
+        activeCount++;
+        avatarIsUpdated(userId, baseUrl, token).whenComplete(() {
+          activeCount--;
+          completedCount++;
+          if (completedCount >= total && !completer.isCompleted) {
+            completer.complete();
+          } else {
+            scheduleNext();
+          }
+        });
+      }
+      if (completedCount >= total && !completer.isCompleted) {
+        completer.complete();
+      }
+    }
+
+    scheduleNext();
+    await completer.future;
+  }
+
   /// 清除指定用户的头像缓存（头像上传/切换后调用）
   Future<void> evictCache(String userId) async {
     _pathCache.remove(userId);

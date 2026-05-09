@@ -14,7 +14,6 @@ class AdminSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final adminProvider = context.watch<AdminProvider>();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -32,18 +31,32 @@ class AdminSection extends StatelessWidget {
             ],
           ),
         ),
-        if (adminProvider.isLoading)
-          const Card(
-            child: Padding(
-              padding: EdgeInsets.all(32),
-              child: Center(child: CircularProgressIndicator()),
-            ),
-          )
-        else ...[
-          _GroupsCard(groups: adminProvider.groups, pagination: adminProvider.groupsPagination),
-          const SizedBox(height: 12),
-          _UsersCard(users: adminProvider.users, pagination: adminProvider.usersPagination),
-        ],
+        Selector<AdminProvider, bool>(
+          selector: (_, p) => p.isLoading,
+          builder: (_, isLoading, _) {
+            if (isLoading) {
+              return const Card(
+                child: Padding(
+                  padding: EdgeInsets.all(32),
+                  child: Center(child: CircularProgressIndicator()),
+                ),
+              );
+            }
+            return Column(
+              children: [
+                Selector<AdminProvider, (List<AdminGroupModel>, PaginationModel?)>(
+                  selector: (_, p) => (p.groups, p.groupsPagination),
+                  builder: (_, data, _) => _GroupsCard(groups: data.$1, pagination: data.$2),
+                ),
+                const SizedBox(height: 12),
+                Selector<AdminProvider, (List<AdminUserModel>, PaginationModel?)>(
+                  selector: (_, p) => (p.users, p.usersPagination),
+                  builder: (_, data, _) => _UsersCard(users: data.$1, pagination: data.$2),
+                ),
+              ],
+            );
+          },
+        ),
       ],
     );
   }
@@ -260,98 +273,105 @@ class _UsersCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final adminProvider = context.watch<AdminProvider>();
-    final isSelecting = adminProvider.isSelectingUsers;
+    final adminProvider = context.read<AdminProvider>();
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+    return Selector<AdminProvider, (bool, int)>(
+      selector: (_, p) => (p.isSelectingUsers, p.selectedUserIds.length),
+      builder: (_, data, _) {
+        final isSelecting = data.$1;
+        final selectedCount = data.$2;
+
+        return Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(LucideIcons.user, size: 18, color: colorScheme.primary),
-                const SizedBox(width: 8),
-                Text('用户',
-                    style: theme.textTheme.titleSmall
-                        ?.copyWith(fontWeight: FontWeight.w600)),
-                const Spacer(),
-                if (pagination != null)
-                  Text(
-                    '共 ${pagination!.totalItems} 个',
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: theme.hintColor),
-                  ),
-                const SizedBox(width: 8),
-                if (isSelecting) ...[
-                  if (adminProvider.hasSelectedUsers)
-                    TextButton.icon(
-                      onPressed: () => _confirmBatchDelete(context, adminProvider.selectedUserIds.toList()),
-                      icon: Icon(LucideIcons.trash2, size: 16, color: colorScheme.error),
-                      label: Text('删除 (${adminProvider.selectedUserIds.length})',
-                          style: TextStyle(color: colorScheme.error)),
-                      style: TextButton.styleFrom(
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                      ),
-                    ),
-                  IconButton.outlined(
-                    icon: const Icon(LucideIcons.x, size: 18),
-                    onPressed: () => adminProvider.exitSelectMode(),
-                    tooltip: '取消选择',
-                    constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                    padding: EdgeInsets.zero,
-                  ),
-                ] else ...[
-                  IconButton.outlined(
-                    icon: const Icon(LucideIcons.checkSquare, size: 18),
-                    onPressed: () => adminProvider.toggleSelectMode(),
-                    tooltip: '多选',
-                    constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                    padding: EdgeInsets.zero,
-                  ),
-                  const SizedBox(width: 4),
-                  IconButton.outlined(
-                    icon: const Icon(LucideIcons.plus, size: 18),
-                    onPressed: () => _showCreateUserDialog(context),
-                    tooltip: '创建用户',
-                    constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                    padding: EdgeInsets.zero,
-                  ),
-                ],
-              ],
-            ),
-            if (isSelecting)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Row(
+                Row(
                   children: [
-                    TextButton(
-                      onPressed: () => adminProvider.selectAllUsers(),
-                      child: const Text('全选'),
-                    ),
-                    TextButton(
-                      onPressed: () => adminProvider.clearUserSelection(),
-                      child: const Text('取消全选'),
-                    ),
+                    Icon(LucideIcons.user, size: 18, color: colorScheme.primary),
+                    const SizedBox(width: 8),
+                    Text('用户',
+                        style: theme.textTheme.titleSmall
+                            ?.copyWith(fontWeight: FontWeight.w600)),
+                    const Spacer(),
+                    if (pagination != null)
+                      Text(
+                        '共 ${pagination!.totalItems} 个',
+                        style: theme.textTheme.bodySmall
+                            ?.copyWith(color: theme.hintColor),
+                      ),
+                    const SizedBox(width: 8),
+                    if (isSelecting) ...[
+                      if (selectedCount > 0)
+                        TextButton.icon(
+                          onPressed: () => _confirmBatchDelete(context, adminProvider.selectedUserIds.toList()),
+                          icon: Icon(LucideIcons.trash2, size: 16, color: colorScheme.error),
+                          label: Text('删除 ($selectedCount)',
+                              style: TextStyle(color: colorScheme.error)),
+                          style: TextButton.styleFrom(
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                          ),
+                        ),
+                      IconButton.outlined(
+                        icon: const Icon(LucideIcons.x, size: 18),
+                        onPressed: () => adminProvider.exitSelectMode(),
+                        tooltip: '取消选择',
+                        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                        padding: EdgeInsets.zero,
+                      ),
+                    ] else ...[
+                      IconButton.outlined(
+                        icon: const Icon(LucideIcons.checkSquare, size: 18),
+                        onPressed: () => adminProvider.toggleSelectMode(),
+                        tooltip: '多选',
+                        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                        padding: EdgeInsets.zero,
+                      ),
+                      const SizedBox(width: 4),
+                      IconButton.outlined(
+                        icon: const Icon(LucideIcons.plus, size: 18),
+                        onPressed: () => _showCreateUserDialog(context),
+                        tooltip: '创建用户',
+                        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                        padding: EdgeInsets.zero,
+                      ),
+                    ],
                   ],
                 ),
-              ),
-            const SizedBox(height: 8),
-            if (users.isEmpty)
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Center(
-                  child: Text('暂无数据',
-                      style: TextStyle(color: theme.hintColor)),
-                ),
-              )
-            else
-              ...users.map((user) => _UserItem(user: user)),
-          ],
-        ),
-      ),
+                if (isSelecting)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Row(
+                      children: [
+                        TextButton(
+                          onPressed: () => adminProvider.selectAllUsers(),
+                          child: const Text('全选'),
+                        ),
+                        TextButton(
+                          onPressed: () => adminProvider.clearUserSelection(),
+                          child: const Text('取消全选'),
+                        ),
+                      ],
+                    ),
+                  ),
+                const SizedBox(height: 8),
+                if (users.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Center(
+                      child: Text('暂无数据',
+                          style: TextStyle(color: theme.hintColor)),
+                    ),
+                  )
+                else
+                  ...users.map((user) => _UserItem(user: user)),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -547,79 +567,85 @@ class _UserItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final adminProvider = context.watch<AdminProvider>();
-    final isSelecting = adminProvider.isSelectingUsers;
-    final isSelected = adminProvider.isUserSelected(user.id);
 
-    return InkWell(
-      onTap: isSelecting ? () => adminProvider.toggleUserSelection(user.id) : null,
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
-        child: Row(
-          children: [
-            if (isSelecting)
-              Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: Checkbox(
-                  value: isSelected,
-                  onChanged: (_) => adminProvider.toggleUserSelection(user.id),
+    return Selector<AdminProvider, (bool, bool)>(
+      selector: (_, p) => (p.isSelectingUsers, p.isUserSelected(user.id)),
+      builder: (_, data, _) {
+        final isSelecting = data.$1;
+        final isSelected = data.$2;
+        final adminProvider = context.read<AdminProvider>();
+
+        return InkWell(
+          onTap: isSelecting ? () => adminProvider.toggleUserSelection(user.id) : null,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Row(
+              children: [
+                if (isSelecting)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: Checkbox(
+                      value: isSelected,
+                      onChanged: (_) => adminProvider.toggleUserSelection(user.id),
+                    ),
+                  ),
+                UserAvatar(
+                  userId: user.hashId ?? user.id.toString(),
+                  email: user.email,
+                  displayName: user.nick,
+                  radius: 18,
                 ),
-              ),
-            UserAvatar(
-              userId: user.hashId ?? user.id.toString(),
-              email: user.email,
-              displayName: user.nick,
-              radius: 18,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Flexible(
-                        child: Text(user.nick,
-                            style: theme.textTheme.bodyMedium
-                                ?.copyWith(fontWeight: FontWeight.w500),
-                            overflow: TextOverflow.ellipsis),
-                      ),
-                      if (user.group != null) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 1),
-                          decoration: BoxDecoration(
-                            color: _isAdminGroup(user.group!)
-                                ? colorScheme.primaryContainer
-                                : colorScheme.surfaceContainerHighest,
-                            borderRadius: BorderRadius.circular(8),
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(user.nick,
+                                style: theme.textTheme.bodyMedium
+                                    ?.copyWith(fontWeight: FontWeight.w500),
+                                overflow: TextOverflow.ellipsis),
                           ),
-                          child: Text(user.group!.name,
-                              style: theme.textTheme.labelSmall?.copyWith(
+                          if (user.group != null) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 1),
+                              decoration: BoxDecoration(
                                 color: _isAdminGroup(user.group!)
-                                    ? colorScheme.onPrimaryContainer
-                                    : theme.hintColor,
-                                fontWeight: FontWeight.w500,
-                              )),
-                        ),
-                      ],
+                                    ? colorScheme.primaryContainer
+                                    : colorScheme.surfaceContainerHighest,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(user.group!.name,
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    color: _isAdminGroup(user.group!)
+                                        ? colorScheme.onPrimaryContainer
+                                        : theme.hintColor,
+                                    fontWeight: FontWeight.w500,
+                                  )),
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${user.email}  •  ${user.formattedStorage}',
+                        style: theme.textTheme.bodySmall
+                            ?.copyWith(color: theme.hintColor),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ],
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    '${user.email}  •  ${user.formattedStorage}',
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: theme.hintColor),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }

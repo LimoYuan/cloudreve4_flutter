@@ -2,6 +2,7 @@ import 'package:cloudreve4_flutter/data/models/upload_task_model.dart';
 import 'package:cloudreve4_flutter/presentation/providers/download_manager_provider.dart';
 import 'package:cloudreve4_flutter/presentation/providers/upload_manager_provider.dart';
 import 'package:flutter/material.dart';
+import 'package:lucide_icons/lucide_icons.dart';
 import 'package:provider/provider.dart';
 import 'widgets/upload_tasks_tab.dart';
 import 'widgets/download_tasks_tab.dart';
@@ -55,6 +56,8 @@ class _TasksTabBar extends StatelessWidget implements PreferredSizeWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  const Icon(LucideIcons.upload, size: 16),
+                  const SizedBox(width: 6),
                   const Text('上传'),
                   if (uploadActiveCount > 0) ...[
                     const SizedBox(width: 6),
@@ -83,6 +86,8 @@ class _TasksTabBar extends StatelessWidget implements PreferredSizeWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  const Icon(LucideIcons.download, size: 16),
+                  const SizedBox(width: 6),
                   const Text('下载'),
                   if (downloadActiveCount > 0) ...[
                     const SizedBox(width: 6),

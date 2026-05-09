@@ -366,21 +366,21 @@ class _SharesPageState extends State<SharesPage> {
     if (_isLoading && _shares.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
-    if (_errorMessage != null) return _buildErrorState();
-    if (filteredShares.isEmpty) {
-      return _searchQuery.isEmpty ? _buildEmptyState() : _buildNoSearchResult();
-    }
 
     return RefreshIndicator(
       onRefresh: () => _loadShares(isLoadMore: false),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final isDesktop = constraints.maxWidth >= 800;
-          return isDesktop
-              ? _buildDesktopLayout(filteredShares)
-              : _buildMobileLayout(filteredShares);
-        },
-      ),
+      child: _errorMessage != null
+          ? _buildErrorState()
+          : filteredShares.isEmpty
+              ? (_searchQuery.isEmpty ? _buildEmptyState() : _buildNoSearchResult())
+              : LayoutBuilder(
+                  builder: (context, constraints) {
+                    final isDesktop = constraints.maxWidth >= 800;
+                    return isDesktop
+                        ? _buildDesktopLayout(filteredShares)
+                        : _buildMobileLayout(filteredShares);
+                  },
+                ),
     );
   }
 
@@ -661,52 +661,70 @@ class _SharesPageState extends State<SharesPage> {
 
   Widget _buildEmptyState() {
     final theme = Theme.of(context);
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(LucideIcons.share2, size: 48, color: theme.colorScheme.outline),
-          const SizedBox(height: 16),
-          Text('还没有分享过文件', style: TextStyle(color: theme.hintColor)),
-        ],
-      ),
+    return CustomScrollView(
+      slivers: [
+        SliverFillRemaining(
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(LucideIcons.share2, size: 48, color: theme.colorScheme.outline),
+                const SizedBox(height: 16),
+                Text('还没有分享过文件', style: TextStyle(color: theme.hintColor)),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 
   Widget _buildNoSearchResult() {
     final theme = Theme.of(context);
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(LucideIcons.searchX, size: 48, color: theme.colorScheme.outline),
-          const SizedBox(height: 16),
-          Text('没有找到 "$_searchQuery"', style: TextStyle(color: theme.hintColor)),
-        ],
-      ),
+    return CustomScrollView(
+      slivers: [
+        SliverFillRemaining(
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(LucideIcons.searchX, size: 48, color: theme.colorScheme.outline),
+                const SizedBox(height: 16),
+                Text('没有找到 "$_searchQuery"', style: TextStyle(color: theme.hintColor)),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 
   Widget _buildErrorState() {
     final theme = Theme.of(context);
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(LucideIcons.alertCircle, size: 48, color: theme.colorScheme.error),
-          const SizedBox(height: 16),
-          Text('加载失败', style: TextStyle(color: theme.hintColor)),
-          const SizedBox(height: 8),
-          Text(_errorMessage ?? '未知错误',
-              style: TextStyle(fontSize: 12, color: theme.hintColor)),
-          const SizedBox(height: 24),
-          FilledButton.icon(
-            icon: const Icon(LucideIcons.refreshCw, size: 18),
-            label: const Text('重试'),
-            onPressed: _refreshShares,
+    return CustomScrollView(
+      slivers: [
+        SliverFillRemaining(
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(LucideIcons.alertCircle, size: 48, color: theme.colorScheme.error),
+                const SizedBox(height: 16),
+                Text('加载失败', style: TextStyle(color: theme.hintColor)),
+                const SizedBox(height: 8),
+                Text(_errorMessage ?? '未知错误',
+                    style: TextStyle(fontSize: 12, color: theme.hintColor)),
+                const SizedBox(height: 24),
+                FilledButton.icon(
+                  icon: const Icon(LucideIcons.refreshCw, size: 18),
+                  label: const Text('重试'),
+                  onPressed: _refreshShares,
+                ),
+              ],
+            ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

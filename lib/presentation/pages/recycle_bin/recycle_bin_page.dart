@@ -43,7 +43,6 @@ class _RecycleBinPageState extends State<RecycleBinPage>
         appBar: _buildAppBar(context),
         body: _buildBody(context),
         bottomNavigationBar: _buildBottomBar(context),
-        floatingActionButton: _buildFloatingActionButton(context),
       ),
     );
   }
@@ -92,46 +91,65 @@ class _RecycleBinPageState extends State<RecycleBinPage>
       return const Center(child: CircularProgressIndicator());
     }
 
+    return RefreshIndicator(
+      onRefresh: _refreshFiles,
+      child: _buildContent(context),
+    );
+  }
+
+  Widget _buildContent(BuildContext context) {
     if (_errorMessage != null) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.error_outline, size: 64, color: Colors.red),
-            const SizedBox(height: 16),
-            Text(
-              _errorMessage!,
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey.shade600),
+      return CustomScrollView(
+        slivers: [
+          SliverFillRemaining(
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.error_outline, size: 64, color: Colors.red),
+                  const SizedBox(height: 16),
+                  Text(
+                    _errorMessage!,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.grey.shade600),
+                  ),
+                  const SizedBox(height: 16),
+                  FilledButton(
+                    onPressed: _loadFiles,
+                    child: const Text('重试'),
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 16),
-            FilledButton(
-              onPressed: _loadFiles,
-              child: const Text('重试'),
-            ),
-          ],
-        ),
+          ),
+        ],
       );
     }
 
     if (_files.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.restore_outlined, size: 64, color: Colors.grey.shade400),
-            const SizedBox(height: 16),
-            Text(
-              '回收站为空',
-              style: TextStyle(fontSize: 18, color: Colors.grey.shade600),
+      return CustomScrollView(
+        slivers: [
+          SliverFillRemaining(
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.restore_outlined, size: 64, color: Colors.grey.shade400),
+                  const SizedBox(height: 16),
+                  Text(
+                    '回收站为空',
+                    style: TextStyle(fontSize: 18, color: Colors.grey.shade600),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '删除的文件会出现在这里',
+                    style: TextStyle(color: Colors.grey.shade500),
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 8),
-            Text(
-              '删除的文件会出现在这里',
-              style: TextStyle(color: Colors.grey.shade500),
-            ),
-          ],
-        ),
+          ),
+        ],
       );
     }
 
@@ -262,14 +280,6 @@ class _RecycleBinPageState extends State<RecycleBinPage>
     return const SizedBox.shrink();
   }
 
-  Widget _buildFloatingActionButton(BuildContext context) {
-    return FloatingActionButton(
-      heroTag: 'refresh_trash',
-      onPressed: () => _refreshFiles(context),
-      child: const Icon(Icons.refresh),
-    );
-  }
-
   bool get _hasSelection => _selectedFiles.isNotEmpty;
 
   void _toggleSelection(String path) {
@@ -282,39 +292,8 @@ class _RecycleBinPageState extends State<RecycleBinPage>
     });
   }
 
-  Future<void> _refreshFiles(BuildContext context) async {
-    if (!mounted) return;
-
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
-
-    try {
-      final response = await FileService().listTrashFiles(page: 0);
-      final filesData = response['files'] as List<dynamic>? ?? [];
-      final files = filesData
-          .map((f) => FileModel.fromJson(f as Map<String, dynamic>))
-          .toList();
-
-      setState(() {
-        _files = files;
-        _isLoading = false;
-      });
-
-      if (mounted) {
-        ToastHelper.success('刷新成功');
-      }
-    } catch (e) {
-      setState(() {
-        _isLoading = false;
-        _errorMessage = e.toString();
-      });
-
-      if (mounted) {
-        ToastHelper.failure('刷新失败: ${e.toString()}');
-      }
-    }
+  Future<void> _refreshFiles() async {
+    await _loadFiles();
   }
 
   Future<void> _loadFiles() async {

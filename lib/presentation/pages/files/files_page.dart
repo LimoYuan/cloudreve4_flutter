@@ -361,6 +361,26 @@ class _FilesPageState extends State<FilesPage> {
                 _onFabSubAction(() => FileOperationDialogs.showCreateDialog(context, fileManager));
               },
             ),
+            Consumer<FileManagerProvider>(
+              builder: (context, fileManager, _) {
+                final isListView = fileManager.viewType == FileViewType.list;
+                return _buildFabSubItem(
+                  context: context,
+                  index: 3,
+                  icon: isListView ? LucideIcons.layoutGrid : LucideIcons.list,
+                  label: isListView ? '网格视图' : '列表视图',
+                  isDark: isDark,
+                  colorScheme: colorScheme,
+                  onTap: () {
+                    _onFabSubAction(() {
+                      fileManager.setViewType(
+                        isListView ? FileViewType.grid : FileViewType.list,
+                      );
+                    });
+                  },
+                );
+              },
+            ),
 
             // 主按钮：与子按钮同风格同尺寸
             Padding(

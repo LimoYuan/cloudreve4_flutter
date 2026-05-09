@@ -23,7 +23,7 @@ class ProfileInfoCard extends StatelessWidget {
         child: Column(
           children: [
             Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 UserAvatar(
                   userId: user?.id ?? '',

@@ -136,7 +136,7 @@ class _WebdavPageState extends State<WebdavPage> {
   Widget _buildDesktopLayout(List<DavAccountModel> accounts) {
     final colorScheme = Theme.of(context).colorScheme;
     return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(vertical: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       child: Column(
         children: [
           SizedBox(

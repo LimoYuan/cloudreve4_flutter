@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../../../data/models/remote_download_task_model.dart';
 import '../../../services/remote_download_service.dart';
 import '../../providers/file_manager_provider.dart';
+import '../../providers/navigation_provider.dart';
 import '../../widgets/toast_helper.dart';
 
 class _StatusColors {
@@ -406,7 +407,7 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
   Widget _buildDesktopLayout(
       List<RemoteDownloadTaskModel> tasks, bool isOngoing) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(vertical: 24),
+      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
       child: SizedBox(
         width: double.infinity,
         child: Card(
@@ -1239,7 +1240,12 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
         context,
         listen: false,
       );
+      final navProvider = Provider.of<NavigationProvider>(
+        context,
+        listen: false,
+      );
       fileManager.enterFolder(relativePath);
+      navProvider.setIndex(1);
       Navigator.of(context).popUntil((route) =>
           route.settings.name == '/home' || route.isFirst);
     } catch (e) {

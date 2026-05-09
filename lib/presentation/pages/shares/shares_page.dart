@@ -390,7 +390,7 @@ class _SharesPageState extends State<SharesPage> {
     final colorScheme = Theme.of(context).colorScheme;
     return SingleChildScrollView(
       controller: _scrollController,
-      padding: const EdgeInsets.symmetric(vertical: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       child: SizedBox(
         width: double.infinity,
         child: Card(

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../../data/models/file_model.dart';
 import '../../services/file_service.dart';
+import '../../services/thumbnail_service.dart';
 import '../../core/utils/app_logger.dart';
 
 /// 文件视图类型
@@ -91,6 +92,7 @@ class FileManagerProvider extends ChangeNotifier {
     _selectedFiles.clear();
     _highlightPath = null;
     _highlightTimer?.cancel();
+    ThumbnailService.instance.clearAll();
     await loadFiles();
   }
 
@@ -108,6 +110,7 @@ class FileManagerProvider extends ChangeNotifier {
     _selectedFiles.clear();
     _highlightPath = null;
     _highlightTimer?.cancel();
+    ThumbnailService.instance.clearAll();
     notifyListeners();
     await loadFiles();
   }

@@ -3,7 +3,9 @@ import 'package:lucide_icons/lucide_icons.dart';
 import '../../data/models/file_model.dart';
 import '../../core/utils/date_utils.dart';
 import '../../core/utils/file_icon_utils.dart';
+import '../../core/utils/file_utils.dart';
 import 'file_menu_helper.dart';
+import 'thumbnail_image.dart';
 
 /// 文件网格项
 class FileGridItem extends StatelessWidget {
@@ -23,6 +25,7 @@ class FileGridItem extends StatelessWidget {
   final VoidCallback? onRestore;
   final VoidCallback? onInfo;
   final bool tapToShowMenu;
+  final String? contextHint;
 
   const FileGridItem({
     super.key,
@@ -42,6 +45,7 @@ class FileGridItem extends StatelessWidget {
     this.onDelete,
     this.onRestore,
     this.onInfo,
+    this.contextHint,
   });
 
   @override
@@ -56,6 +60,7 @@ class FileGridItem extends StatelessWidget {
             isSelected: isSelected,
             isHighlighted: isHighlighted,
             showCheckbox: showCheckbox,
+            contextHint: contextHint,
             fontSize: fontSize,
             tapToShowMenu: tapToShowMenu,
             onTap: tapToShowMenu ? null : onTap,
@@ -115,6 +120,7 @@ class _FileGridItemHover extends StatefulWidget {
   final bool isSelected;
   final bool isHighlighted;
   final bool showCheckbox;
+  final String? contextHint;
   final double fontSize;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
@@ -127,6 +133,7 @@ class _FileGridItemHover extends StatefulWidget {
     required this.isSelected,
     required this.isHighlighted,
     required this.showCheckbox,
+    required this.contextHint,
     required this.fontSize,
     this.onTap,
     this.onLongPress,
@@ -211,21 +218,15 @@ class _FileGridItemHoverState extends State<_FileGridItemHover> {
                 children: [
                   // 图标区
                   Expanded(
-                    child: Center(
-                      child: widget.showCheckbox
-                          ? Checkbox(
+                    child: widget.showCheckbox
+                        ? Center(
+                            child: Checkbox(
                               value: widget.isSelected,
                               onChanged: (_) => widget.onSelect?.call(),
                               materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            )
-                          : FileIconUtils.buildIconWidget(
-                              context: context,
-                              file: widget.file,
-                              size: 40,
-                              iconSize: 22,
-                              borderRadius: 10,
                             ),
-                    ),
+                          )
+                        : _buildIconArea(context),
                   ),
                   const SizedBox(height: 6),
                   // 文字区：左对齐
@@ -313,5 +314,31 @@ class _FileGridItemHoverState extends State<_FileGridItemHover> {
 
     final half = (maxChars - 3) ~/ 2;
     return '${name.substring(0, half)}...${name.substring(name.length - half)}';
+  }
+
+  Widget _buildIconArea(BuildContext context) {
+    final file = widget.file;
+    final ext = FileUtils.getFileExtension(file.name);
+    final isThumbnailable = !file.isFolder
+        && FileUtils.isImageFile(file.name)
+        && ext != 'svg';
+
+    if (!isThumbnailable) {
+      return Center(
+        child: FileIconUtils.buildIconWidget(
+          context: context,
+          file: file,
+          size: 40,
+          iconSize: 22,
+          borderRadius: 10,
+        ),
+      );
+    }
+
+    return ThumbnailImage(
+      file: file,
+      contextHint: widget.contextHint,
+      borderRadius: 10,
+    );
   }
 }

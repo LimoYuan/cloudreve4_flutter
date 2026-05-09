@@ -313,12 +313,13 @@ class ApiService {
     String path, {
     Map<String, dynamic>? queryParameters,
     bool noAuth = false,
-    isNoData = false,
+    bool isNoData = false,
+    Map<String, dynamic>? headers,
   }) async {
     final response = await _dio.get<T>(
       path,
       queryParameters: queryParameters,
-      options: Options(extra: {'noAuth': noAuth}),
+      options: Options(extra: {'noAuth': noAuth}, headers: headers),
     );
     // 如果是分享请求, 则不进入 _parseResponse
     if (isNoData) {

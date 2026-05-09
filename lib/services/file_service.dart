@@ -1,26 +1,9 @@
 import 'api_service.dart';
 import '../core/utils/app_logger.dart';
+import '../core/utils/file_utils.dart';
 
 /// 文件服务
 class FileService {
-  /// 将文件系统路径转换为 cloudreve URI 格式
-  /// 例如: "/" -> "cloudreve://my"
-  /// "/subfolder" -> "cloudreve://my/subfolder"
-  /// "/a/b" -> "cloudreve://my/a/b"
-  /// "cloudreve://my/subfolder" -> "cloudreve://my/subfolder" (已包含前缀则直接返回)
-  String _toCloudreveUri(String path) {
-    // 如果已经是 cloudreve:// 开头的URI，直接返回
-    if (path.startsWith('cloudreve://')) {
-      return path;
-    }
-
-    if (path == '/' || path.isEmpty) {
-      return 'cloudreve://my';
-    }
-    // 移除开头的 /
-    final cleanPath = path.startsWith('/') ? path.substring(1) : path;
-    return 'cloudreve://my/$cleanPath';
-  }
 
   /// 列出文件
   Future<Map<String, dynamic>> listFiles({
@@ -32,7 +15,7 @@ class FileService {
     String? nextPageToken,
   }) async {
     final params = <String, dynamic>{
-      'uri': _toCloudreveUri(uri),
+      'uri': FileUtils.toCloudreveUri(uri),
       'page': page,
       'page_size': pageSize,
       'order_by': orderBy,
@@ -54,7 +37,7 @@ class FileService {
     Map<String, dynamic>? metadata,
   }) async {
     final data = <String, dynamic>{
-      'uri': _toCloudreveUri(uri),
+      'uri': FileUtils.toCloudreveUri(uri),
       'type': type,
       'err_on_conflict': ?errOnConflict,
       'metadata': ?metadata,
@@ -73,7 +56,7 @@ class FileService {
     bool skipSoftDelete = false,
   }) async {
     final data = <String, dynamic>{
-      'uris': uris.map((uri) => _toCloudreveUri(uri)).toList(),
+      'uris': uris.map((uri) => FileUtils.toCloudreveUri(uri)).toList(),
       if (unlink) 'unlink': true,
       if (skipSoftDelete) 'skip_soft_delete': true,
     };
@@ -88,8 +71,8 @@ class FileService {
     bool copy = false,
   }) async {
     final data = <String, dynamic>{
-      'uris': uris.map((uri) => _toCloudreveUri(uri)).toList(),
-      'dst': _toCloudreveUri(dst),
+      'uris': uris.map((uri) => FileUtils.toCloudreveUri(uri)).toList(),
+      'dst': FileUtils.toCloudreveUri(dst),
       'copy': copy,
     };
 
@@ -102,7 +85,7 @@ class FileService {
     required String newName,
   }) async {
     final data = <String, dynamic>{
-      'uri': _toCloudreveUri(uri),
+      'uri': FileUtils.toCloudreveUri(uri),
       'new_name': newName,
     };
 
@@ -122,7 +105,7 @@ class FileService {
     String? contextHint,
   }) async {
     final data = <String, dynamic>{
-      'uris': uris.map((uri) => _toCloudreveUri(uri)).toList(),
+      'uris': uris.map((uri) => FileUtils.toCloudreveUri(uri)).toList(),
       'download': download,
       'redirect': ?redirect,
       'entity': ?entity,
@@ -151,7 +134,7 @@ class FileService {
     required List<String> uris,
   }) async {
     final data = <String, dynamic>{
-      'uris': uris.map((uri) => _toCloudreveUri(uri)).toList(),
+      'uris': uris.map((uri) => FileUtils.toCloudreveUri(uri)).toList(),
     };
 
     final response = await ApiService.instance.put<List<Map<String, dynamic>>>(
@@ -167,7 +150,7 @@ class FileService {
     required List<String> uris,
   }) async {
     final data = <String, dynamic>{
-      'uris': uris.map((uri) => _toCloudreveUri(uri)).toList(),
+      'uris': uris.map((uri) => FileUtils.toCloudreveUri(uri)).toList(),
     };
 
     await ApiService.instance.post<void>('/file/restore', data: data);
@@ -199,7 +182,7 @@ class FileService {
     int? pageSize,
   }) async {
     // 构造搜索 URI: cloudreve://my?name=xxx
-    final cloudreveUri = '${_toCloudreveUri(uri)}?name=$name';
+    final cloudreveUri = '${FileUtils.toCloudreveUri(uri)}?name=$name';
 
     final params = <String, dynamic>{
       'uri': cloudreveUri,
@@ -223,7 +206,7 @@ class FileService {
     bool folderSummary = false,
   }) async {
     final params = <String, dynamic>{
-      if (uri != null) 'uri': _toCloudreveUri(uri),
+      if (uri != null) 'uri': FileUtils.toCloudreveUri(uri),
       'id': ?id,
       'extended': extended,
       'folder_summary': folderSummary,
@@ -241,7 +224,7 @@ class FileService {
     required String version,
   }) async {
     final data = <String, dynamic>{
-      'uri': _toCloudreveUri(uri),
+      'uri': FileUtils.toCloudreveUri(uri),
       'version': version,
     };
 
@@ -254,7 +237,7 @@ class FileService {
     required String version,
   }) async {
     final data = <String, dynamic>{
-      'uri': _toCloudreveUri(uri),
+      'uri': FileUtils.toCloudreveUri(uri),
       'version': version,
     };
 

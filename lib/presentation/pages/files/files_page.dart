@@ -670,6 +670,7 @@ class _FilesPageState extends State<FilesPage> {
               isSelected: isSelected,
               isHighlighted: file.path == fileManager.highlightPath,
               showCheckbox: showCheckbox,
+              contextHint: fileManager.contextHint,
               onTap: () {
                 _hideFab();
                 _scheduleShowFab();

@@ -181,7 +181,7 @@ class DownloadTasksTab extends StatelessWidget {
                   DataColumn(label: Text('状态')),
                   DataColumn(label: Text('进度')),
                   DataColumn(label: Text('大小')),
-                  DataColumn(label: Text('速度')),
+                  DataColumn(label: Text('速度/完成时间')),
                   DataColumn(label: Text('操作')),
                 ],
                 rows: sortedTasks.map((task) => _buildDownloadDataRow(context, task, downloadManager)).toList(),
@@ -273,13 +273,17 @@ class DownloadTasksTab extends StatelessWidget {
             style: const TextStyle(fontSize: 13),
           ),
         ),
-        // 速度
+        // 速度/完成时间
         DataCell(
           Text(
-            task.speedText.isNotEmpty ? task.speedText : '-',
+            task.status == DownloadStatus.completed
+                ? (task.completedAt != null ? _formatDateTime(task.completedAt!) : '-')
+                : (task.speedText.isNotEmpty ? task.speedText : '-'),
             style: TextStyle(
               fontSize: 13,
-              color: task.speedText.isNotEmpty ? colorScheme.primary : null,
+              color: task.status == DownloadStatus.completed
+                  ? null
+                  : (task.speedText.isNotEmpty ? colorScheme.primary : null),
             ),
           ),
         ),

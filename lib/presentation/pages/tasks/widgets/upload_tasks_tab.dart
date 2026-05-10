@@ -176,6 +176,7 @@ class UploadTasksTab extends StatelessWidget {
                   DataColumn(label: Text('状态')),
                   DataColumn(label: Text('进度')),
                   DataColumn(label: Text('大小')),
+                  DataColumn(label: Text('完成时间')),
                   DataColumn(label: Text('操作')),
                 ],
                 rows: sortedTasks.map((task) => _buildUploadDataRow(context, task, uploadManager)).toList(),
@@ -262,6 +263,13 @@ class UploadTasksTab extends StatelessWidget {
         ),
         // 大小
         DataCell(Text(task.readableFileSize, style: const TextStyle(fontSize: 13))),
+        // 完成时间
+        DataCell(
+          Text(
+            task.completedAt != null ? _formatDateTime(task.completedAt!) : '-',
+            style: TextStyle(fontSize: 13, color: task.completedAt != null ? null : Theme.of(context).hintColor),
+          ),
+        ),
         // 操作
         DataCell(
           Row(

@@ -753,6 +753,18 @@ class _FilesPageState extends State<FilesPage> {
                       ),
                     )
                 : null,
+            onMove: () => FileOperationDialogs.showBatchMoveDialog(
+                  context,
+                  fileManager,
+                  fileManager.selectedFiles,
+                  false,
+                ),
+            onCopy: () => FileOperationDialogs.showBatchMoveDialog(
+                  context,
+                  fileManager,
+                  fileManager.selectedFiles,
+                  true,
+                ),
             onDelete: () => FileOperationDialogs.showDeleteConfirmation(
                   context,
                   fileManager,

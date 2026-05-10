@@ -278,6 +278,49 @@ class FileOperationDialogs {
     );
   }
 
+  /// 显示多选移动/复制文件对话框
+  static Future<void> showBatchMoveDialog(
+    BuildContext context,
+    FileManagerProvider fileManager,
+    List<String> uris,
+    bool copy,
+  ) async {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(copy ? '复制 ${uris.length} 个文件' : '移动 ${uris.length} 个文件'),
+        content: SizedBox(
+          width: 300,
+          height: 400,
+          child: FolderPicker(
+            currentPath: fileManager.currentPath,
+            onFolderSelected: (selectedPath) async {
+              Navigator.of(dialogContext).pop();
+              final error = await fileManager.moveFiles(
+                uris,
+                selectedPath,
+                copy: copy,
+              );
+              if (context.mounted) {
+                if (error != null) {
+                  ToastHelper.failure('${copy ? '复制' : '移动'}失败: $error');
+                } else {
+                  ToastHelper.success(copy ? '复制成功' : '移动成功');
+                }
+              }
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('取消'),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// 显示创建分享对话框
   static Future<void> showShareDialog(
     BuildContext context,

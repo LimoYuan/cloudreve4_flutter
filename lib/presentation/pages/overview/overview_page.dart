@@ -116,7 +116,7 @@ class _WideStorageAndShortcuts extends StatelessWidget {
             child: Card(
               child: Padding(
                 padding: EdgeInsets.all(20),
-                child: QuickAccessGrid(),
+                child: QuickAccessGrid(fillHeight: true),
               ),
             ),
           ),

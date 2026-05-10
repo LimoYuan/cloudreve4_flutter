@@ -28,6 +28,8 @@ import 'services/desktop_service.dart';
 import 'router/app_router.dart';
 import 'presentation/widgets/toast_helper.dart';
 
+final RouteObserver<PageRoute> routeObserver = RouteObserver<PageRoute>();
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -170,6 +172,7 @@ class AppView extends StatelessWidget {
         themeMode: flutterThemeMode,
         onGenerateRoute: AppRouter.generateRoute,
         initialRoute: RouteNames.splash,
+        navigatorObservers: [routeObserver],
         builder: (context, child) {
           if (child == null) return const SizedBox.shrink();
           Widget currentWidget = child;

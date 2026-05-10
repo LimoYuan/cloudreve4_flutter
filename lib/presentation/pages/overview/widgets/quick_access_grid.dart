@@ -1,4 +1,5 @@
 import 'package:cloudreve4_flutter/core/constants/quick_access_defaults.dart';
+import 'package:cloudreve4_flutter/main.dart' show routeObserver;
 import 'package:cloudreve4_flutter/presentation/providers/file_manager_provider.dart';
 import 'package:cloudreve4_flutter/presentation/providers/navigation_provider.dart';
 import 'package:cloudreve4_flutter/services/storage_service.dart';
@@ -7,19 +8,37 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:provider/provider.dart';
 
 class QuickAccessGrid extends StatefulWidget {
-  const QuickAccessGrid({super.key});
+  final bool fillHeight;
+  const QuickAccessGrid({super.key, this.fillHeight = false});
 
   @override
   State<QuickAccessGrid> createState() => _QuickAccessGridState();
 }
 
-class _QuickAccessGridState extends State<QuickAccessGrid> {
+class _QuickAccessGridState extends State<QuickAccessGrid> with RouteAware {
   List<QuickAccessConfig> _items = [];
 
   @override
   void initState() {
     super.initState();
     _loadShortcuts();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    routeObserver.subscribe(this, ModalRoute.of(context) as PageRoute);
+  }
+
+  @override
+  void didPopNext() {
+    _loadShortcuts();
+  }
+
+  @override
+  void dispose() {
+    routeObserver.unsubscribe(this);
+    super.dispose();
   }
 
   Future<void> _loadShortcuts() async {
@@ -102,13 +121,11 @@ class _QuickAccessGridState extends State<QuickAccessGrid> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isWide = MediaQuery.of(context).size.width >= 720;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
+      mainAxisSize: widget.fillHeight ? MainAxisSize.max : MainAxisSize.min,
       children: [
-        // 统一标题风格：图标 + 文字
         Padding(
           padding: const EdgeInsets.only(left: 4, bottom: 14),
           child: Row(
@@ -119,61 +136,44 @@ class _QuickAccessGridState extends State<QuickAccessGrid> {
             ],
           ),
         ),
-        if (isWide)
-          // 宽屏：Wrap 流式排列
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: List.generate(_items.length, (index) {
-              final item = _items[index];
-              return _AccessChip(
-                item: item,
-                onTap: () => _navigateTo(item.path),
-                onLongPress: () => _editShortcut(index),
-              );
-            }),
-          )
-        else
-          // 窄屏：每行 4 个，等分撑满
-          ..._buildRows(),
+        ..._buildRows(),
       ],
     );
   }
 
   List<Widget> _buildRows() {
-    const cols = 4;
+    final total = _items.length;
+    if (total == 0) return [];
+
+    final maxCols = total > 6 ? 3 : 2;
+    const gap = 10.0;
     final rows = <Widget>[];
-    for (int i = 0; i < _items.length; i += cols) {
+
+    for (int i = 0; i < total; i += maxCols) {
       final rowItems = <Widget>[];
-      for (int j = 0; j < cols && i + j < _items.length; j++) {
+      final remaining = total - i;
+      final colsInRow = remaining < maxCols ? remaining : maxCols;
+
+      for (int j = 0; j < colsInRow; j++) {
         final index = i + j;
-        final item = _items[index];
+        if (j > 0) rowItems.add(const SizedBox(width: gap));
         rowItems.add(
           Expanded(
-            child: Padding(
-              padding: EdgeInsets.only(
-                left: j == 0 ? 0 : 5,
-                right: j == cols - 1 || i + j == _items.length - 1 ? 0 : 5,
-              ),
-              child: _AccessChip(
-                item: item,
-                onTap: () => _navigateTo(item.path),
-                onLongPress: () => _editShortcut(index),
-                expanded: true,
-              ),
+            child: _AccessChip(
+              item: _items[index],
+              onTap: () => _navigateTo(_items[index].path),
+              onLongPress: () => _editShortcut(index),
+              expanded: true,
+              fillHeight: widget.fillHeight,
             ),
           ),
         );
       }
-      // 不足 4 个的用空白补齐，保证对齐
-      if (rowItems.length < cols) {
-        for (int k = rowItems.length; k < cols; k++) {
-          rowItems.add(Expanded(child: const SizedBox.shrink()));
-        }
-      }
-      rows.add(Row(children: rowItems));
-      if (i + cols < _items.length) {
-        rows.add(const SizedBox(height: 10));
+
+      final row = Row(children: rowItems);
+      rows.add(widget.fillHeight ? Expanded(child: row) : row);
+      if (i + maxCols < total) {
+        rows.add(const SizedBox(height: gap));
       }
     }
     return rows;
@@ -185,13 +185,15 @@ class _AccessChip extends StatefulWidget {
   final QuickAccessConfig item;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
-  final bool expanded; // 窄屏时撑满宽度
+  final bool expanded;
+  final bool fillHeight;
 
   const _AccessChip({
     required this.item,
     required this.onTap,
     required this.onLongPress,
     this.expanded = false,
+    this.fillHeight = false,
   });
 
   @override
@@ -233,6 +235,9 @@ class _AccessChipState extends State<_AccessChip> with SingleTickerProviderState
     final child = AnimatedContainer(
       duration: const Duration(milliseconds: 200),
       curve: Curves.easeOut,
+      width: widget.expanded ? double.infinity : null,
+      height: widget.fillHeight ? double.infinity : null,
+      alignment: widget.expanded ? Alignment.center : null,
       padding: EdgeInsets.symmetric(
         horizontal: widget.expanded ? 0 : 18,
         vertical: 12,
@@ -248,26 +253,24 @@ class _AccessChipState extends State<_AccessChip> with SingleTickerProviderState
           ),
         ],
       ),
-      child: Center(
-        child: Row(
-          mainAxisSize: widget.expanded ? MainAxisSize.max : MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(item.icon, size: 18, color: Colors.white),
-            const SizedBox(width: 8),
-            Text(
-              item.label,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w600,
-                fontSize: 13,
-                letterSpacing: 0.2,
-              ),
-              overflow: TextOverflow.ellipsis,
-              maxLines: 1,
+      child: Row(
+        mainAxisSize: widget.expanded ? MainAxisSize.max : MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(item.icon, size: 18, color: Colors.white),
+          const SizedBox(width: 8),
+          Text(
+            item.label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+              fontSize: 13,
+              letterSpacing: 0.2,
             ),
-          ],
-        ),
+            overflow: TextOverflow.ellipsis,
+            maxLines: 1,
+          ),
+        ],
       ),
     );
 

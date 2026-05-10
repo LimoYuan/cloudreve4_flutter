@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:lucide_icons/lucide_icons.dart';
 import 'package:open_file/open_file.dart';
 import 'package:provider/provider.dart';
 import '../../../core/constants/storage_keys.dart';
@@ -11,6 +12,7 @@ import '../../../services/storage_service.dart';
 import '../../providers/download_manager_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../providers/user_setting_provider.dart';
+import '../../widgets/glassmorphism_container.dart';
 import '../../widgets/toast_helper.dart';
 import '../../widgets/desktop_constrained.dart';
 import 'log_viewer_page.dart';
@@ -500,29 +502,11 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
     final availableSizes = CacheSettingsModel.availableSizes;
     final currentValue = _cacheSettings.maxCacheSize ~/ (1024 * 1024);
 
-    final selected = await showModalBottomSheet<int>(
-      context: context,
-      builder: (sheetContext) => Container(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('选择最大缓存大小', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 16),
-            for (final size in availableSizes)
-              ListTile(
-                title: Text('$size MB'),
-                selected: currentValue == size,
-                leading: Icon(
-                  currentValue == size ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                onTap: () => Navigator.of(sheetContext).pop(size),
-              ),
-          ],
-        ),
-      ),
+    final selected = await _showGlassOptionDialog<int>(
+      context,
+      title: '最大缓存大小',
+      icon: LucideIcons.hardDrive,
+      options: availableSizes.map((size) => (size, '$size MB', currentValue == size)).toList(),
     );
 
     if (selected != null && mounted) {
@@ -535,29 +519,11 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
     final availableDurations = CacheSettingsModel.availableDurations;
     final currentValue = _cacheSettings.cacheExpireDuration ~/ (24 * 60 * 60 * 1000);
 
-    final selected = await showModalBottomSheet<int>(
-      context: context,
-      builder: (sheetContext) => Container(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('选择缓存过期时间', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 16),
-            for (final days in availableDurations)
-              ListTile(
-                title: Text('$days天'),
-                selected: currentValue == days,
-                leading: Icon(
-                  currentValue == days ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                onTap: () => Navigator.of(sheetContext).pop(days),
-              ),
-          ],
-        ),
-      ),
+    final selected = await _showGlassOptionDialog<int>(
+      context,
+      title: '缓存过期时间',
+      icon: LucideIcons.timer,
+      options: availableDurations.map((days) => (days, '$days 天', currentValue == days)).toList(),
     );
 
     if (selected != null && mounted) {
@@ -567,31 +533,15 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
   }
 
   Future<void> _showRetriesDialog(BuildContext context) async {
-    final selected = await showModalBottomSheet<int>(
-      context: context,
-      builder: (sheetContext) => Container(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('选择重试次数', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            const Text('下载失败后自动重试的次数', style: TextStyle(fontSize: 13, color: Colors.grey)),
-            const SizedBox(height: 16),
-            for (final retries in [0, 1, 2, 3, 5, 10])
-              ListTile(
-                title: Text(retries == 0 ? '不重试' : '$retries 次'),
-                selected: _downloadRetries == retries,
-                leading: Icon(
-                  _downloadRetries == retries ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                onTap: () => Navigator.of(sheetContext).pop(retries),
-              ),
-          ],
-        ),
-      ),
+    final retriesOptions = [0, 1, 2, 3, 5, 10];
+
+    final selected = await _showGlassOptionDialog<int>(
+      context,
+      title: '重试次数',
+      icon: LucideIcons.refreshCw,
+      subtitle: '下载失败后自动重试的次数',
+      options: retriesOptions.map((retries) =>
+        (retries, retries == 0 ? '不重试' : '$retries 次', _downloadRetries == retries)).toList(),
     );
 
     if (selected != null && mounted) {
@@ -609,31 +559,12 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
       (-1, '永久保留'),
     ];
 
-    final selected = await showModalBottomSheet<int>(
-      context: context,
-      builder: (sheetContext) => Container(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('任务记录保留时间', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            const Text('超过保留时间的已完成任务将被自动清理', style: TextStyle(fontSize: 13, color: Colors.grey)),
-            const SizedBox(height: 16),
-            for (final opt in options)
-              ListTile(
-                title: Text(opt.$2),
-                selected: _taskRetentionDays == opt.$1,
-                leading: Icon(
-                  _taskRetentionDays == opt.$1 ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                onTap: () => Navigator.of(sheetContext).pop(opt.$1),
-              ),
-          ],
-        ),
-      ),
+    final selected = await _showGlassOptionDialog<int>(
+      context,
+      title: '任务记录保留时间',
+      icon: LucideIcons.clock,
+      subtitle: '超过保留时间的已完成任务将被自动清理',
+      options: options.map((opt) => (opt.$1, opt.$2, _taskRetentionDays == opt.$1)).toList(),
     );
 
     if (selected != null && mounted) {
@@ -641,6 +572,129 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
       await StorageService.instance
           .setInt(StorageKeys.taskRetentionDays, selected);
     }
+  }
+
+  /// 通用毛玻璃选项选择对话框
+  Future<T?> _showGlassOptionDialog<T>(
+    BuildContext context, {
+    required String title,
+    required IconData icon,
+    String? subtitle,
+    required List<(T, String, bool)> options,
+  }) {
+    return showGeneralDialog<T>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: title,
+      barrierColor: Colors.black38,
+      transitionDuration: const Duration(milliseconds: 250),
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        final scaleAnim = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+        ).drive(Tween(begin: 0.92, end: 1.0));
+        final fadeAnim = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOut,
+        ).drive(Tween(begin: 0.0, end: 1.0));
+        return ScaleTransition(
+          scale: scaleAnim,
+          child: FadeTransition(opacity: fadeAnim, child: child),
+        );
+      },
+      pageBuilder: (context, animation, secondaryAnimation) {
+        final screenWidth = MediaQuery.of(context).size.width;
+        final dialogWidth = screenWidth >= 600 ? 380.0 : screenWidth - 48.0;
+        final colorScheme = Theme.of(context).colorScheme;
+        final theme = Theme.of(context);
+
+        return Center(
+          child: SizedBox(
+            width: dialogWidth,
+            child: GlassmorphismContainer(
+              borderRadius: 16,
+              sigmaX: 20,
+              sigmaY: 20,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: Material(
+                  color: Colors.transparent,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Header
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 16, 8, 12),
+                        child: Row(
+                          children: [
+                            Icon(icon, size: 20, color: colorScheme.primary),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                title,
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(LucideIcons.x, size: 20),
+                              onPressed: () => Navigator.of(context).pop(),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (subtitle != null)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              subtitle,
+                              style: TextStyle(fontSize: 13, color: theme.hintColor),
+                            ),
+                          ),
+                        ),
+                      const Divider(height: 1),
+                      // Options
+                      ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxHeight: MediaQuery.of(context).size.height * 0.5,
+                        ),
+                        child: ListView.builder(
+                          shrinkWrap: true,
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          itemCount: options.length,
+                          itemBuilder: (context, index) {
+                            final (value, label, isSelected) = options[index];
+                            return ListTile(
+                              leading: Icon(
+                                isSelected
+                                    ? LucideIcons.checkCircle2
+                                    : LucideIcons.circle,
+                                size: 20,
+                                color: isSelected
+                                    ? colorScheme.primary
+                                    : theme.hintColor,
+                              ),
+                              title: Text(label),
+                              selected: isSelected,
+                              onTap: () => Navigator.of(context).pop(value),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _showGravatarMirrorUrlDialog(BuildContext context) async {

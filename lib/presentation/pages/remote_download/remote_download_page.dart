@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 import 'package:cloudreve4_flutter/core/utils/app_logger.dart';
 import 'package:cloudreve4_flutter/presentation/widgets/folder_picker.dart';
 import 'package:flutter/material.dart';
@@ -1420,7 +1421,7 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
     return 'cloudreve://my/$cleanPath';
   }
 
-  /// 文件选择对话框
+  /// 文件选择对话框（毛玻璃风格）
   Future<void> _showFilesDialog(
       BuildContext context, RemoteDownloadTaskModel task) async {
     final download = task.summary?.download;
@@ -1432,76 +1433,186 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
       for (final f in download.files) f.index: f.selected,
     };
 
-    await showDialog(
+    await showGeneralDialog(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title:
-              Text(download.name.isNotEmpty ? download.name : '文件列表'),
-          content: SizedBox(
-            width: isDesktop ? 500 : MediaQuery.of(ctx).size.width - 48,
-            height: MediaQuery.of(ctx).size.height * 0.6,
-            child: ListView.builder(
-              itemCount: download.files.length,
-              itemBuilder: (context, index) {
-                final file = download.files[index];
-                return CheckboxListTile(
-                  value: selected[file.index] ?? file.selected,
-                  title: Text(file.name,
-                      style: const TextStyle(fontSize: 13),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis),
-                  subtitle: Text(_formatSize(file.size),
-                      style: TextStyle(
-                          fontSize: 11,
-                          color: colorScheme.onSurfaceVariant)),
-                  controlAffinity: ListTileControlAffinity.leading,
-                  dense: true,
-                  onChanged: (v) =>
-                      setDialogState(() => selected[file.index] = v ?? true),
+      barrierDismissible: true,
+      barrierLabel: '文件列表',
+      barrierColor: Colors.black38,
+      transitionDuration: const Duration(milliseconds: 250),
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        final scaleAnim = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+        ).drive(Tween(begin: 0.92, end: 1.0));
+        final fadeAnim = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOut,
+        ).drive(Tween(begin: 0.0, end: 1.0));
+        return ScaleTransition(
+          scale: scaleAnim,
+          child: FadeTransition(opacity: fadeAnim, child: child),
+        );
+      },
+      pageBuilder: (dialogContext, animation, secondaryAnimation) {
+        final screenWidth = MediaQuery.of(context).size.width;
+        final screenHeight = MediaQuery.of(context).size.height;
+        final dialogWidth = isDesktop ? 480.0 : screenWidth - 48.0;
+        final maxDialogHeight = screenHeight * 0.7;
+        final minContentHeight = download.files.length * 56.0;
+        final contentHeight = minContentHeight.clamp(200.0, maxDialogHeight - 120);
+
+        return Center(
+          child: Container(
+            width: dialogWidth,
+            constraints: BoxConstraints(
+              maxHeight: maxDialogHeight,
+              minHeight: 280,
+            ),
+            child: StatefulBuilder(
+              builder: (ctx, setDialogState) {
+                final theme = Theme.of(ctx);
+                return ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: theme.brightness == Brightness.light
+                            ? Colors.white.withValues(alpha: 0.7)
+                            : Colors.black.withValues(alpha: 0.3),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: theme.brightness == Brightness.light
+                              ? Colors.white.withValues(alpha: 0.3)
+                              : Colors.white.withValues(alpha: 0.1),
+                        ),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              // Header
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(20, 16, 8, 12),
+                                child: Row(
+                                  children: [
+                                    Icon(LucideIcons.layoutList, size: 20, color: colorScheme.primary),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                        download.name.isNotEmpty ? download.name : '文件列表',
+                                        style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(LucideIcons.x, size: 20),
+                                      onPressed: () => Navigator.of(ctx).pop(),
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const Divider(height: 1),
+                              // File list - content fills available space
+                              ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  maxHeight: contentHeight,
+                                  minHeight: 160,
+                                ),
+                                child: ListView.builder(
+                                  shrinkWrap: true,
+                                  padding: const EdgeInsets.symmetric(vertical: 4),
+                                  itemCount: download.files.length,
+                                  itemBuilder: (context, index) {
+                                    final file = download.files[index];
+                                    return CheckboxListTile(
+                                      value: selected[file.index] ?? file.selected,
+                                      title: Text(file.name,
+                                          style: const TextStyle(fontSize: 13),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis),
+                                      subtitle: Text(_formatSize(file.size),
+                                          style: TextStyle(
+                                              fontSize: 11,
+                                              color: colorScheme.onSurfaceVariant)),
+                                      controlAffinity: ListTileControlAffinity.leading,
+                                      dense: true,
+                                      onChanged: (v) =>
+                                          setDialogState(() => selected[file.index] = v ?? true),
+                                    );
+                                  },
+                                ),
+                              ),
+                              const Divider(height: 1),
+                              // Actions
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(24, 12, 24, 16),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.end,
+                                  children: [
+                                    TextButton(
+                                      onPressed: () => Navigator.of(ctx).pop(),
+                                      style: TextButton.styleFrom(
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                                      ),
+                                      child: const Text('关闭'),
+                                    ),
+                                    if (task.status.isOngoing) ...[
+                                      const SizedBox(width: 8),
+                                      FilledButton(
+                                        onPressed: () async {
+                                          final changes = <Map<String, dynamic>>[];
+                                          for (final file in download.files) {
+                                            final wasSelected = file.selected;
+                                            final nowSelected = selected[file.index] ?? wasSelected;
+                                            if (wasSelected != nowSelected) {
+                                              changes.add({'index': file.index, 'download': nowSelected});
+                                            }
+                                          }
+                                          if (changes.isEmpty) {
+                                            Navigator.of(ctx).pop();
+                                            return;
+                                          }
+                                          try {
+                                            await _service.selectFiles(taskId: task.id, files: changes);
+                                            if (!mounted || !ctx.mounted) return;
+                                            Navigator.of(ctx).pop();
+                                            ToastHelper.success('文件选择已更新');
+                                            _loadTasks();
+                                          } catch (e) {
+                                            if (!mounted) return;
+                                            ToastHelper.failure('更新失败: $e');
+                                          }
+                                        },
+                                        style: FilledButton.styleFrom(
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                                        ),
+                                        child: const Text('保存'),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 );
               },
             ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('关闭'),
-            ),
-            if (task.status.isOngoing)
-              FilledButton(
-                onPressed: () async {
-                  final changes = <Map<String, dynamic>>[];
-                  for (final file in download.files) {
-                    final wasSelected = file.selected;
-                    final nowSelected = selected[file.index] ?? wasSelected;
-                    if (wasSelected != nowSelected) {
-                      changes.add(
-                          {'index': file.index, 'download': nowSelected});
-                    }
-                  }
-                  if (changes.isEmpty) {
-                    Navigator.of(ctx).pop();
-                    return;
-                  }
-                  try {
-                    await _service.selectFiles(
-                        taskId: task.id, files: changes);
-                    if (!mounted) return;
-                    if (!context.mounted) return;
-                    Navigator.of(ctx).pop();
-                    ToastHelper.success('文件选择已更新');
-                    _loadTasks();
-                  } catch (e) {
-                    if (!mounted) return;
-                    ToastHelper.failure('更新失败: $e');
-                  }
-                },
-                child: const Text('保存'),
-              ),
-          ],
-        ),
-      ),
+        );
+      },
     );
   }
 

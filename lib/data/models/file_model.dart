@@ -1,3 +1,4 @@
+import 'share_model.dart';
 
 /// 文件模型
 class FileModel {
@@ -129,9 +130,9 @@ class FolderSummaryModel {
 
   factory FolderSummaryModel.fromJson(Map<String, dynamic> json) {
     return FolderSummaryModel(
-      size: json['size'] as int,
-      files: json['files'] as int,
-      folders: json['folders'] as int,
+      size: (json['size'] as num?)?.toInt() ?? 0,
+      files: (json['files'] as num?)?.toInt() ?? 0,
+      folders: (json['folders'] as num?)?.toInt() ?? 0,
       completed: json['completed'] as bool,
       calculatedAt: DateTime.parse(json['calculated_at'] as String),
     );
@@ -199,72 +200,6 @@ class ExtendedInfoModel {
   }
 }
 
-/// 分享模型
-class ShareModel {
-  final String id;
-  final String? name;
-  final DateTime? expires;
-  final bool? isPrivate;
-  final int? remainDownloads;
-  final DateTime createdAt;
-  final String url;
-  final int visited;
-  final int downloaded;
-  final bool expired;
-  final bool unlocked;
-  final bool password;
-
-  ShareModel({
-    required this.id,
-    this.name,
-    this.expires,
-    this.isPrivate,
-    this.remainDownloads,
-    required this.createdAt,
-    required this.url,
-    required this.visited,
-    required this.downloaded,
-    required this.expired,
-    required this.unlocked,
-    required this.password,
-  });
-
-  factory ShareModel.fromJson(Map<String, dynamic> json) {
-    return ShareModel(
-      id: json['id'] as String,
-      name: json['name'] as String?,
-      expires: json['expires'] != null
-          ? DateTime.parse(json['expires'] as String)
-          : null,
-      isPrivate: json['is_private'] as bool?,
-      remainDownloads: json['remain_downloads'] as int?,
-      createdAt: DateTime.parse(json['created_at'] as String),
-      url: json['url'] as String,
-      visited: json['visited'] as int,
-      downloaded: json['downloaded'] as int,
-      expired: json['expired'] as bool,
-      unlocked: json['unlocked'] as bool,
-      password: json['password'] as bool,
-    );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'name': name,
-      'expires': expires?.toIso8601String(),
-      'is_private': isPrivate,
-      'remain_downloads': remainDownloads,
-      'created_at': createdAt.toIso8601String(),
-      'url': url,
-      'visited': visited,
-      'downloaded': downloaded,
-      'expired': expired,
-      'unlocked': unlocked,
-      'password': password,
-    };
-  }
-}
 
 /// 存储策略模型
 class StoragePolicyModel {
@@ -357,7 +292,7 @@ class EntityModel {
       id: json['id'] as String,
       type: json['type'] as int,
       createdAt: DateTime.parse(json['created_at'] as String),
-      size: json['size'] as int,
+      size: (json['size'] as num?)?.toInt() ?? 0,
       encryptedWith: json['encrypted_with'] as String?,
       storagePolicy: json['storage_policy'] is Map<String, dynamic>
           ? StoragePolicyModel.fromJson(json['storage_policy'] as Map<String, dynamic>)
@@ -400,7 +335,7 @@ class DirectLinkModel {
       id: json['id'] as String,
       createdAt: DateTime.parse(json['created_at'] as String),
       url: json['url'] as String,
-      downloaded: json['downloaded'] as int,
+      downloaded: (json['downloaded'] as num?)?.toInt() ?? 0,
     );
   }
 

@@ -1,5 +1,4 @@
 import 'package:cloudreve4_flutter/data/models/file_model.dart';
-import 'package:cloudreve4_flutter/services/file_service.dart';
 import 'package:cloudreve4_flutter/services/share_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -225,15 +224,12 @@ class FileOperationDialogs {
     );
 
     if (confirmed == true) {
-      try {
-        await FileService().deleteFiles(uris: [file.path]);
-        if (context.mounted) {
+      final error = await fileManager.deleteFile(file.path);
+      if (context.mounted) {
+        if (error != null) {
+          ToastHelper.failure('删除失败: $error');
+        } else {
           ToastHelper.success('删除成功');
-          await fileManager.loadFiles();
-        }
-      } catch (e) {
-        if (context.mounted) {
-          ToastHelper.failure('删除失败: $e');
         }
       }
     }
@@ -257,19 +253,16 @@ class FileOperationDialogs {
             currentPath: fileManager.currentPath,
             onFolderSelected: (selectedPath) async {
               Navigator.of(dialogContext).pop();
-              try {
-                await FileService().moveFiles(
-                  uris: [file.path],
-                  dst: selectedPath,
-                  copy: copy,
-                );
-                if (context.mounted) {
+              final error = await fileManager.moveFiles(
+                [file.path],
+                selectedPath,
+                copy: copy,
+              );
+              if (context.mounted) {
+                if (error != null) {
+                  ToastHelper.failure('${copy ? '复制' : '移动'}失败: $error');
+                } else {
                   ToastHelper.success(copy ? '复制成功' : '移动成功');
-                  await fileManager.loadFiles();
-                }
-              } catch (e) {
-                if (context.mounted) {
-                  ToastHelper.failure('${copy ? '复制' : '移动'}失败: $e');
                 }
               }
             },

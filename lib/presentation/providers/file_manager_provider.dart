@@ -5,6 +5,7 @@ import '../../data/models/file_model.dart';
 import '../../services/file_service.dart';
 import '../../services/thumbnail_service.dart';
 import '../../core/utils/app_logger.dart';
+import '../../core/utils/file_utils.dart';
 
 /// 文件视图类型
 enum FileViewType { list, grid, gallery }
@@ -206,24 +207,85 @@ class FileManagerProvider extends ChangeNotifier {
     }
   }
 
-  /// 移动文件
-  Future<void> moveFiles(List<String> uris, String destination) async {
+  /// 删除单个文件（增量移除）
+  Future<String?> deleteFile(String path) async {
     try {
-      await FileService().moveFiles(uris: uris, dst: destination);
-      clearSelection();
-      await loadFiles();
+      await FileService().deleteFiles(uris: [path]);
+      setState(() {
+        _files.removeWhere((file) => file.path == path);
+        _selectedFiles.remove(path);
+      });
+      return null;
     } catch (e) {
-      setErrorMessage(e.toString());
+      final error = e.toString();
+      setErrorMessage(error);
+      return error;
     }
   }
 
-  /// 重命名文件
-  Future<void> renameFile(String path, String newName) async {
+  /// 移动文件（增量更新）
+  Future<String?> moveFiles(List<String> uris, String destination, {bool copy = false}) async {
     try {
-      await FileService().renameFile(uri: path, newName: newName);
-      await loadFiles();
+      await FileService().moveFiles(uris: uris, dst: destination);
+      clearSelection();
+
+      if (!copy) {
+        // 移动：文件离开当前目录，直接从列表移除
+        setState(() {
+          _files.removeWhere((file) => uris.contains(file.path));
+        });
+      } else {
+        // 复制：仅当目标是当前目录时需要刷新
+        final normalizedDst = FileUtils.toCloudreveUri(destination);
+        final normalizedCur = FileUtils.toCloudreveUri(_currentPath);
+        if (normalizedDst == normalizedCur) {
+          await loadFiles();
+        }
+      }
+      return null;
     } catch (e) {
-      setErrorMessage(e.toString());
+      final error = e.toString();
+      setErrorMessage(error);
+      return error;
+    }
+  }
+
+  /// 重命名文件（原地更新，不刷新列表）
+  Future<String?> renameFile(String path, String newName) async {
+    try {
+      final response = await FileService().renameFile(uri: path, newName: newName);
+      if (response.isEmpty) {
+        await loadFiles();
+        return null;
+      }
+      final updatedFile = FileModel.fromJson(response);
+      final index = _files.indexWhere((f) => f.path == path);
+      if (index != -1) {
+        setState(() {
+          _files[index] = updatedFile;
+        });
+      }
+      return null;
+    } catch (e) {
+      final error = e.toString();
+      setErrorMessage(error);
+      return error;
+    }
+  }
+
+  /// 通过 URI 获取文件信息并添加到列表（用于上传完成后）
+  Future<void> addFileByUri(String fileUri) async {
+    try {
+      final response = await FileService().getFileInfo(uri: fileUri);
+      final newFile = FileModel.fromJson(response);
+      final exists = _files.any((f) => f.id == newFile.id);
+      if (!exists) {
+        setState(() {
+          _files.insert(0, newFile);
+        });
+      }
+    } catch (e) {
+      AppLogger.d('获取上传文件信息失败: $e');
     }
   }
 

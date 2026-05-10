@@ -67,6 +67,36 @@ class FileModel {
 
   bool get isFolder => type == 1;
 
+  FileModel copyWith({
+    int? type,
+    String? id,
+    String? name,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    int? size,
+    String? path,
+    Map<String, dynamic>? metadata,
+    String? permission,
+    String? primaryEntity,
+    String? capability,
+    bool? owned,
+  }) {
+    return FileModel(
+      type: type ?? this.type,
+      id: id ?? this.id,
+      name: name ?? this.name,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      size: size ?? this.size,
+      path: path ?? this.path,
+      metadata: metadata ?? this.metadata,
+      permission: permission ?? this.permission,
+      primaryEntity: primaryEntity ?? this.primaryEntity,
+      capability: capability ?? this.capability,
+      owned: owned ?? this.owned,
+    );
+  }
+
   /// 获取相对于 cloudreve://my 的路径
   /// 例如: cloudreve://my/Games -> /Games
   /// cloudreve://my/sub/folder -> /sub/folder

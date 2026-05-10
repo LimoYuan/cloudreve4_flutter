@@ -79,8 +79,8 @@ class FileService {
     await ApiService.instance.post<void>('/file/move', data: data);
   }
 
-  /// 重命名文件
-  Future<void> renameFile({
+  /// 重命名文件（返回更新后的文件对象）
+  Future<Map<String, dynamic>> renameFile({
     required String uri,
     required String newName,
   }) async {
@@ -89,7 +89,11 @@ class FileService {
       'new_name': newName,
     };
 
-    await ApiService.instance.post<void>('/file/rename', data: data);
+    final response = await ApiService.instance.post<Map<String, dynamic>>(
+      '/file/rename',
+      data: data,
+    );
+    return response;
   }
 
   /// 获取下载链接

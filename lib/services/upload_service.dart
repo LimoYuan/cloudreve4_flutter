@@ -21,6 +21,9 @@ class UploadService extends ChangeNotifier {
   }
 
   final Map<String, UploadTaskModel> _tasks = {};
+
+  /// 上传完成回调：参数为 (目标路径, 文件名)
+  void Function(String targetPath, String fileName)? onUploadCompleted;
   final Map<String, CancelToken> _cancelTokens = {};
   final Map<String, StreamController<double>> _progressControllers = {};
 
@@ -296,6 +299,8 @@ class UploadService extends ChangeNotifier {
         completedAt: DateTime.now(),
       );
       updateTask(completedTask);
+
+      onUploadCompleted?.call(task.targetPath, task.fileName);
 
       _emitProgress(task.id, 1.0);
     } catch (e) {

@@ -3,6 +3,8 @@ import 'dart:ui';
 
 import 'package:cloudreve4_flutter/data/models/file_model.dart';
 import 'package:cloudreve4_flutter/services/file_service.dart';
+import 'package:cloudreve4_flutter/services/upload_service.dart';
+import '../../../core/utils/file_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:provider/provider.dart';
@@ -62,11 +64,25 @@ class _FilesPageState extends State<FilesPage> {
         downloadManager.initialize();
       }
     });
+
+    // 上传完成 → 自动刷新当前目录文件列表
+    UploadService.instance.onUploadCompleted = (targetPath, fileName) {
+      if (!mounted) return;
+      final fileManager = Provider.of<FileManagerProvider>(context, listen: false);
+      final normalizedCurrent = FileUtils.toCloudreveUri(fileManager.currentPath);
+      if (targetPath == normalizedCurrent) {
+        final fileUri = targetPath.endsWith('/')
+            ? '$targetPath$fileName'
+            : '$targetPath/$fileName';
+        fileManager.addFileByUri(fileUri);
+      }
+    };
   }
 
   @override
   void dispose() {
     _fabShowTimer?.cancel();
+    UploadService.instance.onUploadCompleted = null;
     super.dispose();
   }
 

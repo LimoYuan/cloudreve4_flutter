@@ -24,6 +24,7 @@ import 'services/api_service.dart';
 import 'services/server_service.dart';
 import 'services/cache_manager_service.dart';
 import 'services/avatar_cache_service.dart';
+import 'core/utils/video_fullscreen.dart';
 import 'services/desktop_service.dart';
 import 'router/app_router.dart';
 import 'presentation/widgets/toast_helper.dart';
@@ -178,22 +179,28 @@ class AppView extends StatelessWidget {
           Widget currentWidget = child;
           if (Platform.isWindows || Platform.isLinux) {
             currentWidget = Material(
-              // 必须在这里设置颜色，否则窗口会透过去
               color: themeProvider.isDark ? Colors.black.withValues(alpha: 0.92) : Colors.white.withValues(alpha: 0.92),
-              child: Column(
-                children: [
-                  // 关键点 1：必须包裹 SizedBox 并指定明确高度
-                  const SizedBox(
-                    height: 32,
-                    child: DragToMoveArea(
-                      child: DesktopTitleBar(),
-                    ),
-                  ),
-                  // 关键点 2：Expanded 确保子页面占满剩余空间
-                  Expanded(
-                    child: currentWidget,
-                  ),
-                ],
+              child: ValueListenableBuilder<bool>(
+                valueListenable: videoFullscreenNotifier,
+                builder: (context, isVideoFullscreen, child) {
+                  if (isVideoFullscreen) {
+                    return child!;
+                  }
+                  return Column(
+                    children: [
+                      const SizedBox(
+                        height: 32,
+                        child: DragToMoveArea(
+                          child: DesktopTitleBar(),
+                        ),
+                      ),
+                      Expanded(
+                        child: child!,
+                      ),
+                    ],
+                  );
+                },
+                child: currentWidget,
               ),
             );
             // 添加全局错误处理

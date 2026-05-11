@@ -106,6 +106,7 @@ class UploadTaskModel {
   final int totalChunks; // 总分片数量
   final String? errorMessage;
   final UploadSessionModel? session; // 上传会话信息
+  final int speed; // 上传速度，字节/秒
 
   UploadTaskModel({
     required this.id,
@@ -122,6 +123,7 @@ class UploadTaskModel {
     this.totalChunks = 1,
     this.errorMessage,
     this.session,
+    this.speed = 0,
   })  : createdAt = createdAt ?? DateTime.now(),
       status = status ?? UploadStatus.waiting;
 
@@ -170,6 +172,14 @@ class UploadTaskModel {
     }
   }
 
+  /// 获取可读的上传速度
+  String get speedText {
+    if (speed <= 0) return '';
+    if (speed < 1024) return '$speed B/s';
+    if (speed < 1024 * 1024) return '${(speed / 1024).toStringAsFixed(1)} KB/s';
+    return '${(speed / (1024 * 1024)).toStringAsFixed(1)} MB/s';
+  }
+
   /// 克隆任务
   UploadTaskModel copyWith({
     UploadStatus? status,
@@ -180,6 +190,7 @@ class UploadTaskModel {
     String? errorMessage,
     UploadSessionModel? session,
     DateTime? completedAt,
+    int? speed,
   }) {
     return UploadTaskModel(
       id: id,
@@ -196,6 +207,7 @@ class UploadTaskModel {
       totalChunks: totalChunks ?? this.totalChunks,
       errorMessage: errorMessage ?? this.errorMessage,
       session: session ?? this.session,
+      speed: speed ?? this.speed,
     );
   }
 
@@ -215,6 +227,7 @@ class UploadTaskModel {
       'uploaded_chunks': uploadedChunks,
       'total_chunks': totalChunks,
       'error_message': errorMessage,
+      'speed': speed,
     };
   }
 
@@ -236,6 +249,7 @@ class UploadTaskModel {
       uploadedChunks: json['uploaded_chunks'] as int,
       totalChunks: json['total_chunks'] as int,
       errorMessage: json['error_message'] as String?,
+      speed: json['speed'] as int? ?? 0,
     );
   }
 }

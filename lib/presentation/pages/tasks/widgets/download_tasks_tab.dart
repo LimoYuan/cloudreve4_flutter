@@ -123,9 +123,9 @@ class DownloadTasksTab extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
 
     final sortedTasks = [
-      ...activeTasks,
-      ...failedTasks,
-      ...completedTasks,
+      ...activeTasks.reversed,
+      ...failedTasks.reversed,
+      ...completedTasks.reversed,
     ];
 
     return SingleChildScrollView(

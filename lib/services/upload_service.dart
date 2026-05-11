@@ -26,6 +26,7 @@ class UploadService extends ChangeNotifier {
   void Function(String targetPath, String fileName)? onUploadCompleted;
   final Map<String, CancelToken> _cancelTokens = {};
   final Map<String, StreamController<double>> _progressControllers = {};
+  final Map<String, _SpeedTracker> _speedTrackers = {};
 
   /// 添加任务
   void addTask(UploadTaskModel task) {
@@ -241,7 +242,8 @@ class UploadService extends ChangeNotifier {
 
     final task = _tasks[taskId];
     if (task != null) {
-      updateTask(task.copyWith(status: UploadStatus.cancelled));
+      updateTask(task.copyWith(status: UploadStatus.cancelled, speed: 0));
+      _cleanSpeedTracker(taskId);
     }
   }
 
@@ -297,8 +299,10 @@ class UploadService extends ChangeNotifier {
         uploadedBytes: task.fileSize,
         uploadedChunks: updatedTask.totalChunks,
         completedAt: DateTime.now(),
+        speed: 0,
       );
       updateTask(completedTask);
+      _cleanSpeedTracker(task.id);
 
       onUploadCompleted?.call(task.targetPath, task.fileName);
 
@@ -313,8 +317,10 @@ class UploadService extends ChangeNotifier {
         task.copyWith(
           status: isCancelled ? UploadStatus.cancelled : UploadStatus.failed,
           errorMessage: e.toString(),
+          speed: 0,
         ),
       );
+      _cleanSpeedTracker(task.id);
 
       if (!isCancelled) {
         _emitProgress(task.id, task.progress);
@@ -404,11 +410,13 @@ class UploadService extends ChangeNotifier {
       // 更新进度 - 获取最新任务状态并计算正确进度
       final currentTask = getTask(task.id) ?? task;
       final progress = (i + 1) / totalChunks;
+      final speed = _computeSpeed(task.id, end);
       updateTask(
         currentTask.copyWith(
           uploadedBytes: end,
           progress: progress,
           uploadedChunks: i + 1,
+          speed: speed,
         ),
       );
       _emitProgress(task.id, progress);
@@ -497,10 +505,12 @@ class UploadService extends ChangeNotifier {
         (sent, total) {
           final progress = sent / total;
           final currentTask = getTask(task.id) ?? task;
+          final speed = _computeSpeed(task.id, sent);
           updateTask(
             currentTask.copyWith(
               uploadedBytes: sent,
               progress: progress,
+              speed: speed,
             ),
           );
           _emitProgress(task.id, progress);
@@ -516,10 +526,12 @@ class UploadService extends ChangeNotifier {
         (sent, total) {
           final progress = sent / total;
           final currentTask = getTask(task.id) ?? task;
+          final speed = _computeSpeed(task.id, sent);
           updateTask(
             currentTask.copyWith(
               uploadedBytes: sent,
               progress: progress,
+              speed: speed,
             ),
           );
           _emitProgress(task.id, progress);
@@ -534,5 +546,41 @@ class UploadService extends ChangeNotifier {
     if (controller != null && !controller.isClosed) {
       controller.add(progress);
     }
+  }
+
+  /// 计算上传速度
+  int _computeSpeed(String taskId, int uploadedBytes) {
+    final tracker = _speedTrackers[taskId];
+    if (tracker == null) {
+      _speedTrackers[taskId] = _SpeedTracker(uploadedBytes);
+      return 0;
+    }
+    return tracker.update(uploadedBytes);
+  }
+
+  /// 清理速度追踪器
+  void _cleanSpeedTracker(String taskId) {
+    _speedTrackers.remove(taskId);
+  }
+}
+
+/// 上传速度追踪器
+class _SpeedTracker {
+  int lastBytes;
+  DateTime lastTime;
+
+  _SpeedTracker(this.lastBytes) : lastTime = DateTime.now();
+
+  int update(int currentBytes) {
+    final now = DateTime.now();
+    final elapsed = now.difference(lastTime).inMilliseconds;
+    if (elapsed < 200) return 0; // 至少 200ms 间隔才计算
+
+    final bytesDelta = currentBytes - lastBytes;
+    final speed = (bytesDelta * 1000 / elapsed).round();
+
+    lastBytes = currentBytes;
+    lastTime = now;
+    return speed > 0 ? speed : 0;
   }
 }

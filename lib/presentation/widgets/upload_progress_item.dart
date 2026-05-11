@@ -106,6 +106,17 @@ class UploadProgressItem extends StatelessWidget {
                         style: const TextStyle(fontSize: 12),
                       ),
                       const Spacer(),
+                      if (isUploading && task.speedText.isNotEmpty) ...[
+                        Text(
+                          task.speedText,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Theme.of(context).colorScheme.primary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                      ],
                       Text(
                         task.readableFileSize,
                         style: const TextStyle(fontSize: 12),

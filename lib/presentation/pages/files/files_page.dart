@@ -377,12 +377,21 @@ class _FilesPageState extends State<FilesPage> {
                 _onFabSubAction(() => FileOperationDialogs.showCreateDialog(context, fileManager));
               },
             ),
+            _buildFabSubItem(
+              context: context,
+              index: 3,
+              icon: LucideIcons.download,
+              label: '离线下载',
+              isDark: isDark,
+              colorScheme: colorScheme,
+              onTap: () => _onFabSubAction(() => Navigator.of(context).pushNamed(RouteNames.remoteDownload)),
+            ),
             Consumer<FileManagerProvider>(
               builder: (context, fileManager, _) {
                 final isListView = fileManager.viewType == FileViewType.list;
                 return _buildFabSubItem(
                   context: context,
-                  index: 3,
+                  index: 4,
                   icon: isListView ? LucideIcons.layoutGrid : LucideIcons.list,
                   label: isListView ? '网格视图' : '列表视图',
                   isDark: isDark,

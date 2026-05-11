@@ -413,22 +413,30 @@ class ServerSelectorSheet extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           Expanded(
-            child: ListView.separated(
-              shrinkWrap: true,
-              itemCount: servers.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 8),
-              itemBuilder: (context, index) {
-                final server = servers[index];
-                final isSelected = currentServer?.label == server.label;
-                return _ServerListItem(
-                  server: server,
-                  isSelected: isSelected,
-                  onTap: () async {
-                    await ServerService.instance.selectServer(server.label);
-                    if (context.mounted) Navigator.of(context).pop();
-                  },
-                );
+            child: RadioGroup<String>(
+              groupValue: currentServer?.label,
+              onChanged: (value) async {
+                if (value == null) return;
+                await ServerService.instance.selectServer(value);
+                if (context.mounted) Navigator.of(context).pop();
               },
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: servers.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 8),
+                itemBuilder: (context, index) {
+                  final server = servers[index];
+                  final isSelected = currentServer?.label == server.label;
+                  return _ServerListItem(
+                    server: server,
+                    isSelected: isSelected,
+                    onTap: () async {
+                      await ServerService.instance.selectServer(server.label);
+                      if (context.mounted) Navigator.of(context).pop();
+                    },
+                  );
+                },
+              ),
             ),
           ),
         ],
@@ -454,8 +462,6 @@ class _ServerListItem extends StatelessWidget {
     return ListTile(
       leading: Radio<String>(
         value: server.label,
-        groupValue: ServerService.instance.currentServer?.label,
-        onChanged: (_) => onTap(),
       ),
       title: Text(
         server.label,

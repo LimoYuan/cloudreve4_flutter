@@ -1277,10 +1277,13 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
+          insetPadding: EdgeInsets.symmetric(
+            horizontal: isDesktop ? 40 : MediaQuery.of(ctx).size.width * 0.05,
+          ),
           title: const Text('新建离线下载'),
           content: ConstrainedBox(
             constraints: BoxConstraints(
-              maxWidth: isDesktop ? 500 : MediaQuery.of(ctx).size.width - 48,
+              maxWidth: isDesktop ? 500 : MediaQuery.of(ctx).size.width * 0.9,
               maxHeight: MediaQuery.of(ctx).size.height * 0.75,
             ),
             child: Column(

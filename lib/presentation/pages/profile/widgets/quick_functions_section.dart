@@ -1,4 +1,3 @@
-import 'package:cloudreve4_flutter/presentation/widgets/glassmorphism_container.dart';
 import 'package:cloudreve4_flutter/router/app_router.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
@@ -27,6 +26,7 @@ class QuickFunctionsSection extends StatelessWidget {
   ];
 
   static const double _spacing = 12;
+  static const double _runSpacing = 4;
   static const double _minItemWidth = 120;
 
   @override
@@ -52,7 +52,6 @@ class QuickFunctionsSection extends StatelessWidget {
         LayoutBuilder(
           builder: (context, constraints) {
             final availableWidth = constraints.maxWidth;
-            // 计算每行能放几个
             int perRow = 1;
             while (perRow < _functions.length) {
               final next = perRow + 1;
@@ -64,7 +63,7 @@ class QuickFunctionsSection extends StatelessWidget {
 
             return Wrap(
               spacing: _spacing,
-              runSpacing: _spacing,
+              runSpacing: _runSpacing,
               children: _functions.map((fn) {
                 return SizedBox(
                   width: itemWidth,
@@ -106,43 +105,31 @@ class _QuickFunctionCardState extends State<_QuickFunctionCard> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: GestureDetector(
+    return Card(
+      color: _hovered
+          ? colorScheme.surfaceContainerHighest
+          : null,
+      child: InkWell(
         onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
-          child: GlassmorphismContainer(
-            borderRadius: 16,
-            sigmaX: 10,
-            sigmaY: 10,
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-            child: Row(
-              children: [
-                Icon(
-                  widget.icon,
-                  size: 20,
-                  color: _hovered
-                      ? colorScheme.primary
-                      : colorScheme.onSurface.withValues(alpha: 0.7),
-                ),
-                const SizedBox(width: 10),
-                Flexible(
-                  child: Text(
-                    widget.label,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w500,
-                      color: _hovered
-                          ? colorScheme.primary
-                          : colorScheme.onSurface,
-                    ),
-                    overflow: TextOverflow.ellipsis,
+        borderRadius: BorderRadius.circular(12),
+        onHover: (v) => setState(() => _hovered = v),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          child: Row(
+            children: [
+              Icon(widget.icon, size: 20, color: colorScheme.primary),
+              const SizedBox(width: 10),
+              Flexible(
+                child: Text(
+                  widget.label,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w500,
+                    color: _hovered ? colorScheme.primary : null,
                   ),
+                  overflow: TextOverflow.ellipsis,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),

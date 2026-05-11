@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:ui';
 
+import 'package:cross_file/cross_file.dart';
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:cloudreve4_flutter/data/models/file_model.dart';
 import 'package:cloudreve4_flutter/services/file_service.dart';
 import 'package:cloudreve4_flutter/services/upload_service.dart';
@@ -11,6 +14,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../providers/file_manager_provider.dart';
 import '../../providers/download_manager_provider.dart';
+import '../../providers/upload_manager_provider.dart';
 import '../../providers/navigation_provider.dart';
 import '../../widgets/file_list_item.dart';
 import '../../widgets/file_grid_item.dart';
@@ -42,6 +46,9 @@ class _FilesPageState extends State<FilesPage> {
   bool _isFabVisible = true;
   bool _isFabExpanded = false;
   Timer? _fabShowTimer;
+
+  // 桌面端拖拽状态
+  bool _isDraggingOver = false;
 
   @override
   void initState() {
@@ -548,7 +555,74 @@ class _FilesPageState extends State<FilesPage> {
   // ---- Body ----
 
   Widget _buildBody(BuildContext context) {
-    return _buildFileList(context);
+    final isDesktop = MediaQuery.of(context).size.width >= 1000;
+    final child = _buildFileList(context);
+
+    if (!isDesktop || !Platform.isWindows && !Platform.isLinux && !Platform.isMacOS) {
+      return child;
+    }
+
+    return DropTarget(
+      onDragEntered: (_) => setState(() => _isDraggingOver = true),
+      onDragExited: (_) => setState(() => _isDraggingOver = false),
+      onDragDone: (details) {
+        setState(() => _isDraggingOver = false);
+        _handleDroppedFiles(details.files);
+      },
+      child: Stack(
+        children: [
+          child,
+          if (_isDraggingOver)
+            IgnorePointer(
+              child: Container(
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.primary,
+                    width: 3,
+                    strokeAlign: BorderSide.strokeAlignOutside,
+                  ),
+                  borderRadius: BorderRadius.circular(8),
+                  color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.85),
+                ),
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(LucideIcons.upload, size: 48, color: Theme.of(context).colorScheme.primary),
+                      const SizedBox(height: 12),
+                      Text(
+                        '释放文件以上传到当前目录',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.primary,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  void _handleDroppedFiles(List<XFile> droppedFiles) {
+    final files = <File>[];
+    for (final xFile in droppedFiles) {
+      final path = xFile.path;
+      if (path.isNotEmpty) {
+        files.add(File(path));
+      }
+    }
+    if (files.isEmpty) return;
+
+    final uploadManager = Provider.of<UploadManagerProvider>(context, listen: false);
+    final fileManager = Provider.of<FileManagerProvider>(context, listen: false);
+    uploadManager.markShouldShowDialog();
+    uploadManager.startUpload(files, fileManager.currentPath);
+    ToastHelper.info('已添加 ${files.length} 个文件到上传队列');
   }
 
   Widget _buildFileList(BuildContext context) {

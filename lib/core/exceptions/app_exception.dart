@@ -51,3 +51,11 @@ class FileNotFoundException extends AppException {
 class StorageSpaceException extends AppException {
   StorageSpaceException() : super('存储空间不足', code: 507);
 }
+
+/// 两步验证需要异常
+class TwoFactorRequiredException extends AuthException {
+  final String sessionId;
+
+  TwoFactorRequiredException(this.sessionId)
+      : super('需要两步验证', code: 203);
+}

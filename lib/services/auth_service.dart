@@ -1,6 +1,7 @@
 import '../data/models/user_model.dart';
 import 'api_service.dart';
 import '../core/utils/app_logger.dart';
+import '../core/exceptions/app_exception.dart';
 
 /// 认证服务
 class AuthService {
@@ -42,6 +43,13 @@ class AuthService {
     );
 
     AppLogger.d('AuthService -> 登录响应: $response');
+
+    // code 203 表示需要两步验证
+    final code = response['code'] as int?;
+    if (code == 203) {
+      final sessionId = response['data'] as String;
+      throw TwoFactorRequiredException(sessionId);
+    }
 
     return LoginResponseModel.fromJson(response);
   }

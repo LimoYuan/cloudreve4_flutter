@@ -155,6 +155,44 @@ class AuthProvider extends ChangeNotifier {
       setState(AuthState.authenticated);
 
       return true;
+    } on TwoFactorRequiredException {
+      // 两步验证需要，不设置 error 状态，重新抛出让调用方处理
+      setState(AuthState.unauthenticated);
+      rethrow;
+    } catch (e) {
+      _errorMessage = e.toString();
+      _user = null;
+      setState(AuthState.error);
+      return false;
+    }
+  }
+
+  /// 两步验证登录
+  Future<bool> twoFactorLogin({
+    required String otp,
+    required String sessionId,
+    required String email,
+    required String password,
+    bool rememberMe = false,
+  }) async {
+    try {
+      setState(AuthState.loading);
+
+      final response = await AuthService.instance.twoFactorLogin(
+        otp: otp,
+        sessionId: sessionId,
+      );
+
+      await ServerService.instance.updateCurrentServerLogin(
+        email: rememberMe ? email : null,
+        password: rememberMe ? password : null,
+        user: response.user,
+        rememberMe: rememberMe,
+      );
+
+      setUser(response.user);
+      setState(AuthState.authenticated);
+      return true;
     } catch (e) {
       _errorMessage = e.toString();
       _user = null;

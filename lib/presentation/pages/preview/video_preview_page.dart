@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
-import '../../../core/utils/video_fullscreen.dart';
 import '../../../data/models/file_model.dart';
 import '../../../services/file_service.dart';
 import 'widgets/video_controls_overlay.dart';
@@ -108,8 +107,6 @@ class _VideoPreviewPageState extends State<VideoPreviewPage> {
                   child: Video(
                     controller: controller,
                     controls: (state) => VideoControlsOverlay(state: state, title: widget.file.name),
-                    onEnterFullscreen: enterVideoFullscreen,
-                    onExitFullscreen: exitVideoFullscreen,
                   ),
                 ),
     );

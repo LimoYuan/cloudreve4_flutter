@@ -9,9 +9,6 @@ import 'package:window_manager/window_manager.dart';
 import '../../../../core/utils/video_fullscreen.dart';
 
 /// 自定义视频控制栏叠加层（Bilibili 风格）
-///
-/// 作为 [Video.controls] 传入，确保 context 在 VideoStateInheritedWidget 下，
-/// 使 toggleFullscreen/isFullscreen 等 API 正常工作。
 class VideoControlsOverlay extends StatefulWidget {
   final VideoState state;
   final String title;
@@ -38,11 +35,14 @@ class _VideoControlsOverlayState extends State<VideoControlsOverlay> with Window
   bool _volumeSliderVisible = false;
   double _volumeBeforeMute = 100.0;
 
-  // 桌面端自管全屏状态（不走 media_kit 路由全屏）
-  bool _desktopFullscreen = false;
+  // 自管全屏状态
+  bool _isFullscreen = false;
 
   // 键盘焦点
   final FocusNode _focusNode = FocusNode();
+
+  // 桌面端鼠标悬停
+  Timer? _mouseHoverTimer;
 
   bool get _isDesktop => Platform.isWindows || Platform.isLinux || Platform.isMacOS;
 
@@ -53,7 +53,6 @@ class _VideoControlsOverlayState extends State<VideoControlsOverlay> with Window
     if (_isDesktop) {
       windowManager.addListener(this);
     }
-    // 自动聚焦以接收键盘事件
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _focusNode.requestFocus();
     });
@@ -62,42 +61,118 @@ class _VideoControlsOverlayState extends State<VideoControlsOverlay> with Window
   @override
   void dispose() {
     _hideTimer?.cancel();
+    _mouseHoverTimer?.cancel();
     _focusNode.dispose();
     if (_isDesktop) {
       windowManager.removeListener(this);
     }
+    if (_isFullscreen) {
+      _doExitFullscreen();
+    }
     super.dispose();
   }
 
+  // ========== WindowListener（桌面端） ==========
+
   @override
   void onWindowEnterFullScreen() {
-    if (!_desktopFullscreen && mounted) {
-      setState(() => _desktopFullscreen = true);
+    if (!_isFullscreen && mounted) {
+      setState(() => _isFullscreen = true);
     }
   }
 
   @override
   void onWindowLeaveFullScreen() {
-    if (_desktopFullscreen && mounted) {
-      setState(() => _desktopFullscreen = false);
+    if (_isFullscreen && mounted) {
+      setState(() => _isFullscreen = false);
       videoFullscreenNotifier.value = false;
     }
   }
+
+  // ========== 全屏控制 ==========
+
+  Future<void> _toggleFullscreen() async {
+    if (_isFullscreen) {
+      await _doExitFullscreen();
+    } else {
+      await _doEnterFullscreen();
+    }
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _doEnterFullscreen() async {
+    _isFullscreen = true;
+    if (_isDesktop) {
+      videoFullscreenNotifier.value = true;
+      await windowManager.setFullScreen(true);
+    } else {
+      await Future.wait([
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky, overlays: []),
+        SystemChrome.setPreferredOrientations([
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight,
+        ]),
+      ]);
+    }
+  }
+
+  Future<void> _doExitFullscreen() async {
+    _isFullscreen = false;
+    if (_isDesktop) {
+      await windowManager.setFullScreen(false);
+      videoFullscreenNotifier.value = false;
+    } else {
+      await Future.wait([
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual, overlays: SystemUiOverlay.values),
+        SystemChrome.setPreferredOrientations([
+          DeviceOrientation.portraitUp,
+          DeviceOrientation.portraitDown,
+        ]),
+      ]);
+    }
+  }
+
+  void _onBack() {
+    if (_isFullscreen) {
+      _doExitFullscreen().then((_) {
+        if (mounted) setState(() {});
+      });
+    } else {
+      Navigator.of(context).pop();
+    }
+  }
+
+  // ========== 控制栏显隐 ==========
 
   void _startHideTimer() {
     _hideTimer?.cancel();
     _hideTimer = Timer(const Duration(seconds: 3), () {
       if (mounted && !_isLongPressing) {
-        setState(() => _controlsVisible = false);
+        _hideControls();
       }
     });
   }
 
-  void _toggleControls() {
+  void _hideControls() {
     setState(() {
-      _controlsVisible = !_controlsVisible;
-      if (_controlsVisible) _startHideTimer();
+      _controlsVisible = false;
+      _volumeSliderVisible = false;
     });
+  }
+
+  void _showControls() {
+    setState(() {
+      _controlsVisible = true;
+    });
+    _startHideTimer();
+  }
+
+  void _toggleControls() {
+    if (_controlsVisible) {
+      _hideControls();
+    } else {
+      _showControls();
+    }
   }
 
   void _onLongPressStart() {
@@ -107,6 +182,7 @@ class _VideoControlsOverlayState extends State<VideoControlsOverlay> with Window
     setState(() {
       _isLongPressing = true;
       _controlsVisible = false;
+      _volumeSliderVisible = false;
     });
   }
 
@@ -119,55 +195,39 @@ class _VideoControlsOverlayState extends State<VideoControlsOverlay> with Window
     _startHideTimer();
   }
 
-  Future<void> _toggleFullscreen() async {
-    if (_isDesktop) {
-      // 桌面端：直接控制窗口全屏，不走 media_kit 路由
-      final isFull = await windowManager.isFullScreen();
-      if (isFull) {
-        await windowManager.setFullScreen(false);
-        videoFullscreenNotifier.value = false;
-        setState(() => _desktopFullscreen = false);
-      } else {
-        videoFullscreenNotifier.value = true;
-        await windowManager.setFullScreen(true);
-        setState(() => _desktopFullscreen = true);
-      }
-    } else {
-      // 移动端：使用 media_kit 的路由全屏 + 系统 UI 控制
-      if (isFullscreen(context)) {
-        exitFullscreen(context);
-      } else {
-        enterFullscreen(context);
-      }
+  // ========== 桌面端鼠标悬停 ==========
+
+  void _onMouseHover(PointerHoverEvent event) {
+    if (!_controlsVisible) {
+      setState(() => _controlsVisible = true);
     }
+    _hideTimer?.cancel();
+    _mouseHoverTimer?.cancel();
+    _mouseHoverTimer = Timer(const Duration(seconds: 1), () {
+      if (mounted && !_isLongPressing && !_volumeSliderVisible && !_isSeeking) {
+        _hideControls();
+      }
+    });
   }
 
-  void _onBack() {
-    if (_isDesktop && _desktopFullscreen) {
-      windowManager.setFullScreen(false);
-      videoFullscreenNotifier.value = false;
-      setState(() => _desktopFullscreen = false);
-    } else if (!_isDesktop && isFullscreen(context)) {
-      exitFullscreen(context);
-    } else {
-      Navigator.of(context).pop();
-    }
+  void _onMouseExit(PointerExitEvent event) {
+    _mouseHoverTimer?.cancel();
+    _startHideTimer();
   }
 
-  bool get _isInFullscreen {
-    if (_isDesktop) return _desktopFullscreen;
-    return isFullscreen(context);
-  }
+  // ========== 键盘快捷键 ==========
 
   void _onKeyEvent(KeyEvent event) {
     if (event is! KeyDownEvent) return;
     final key = event.logicalKey;
     if (key == LogicalKeyboardKey.space) {
       player.playOrPause();
+    } else if (key == LogicalKeyboardKey.keyM) {
+      _toggleMute();
     } else if (key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.numpadEnter) {
       _toggleFullscreen();
     } else if (key == LogicalKeyboardKey.escape) {
-      if (_isInFullscreen) _onBack();
+      if (_isFullscreen) _onBack();
     } else if (key == LogicalKeyboardKey.arrowLeft) {
       final pos = player.state.position - const Duration(seconds: 5);
       player.seek(pos < Duration.zero ? Duration.zero : pos);
@@ -183,6 +243,35 @@ class _VideoControlsOverlayState extends State<VideoControlsOverlay> with Window
       player.setVolume(vol);
     }
   }
+
+  void _toggleMute() {
+    if (player.state.volume <= 0) {
+      player.setVolume(_volumeBeforeMute);
+    } else {
+      _volumeBeforeMute = player.state.volume;
+      player.setVolume(0);
+    }
+  }
+
+  // ========== 音量图标点击 ==========
+
+  void _onVolumeIconTap(double currentVolume) {
+    if (_volumeSliderVisible) {
+      // 滑条已展开，再次点击小喇叭 → 静音
+      if (currentVolume <= 0) {
+        player.setVolume(_volumeBeforeMute);
+      } else {
+        _volumeBeforeMute = currentVolume;
+        player.setVolume(0);
+      }
+    } else {
+      // 滑条未展开，展开滑条
+      _hideTimer?.cancel();
+      setState(() => _volumeSliderVisible = true);
+    }
+  }
+
+  // ========== 倍速菜单 ==========
 
   void _showSpeedMenu() {
     _hideTimer?.cancel();
@@ -238,6 +327,8 @@ class _VideoControlsOverlayState extends State<VideoControlsOverlay> with Window
     );
   }
 
+  // ========== 工具方法 ==========
+
   String _formatDuration(Duration d) {
     final h = d.inHours;
     final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
@@ -245,84 +336,108 @@ class _VideoControlsOverlayState extends State<VideoControlsOverlay> with Window
     return h > 0 ? '$h:$m:$s' : '$m:$s';
   }
 
+  // ========== 构建 UI ==========
+
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      canPop: !_isInFullscreen,
-      onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) _onBack();
-      },
-      child: KeyboardListener(
-        focusNode: _focusNode,
-        onKeyEvent: _onKeyEvent,
-        child: GestureDetector(
-          behavior: HitTestBehavior.translucent,
-          onTap: _toggleControls,
-          onDoubleTap: () => player.playOrPause(),
-          onLongPressStart: (_) => _onLongPressStart(),
-          onLongPressEnd: (_) => _onLongPressEnd(),
-          child: Stack(
-          fit: StackFit.expand,
-          children: [
-            // 长按2倍速提示
-            if (_isLongPressing)
-              Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: Colors.black54,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.fast_forward, color: Colors.white, size: 20),
-                      const SizedBox(width: 8),
-                      Text(
-                        '2.0x 快进中',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          shadows: [Shadow(color: Colors.black.withValues(alpha: 0.5), blurRadius: 4)],
-                        ),
-                      ),
-                    ],
-                  ),
+    Widget overlay = GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: _toggleControls,
+      onDoubleTap: () => player.playOrPause(),
+      onLongPressStart: (_) => _onLongPressStart(),
+      onLongPressEnd: (_) => _onLongPressEnd(),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // 长按2倍速提示
+          if (_isLongPressing)
+            Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(8),
                 ),
-              ),
-
-            // Buffering 指示器
-            StreamBuilder<bool>(
-              stream: player.stream.buffering,
-              builder: (context, snapshot) {
-                final buffering = snapshot.data ?? false;
-                if (!buffering) return const SizedBox.shrink();
-                return const Center(
-                  child: CircularProgressIndicator(color: Colors.white70),
-                );
-              },
-            ),
-
-            // 控制栏
-            AnimatedOpacity(
-              opacity: _controlsVisible ? 1.0 : 0.0,
-              duration: const Duration(milliseconds: 250),
-              child: IgnorePointer(
-                ignoring: !_controlsVisible,
-                child: Column(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    _buildTopBar(),
-                    const Spacer(),
-                    _buildBottomBar(),
+                    const Icon(Icons.fast_forward, color: Colors.white, size: 20),
+                    const SizedBox(width: 8),
+                    Text(
+                      '2.0x 快进中',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        shadows: [Shadow(color: Colors.black.withValues(alpha: 0.5), blurRadius: 4)],
+                      ),
+                    ),
                   ],
                 ),
               ),
             ),
-          ],
+
+          // Buffering 指示器
+          StreamBuilder<bool>(
+            stream: player.stream.buffering,
+            builder: (context, snapshot) {
+              final buffering = snapshot.data ?? false;
+              if (!buffering) return const SizedBox.shrink();
+              return const Center(
+                child: CircularProgressIndicator(color: Colors.white70),
+              );
+            },
+          ),
+
+          // 控制栏
+          AnimatedOpacity(
+            opacity: _controlsVisible ? 1.0 : 0.0,
+            duration: const Duration(milliseconds: 250),
+            child: IgnorePointer(
+              ignoring: !_controlsVisible,
+              child: Column(
+                children: [
+                  _buildTopBar(),
+                  const Spacer(),
+                  _buildBottomBar(),
+                ],
+              ),
+            ),
+          ),
+
+          // 桌面端快捷键提示
+          if (_isDesktop)
+            AnimatedOpacity(
+              opacity: _controlsVisible ? 0.4 : 0.0,
+              duration: const Duration(milliseconds: 250),
+              child: IgnorePointer(
+                ignoring: !_controlsVisible,
+                child: _buildShortcutsHint(),
+              ),
+            ),
+        ],
+      ),
+    );
+
+    // 桌面端：鼠标悬停 + 键盘
+    if (_isDesktop) {
+      overlay = MouseRegion(
+        onHover: _onMouseHover,
+        onExit: _onMouseExit,
+        child: KeyboardListener(
+          focusNode: _focusNode,
+          onKeyEvent: _onKeyEvent,
+          child: overlay,
         ),
-      ),
-      ),
+      );
+    }
+
+    return PopScope(
+      canPop: !_isFullscreen,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _onBack();
+      },
+      child: overlay,
     );
   }
 
@@ -450,7 +565,7 @@ class _VideoControlsOverlayState extends State<VideoControlsOverlay> with Window
         // 全屏按钮
         IconButton(
           icon: Icon(
-            _isInFullscreen ? Icons.fullscreen_exit : Icons.fullscreen,
+            _isFullscreen ? Icons.fullscreen_exit : Icons.fullscreen,
             color: Colors.white,
           ),
           onPressed: _toggleFullscreen,
@@ -478,16 +593,12 @@ class _VideoControlsOverlayState extends State<VideoControlsOverlay> with Window
         return Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            IconButton(
-              icon: Icon(volumeIcon, color: Colors.white, size: 22),
-              onPressed: () {
-                if (isMuted) {
-                  player.setVolume(_volumeBeforeMute);
-                } else {
-                  _volumeBeforeMute = volume;
-                  player.setVolume(0);
-                }
-              },
+            GestureDetector(
+              onTap: () => _onVolumeIconTap(volume),
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: Icon(volumeIcon, color: Colors.white, size: 22),
+              ),
             ),
             AnimatedSize(
               duration: const Duration(milliseconds: 200),
@@ -511,31 +622,31 @@ class _VideoControlsOverlayState extends State<VideoControlsOverlay> with Window
                           max: 100,
                           onChanged: (v) {
                             _hideTimer?.cancel();
+                            _mouseHoverTimer?.cancel();
                             player.setVolume(v);
                           },
-                          onChangeEnd: (_) => _startHideTimer(),
+                          onChangeEnd: (_) {
+                            _startHideTimer();
+                            if (_isDesktop) _startMouseHoverTimer();
+                          },
                         ),
                       ),
                     )
                   : const SizedBox(width: 0),
             ),
-            GestureDetector(
-              onTap: () {
-                setState(() => _volumeSliderVisible = !_volumeSliderVisible);
-              },
-              child: Padding(
-                padding: const EdgeInsets.only(left: 2, right: 4, top: 8, bottom: 8),
-                child: Icon(
-                  _volumeSliderVisible ? Icons.chevron_left : Icons.chevron_right,
-                  color: Colors.white54,
-                  size: 16,
-                ),
-              ),
-            ),
           ],
         );
       },
     );
+  }
+
+  void _startMouseHoverTimer() {
+    _mouseHoverTimer?.cancel();
+    _mouseHoverTimer = Timer(const Duration(seconds: 1), () {
+      if (mounted && !_isLongPressing && !_volumeSliderVisible && !_isSeeking) {
+        _hideControls();
+      }
+    });
   }
 
   Widget _buildSeekBar() {
@@ -568,6 +679,7 @@ class _VideoControlsOverlayState extends State<VideoControlsOverlay> with Window
                   value: value.clamp(0.0, 1.0),
                   onChanged: (v) {
                     _hideTimer?.cancel();
+                    _mouseHoverTimer?.cancel();
                     setState(() {
                       _isSeeking = true;
                       _seekPosition = Duration(
@@ -582,6 +694,7 @@ class _VideoControlsOverlayState extends State<VideoControlsOverlay> with Window
                     player.seek(seekTo);
                     setState(() => _isSeeking = false);
                     _startHideTimer();
+                    if (_isDesktop) _startMouseHoverTimer();
                   },
                 ),
               ),
@@ -589,6 +702,63 @@ class _VideoControlsOverlayState extends State<VideoControlsOverlay> with Window
           },
         );
       },
+    );
+  }
+
+  Widget _buildShortcutsHint() {
+    const shortcuts = [
+      ('Space', '暂停/播放'),
+      ('M', '静音'),
+      ('Enter', '全屏'),
+      ('Esc', '退出全屏'),
+      ('←→', '快退/快进 5s'),
+      ('↑↓', '音量 ±5'),
+    ];
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Padding(
+        padding: EdgeInsets.only(
+          right: 12,
+          top: MediaQuery.of(context).padding.top + 48,
+        ),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.black38,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: shortcuts.map((s) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 1.5),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 42,
+                      child: Text(
+                        s.$1,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          fontFamily: 'monospace',
+                        ),
+                      ),
+                    ),
+                    Text(
+                      s.$2,
+                      style: const TextStyle(color: Colors.white70, fontSize: 10),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+      ),
     );
   }
 }

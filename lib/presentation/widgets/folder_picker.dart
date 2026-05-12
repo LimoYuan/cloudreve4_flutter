@@ -7,11 +7,13 @@ import '../../core/utils/app_logger.dart';
 class FolderPicker extends StatefulWidget {
   final String currentPath;
   final void Function(String path) onFolderSelected;
+  final int? maxVisibleItems;
 
   const FolderPicker({
     super.key,
     required this.currentPath,
     required this.onFolderSelected,
+    this.maxVisibleItems,
   });
 
   @override
@@ -67,95 +69,89 @@ class _FolderPickerState extends State<FolderPicker> {
   @override
   Widget build(BuildContext context) {
     final primaryColor = Theme.of(context).colorScheme.primary;
+    final maxHeight = MediaQuery.of(context).size.height * 0.5;
 
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
         _buildBreadcrumb(context, primaryColor),
         const Divider(height: 1),
-        Expanded(
-          child: _isLoading
-              ? const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(32),
-                    child: CircularProgressIndicator(),
-                  ),
-                )
-              : _folders.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.folder_off,
-                            size: 48,
-                            color: Colors.grey.shade400,
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            '此文件夹为空',
-                            style: TextStyle(
-                              color: Colors.grey.shade600,
-                              fontSize: 14,
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                  : ListView.separated(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      itemCount: _folders.length,
-                      separatorBuilder: (_, _) => const Divider(
-                        height: 1,
-                        indent: 56,
-                        endIndent: 16,
-                      ),
-                      itemBuilder: (context, index) {
-                        final folder = _folders[index];
-                        return InkWell(
-                          onTap: () => _enterFolder(folder),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 8,
-                            ),
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: 40,
-                                  height: 40,
-                                  decoration: BoxDecoration(
-                                    color: primaryColor.withValues(alpha: 0.1),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Icon(
-                                    Icons.folder,
-                                    color: primaryColor,
-                                    size: 24,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Text(
-                                    folder.name,
-                                    style: const TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ),
-                                Icon(
-                                  Icons.chevron_right,
-                                  color: Colors.grey.shade400,
-                                  size: 20,
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
+        Flexible(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: widget.maxVisibleItems != null
+                  ? (widget.maxVisibleItems! * 56.0 + 40.0).clamp(80.0, maxHeight)
+                  : maxHeight,
+            ),
+            child: _buildListContent(context, primaryColor),
+          ),
         ),
       ],
+    );
+  }
+
+  Widget _buildListContent(BuildContext context, Color primaryColor) {
+    if (_isLoading) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(32),
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    if (_folders.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.folder_off, size: 48, color: Colors.grey.shade400),
+            const SizedBox(height: 12),
+            Text('此文件夹为空', style: TextStyle(color: Colors.grey.shade600, fontSize: 14)),
+          ],
+        ),
+      );
+    }
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (int i = 0; i < _folders.length; i++) ...[
+            if (i > 0) const Divider(height: 1, indent: 56, endIndent: 16),
+            _buildFolderItem(_folders[i], primaryColor),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFolderItem(FileModel folder, Color primaryColor) {
+    return InkWell(
+      onTap: () => _enterFolder(folder),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: primaryColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(Icons.folder, color: primaryColor, size: 24),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(folder.name, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500)),
+            ),
+            Icon(Icons.chevron_right, color: Colors.grey.shade400, size: 20),
+          ],
+        ),
+      ),
     );
   }
 
@@ -211,7 +207,12 @@ class _FolderPickerState extends State<FolderPicker> {
               ),
               const SizedBox(width: 12),
               FilledButton.tonal(
-                onPressed: () => widget.onFolderSelected(_currentPath),
+                onPressed: () {
+                  final relative = _currentPath.startsWith('cloudreve://my')
+                      ? _currentPath.replaceFirst('cloudreve://my', '')
+                      : _currentPath;
+                  widget.onFolderSelected(relative.isEmpty ? '/' : relative);
+                },
                 style: FilledButton.styleFrom(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 ),

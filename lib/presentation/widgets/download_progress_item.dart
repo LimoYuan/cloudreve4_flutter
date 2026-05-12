@@ -1,6 +1,8 @@
 import 'dart:io';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:lucide_icons/lucide_icons.dart';
 import 'package:open_file/open_file.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
@@ -31,7 +33,6 @@ class DownloadProgressItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 从 DownloadManagerProvider 获取最新的任务状态
     final downloadManager = Provider.of<DownloadManagerProvider>(
       context,
       listen: true,
@@ -39,109 +40,160 @@ class DownloadProgressItem extends StatelessWidget {
     final latestTask = downloadManager.getTask(task.id) ?? task;
 
     final isDownloading = latestTask.status == DownloadStatus.downloading;
-    final isCompleted = latestTask.status == DownloadStatus.completed;
     final isPaused = latestTask.status == DownloadStatus.paused;
     final isFailed = latestTask.status == DownloadStatus.failed;
 
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 文件名和状态
-            Row(
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Container(
+            decoration: BoxDecoration(
+              color: _getCardColor(context, latestTask.status, waitingForWifi: latestTask.waitingForWifi),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: _getBorderColor(context, latestTask.status, waitingForWifi: latestTask.waitingForWifi),
+              ),
+            ),
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        task.fileName,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w500,
-                          fontSize: 14,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                Row(
+                  children: [
+                    _buildStatusIcon(context, latestTask.status, waitingForWifi: latestTask.waitingForWifi),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            task.fileName,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w500,
+                              fontSize: 14,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 4),
+                          _buildStatusRow(context, latestTask),
+                        ],
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        latestTask.statusText,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: _getStatusColor(latestTask.status),
+                    ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: _buildActionButtons(context, latestTask),
+                    ),
+                  ],
+                ),
+                if (isDownloading || isPaused) ...[
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: LinearProgressIndicator(
+                          value: isPaused ? null : latestTask.progress,
+                          backgroundColor: Colors.grey.shade200,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Theme.of(context).colorScheme.primary,
+                          ),
                         ),
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        isPaused ? '已暂停' : latestTask.progressText,
+                        style: const TextStyle(fontSize: 12),
                       ),
                     ],
                   ),
-                ),
-                // 操作按钮
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: _buildActionButtons(context, latestTask),
-                ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Text(
+                        '${DownloadService.getReadableFileSize(latestTask.downloadedBytes)} / '
+                        '${DownloadService.getReadableFileSize(latestTask.fileSize)}',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      if (latestTask.speedText.isNotEmpty) ...[
+                        const SizedBox(width: 12),
+                        Text(
+                          latestTask.speedText,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ] else if (isFailed && latestTask.errorMessage != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    latestTask.errorMessage!,
+                    style: TextStyle(fontSize: 12, color: Colors.red.shade700),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
               ],
             ),
-            const SizedBox(height: 12),
-
-            // 进度条
-            if (isDownloading || isPaused) ...[
-              Row(
-                children: [
-                  Expanded(
-                    child: LinearProgressIndicator(
-                      value: isPaused ? null : latestTask.progress,
-                      backgroundColor: Colors.grey.shade200,
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        Theme.of(context).colorScheme.primary,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    isPaused ? '已暂停' : latestTask.progressText,
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  Text(
-                    '${DownloadService.getReadableFileSize(latestTask.downloadedBytes)} / '
-                    '${DownloadService.getReadableFileSize(latestTask.fileSize)}',
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                  if (latestTask.speedText.isNotEmpty) ...[
-                    const SizedBox(width: 12),
-                    Text(
-                      latestTask.speedText,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ] else if (isFailed && latestTask.errorMessage != null) ...[
-              Text(
-                latestTask.errorMessage!,
-                style: TextStyle(fontSize: 12, color: Colors.red.shade700),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ] else if (isCompleted) ...[
-              Text(
-                '完成时间: ${_formatDateTime(latestTask.completedAt!)}',
-                style: const TextStyle(fontSize: 12),
-              ),
-            ],
-          ],
+          ),
         ),
       ),
+    );
+  }
+
+  Widget _buildStatusIcon(BuildContext context, DownloadStatus status, {bool waitingForWifi = false}) {
+    final color = _getStatusColor(status, waitingForWifi: waitingForWifi);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Container(
+      width: 36,
+      height: 36,
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: isDark ? 0.2 : 0.1),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Icon(
+        _getStatusIcon(status, waitingForWifi: waitingForWifi),
+        size: 18,
+        color: color,
+      ),
+    );
+  }
+
+  Widget _buildStatusRow(BuildContext context, DownloadTaskModel task) {
+    final color = _getStatusColor(task.status, waitingForWifi: task.waitingForWifi);
+    final isCompleted = task.status == DownloadStatus.completed;
+
+    return Row(
+      children: [
+        Text(
+          task.statusText,
+          style: TextStyle(fontSize: 12, color: color),
+        ),
+        if (isCompleted) ...[
+          Text(
+            ' · ',
+            style: TextStyle(fontSize: 12, color: Theme.of(context).hintColor),
+          ),
+          Text(
+            DownloadService.getReadableFileSize(task.fileSize),
+            style: TextStyle(fontSize: 12, color: Theme.of(context).hintColor),
+          ),
+          Text(
+            ' · ',
+            style: TextStyle(fontSize: 12, color: Theme.of(context).hintColor),
+          ),
+          Text(
+            _formatDateTime(task.completedAt!),
+            style: TextStyle(fontSize: 12, color: Theme.of(context).hintColor),
+          ),
+        ],
+      ],
     );
   }
 
@@ -149,7 +201,20 @@ class DownloadProgressItem extends StatelessWidget {
     BuildContext context,
     DownloadTaskModel task,
   ) {
+    final errorColor = Theme.of(context).colorScheme.error;
+
     switch (task.status) {
+      case DownloadStatus.waiting:
+        if (task.waitingForWifi) {
+          return [
+            IconButton(
+              icon: Icon(Icons.cancel, size: 20, color: errorColor),
+              onPressed: onCancel,
+              tooltip: '取消',
+            ),
+          ];
+        }
+        return [];
       case DownloadStatus.downloading:
         return [
           IconButton(
@@ -166,7 +231,7 @@ class DownloadProgressItem extends StatelessWidget {
             tooltip: '继续',
           ),
           IconButton(
-            icon: const Icon(Icons.cancel, size: 20),
+            icon: Icon(Icons.cancel, size: 20, color: errorColor),
             onPressed: onCancel,
             tooltip: '取消',
           ),
@@ -179,38 +244,42 @@ class DownloadProgressItem extends StatelessWidget {
             tooltip: '重试',
           ),
           IconButton(
-            icon: const Icon(Icons.delete, size: 20, color: Colors.red),
+            icon: Icon(Icons.delete, size: 20, color: errorColor),
             onPressed: onDelete,
             tooltip: '删除',
           ),
         ];
       case DownloadStatus.completed:
+        final showOpenFolder = !Platform.isAndroid;
         return [
           IconButton(
             icon: const Icon(Icons.open_in_new, size: 20),
             onPressed: () => _openDownloadedFile(context, task),
             tooltip: '打开',
           ),
+          if (showOpenFolder)
+            IconButton(
+              icon: const Icon(Icons.folder_open, size: 20),
+              onPressed: () => _openFileFolder(context, task),
+              tooltip: '打开文件夹',
+            ),
           IconButton(
-            icon: const Icon(Icons.delete, size: 20),
+            icon: Icon(Icons.delete_outline, size: 20, color: errorColor),
             onPressed: onDelete,
             tooltip: '删除',
           ),
         ];
-      default:
+      case DownloadStatus.cancelled:
         return [];
     }
   }
 
-  // 打开apk执行安装逻辑前检查
   Future<void> checkInstallPermission() async {
     if (await Permission.requestInstallPackages.isDenied) {
-      // 引导用户去设置页面授权
       await Permission.requestInstallPackages.request();
     }
   }
 
-  /// 打开已下载的文件
   Future<void> _openDownloadedFile(
     BuildContext context,
     DownloadTaskModel task,
@@ -224,7 +293,6 @@ class DownloadProgressItem extends StatelessWidget {
     }
 
     try {
-      
       final ext = task.savePath.toString().split('.').last.toLowerCase();
       if (ext == 'apk') {
         await checkInstallPermission();
@@ -248,8 +316,43 @@ class DownloadProgressItem extends StatelessWidget {
     }
   }
 
-  Color _getStatusColor(DownloadStatus status) {
+  Future<void> _openFileFolder(
+    BuildContext context,
+    DownloadTaskModel task,
+  ) async {
+    try {
+      final dir = File(task.savePath).parent.path;
+      final result = await OpenFile.open(dir);
+      if (result.type != ResultType.done && context.mounted) {
+        ToastHelper.error('无法打开文件夹：${result.message}');
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ToastHelper.error('打开文件夹失败：$e');
+      }
+    }
+  }
+
+  IconData _getStatusIcon(DownloadStatus status, {bool waitingForWifi = false}) {
     switch (status) {
+      case DownloadStatus.waiting:
+        return waitingForWifi ? LucideIcons.wifi : LucideIcons.clock;
+      case DownloadStatus.downloading:
+        return LucideIcons.download;
+      case DownloadStatus.completed:
+        return LucideIcons.checkCircle2;
+      case DownloadStatus.paused:
+        return LucideIcons.pause;
+      case DownloadStatus.failed:
+      case DownloadStatus.cancelled:
+        return LucideIcons.xCircle;
+    }
+  }
+
+  Color _getStatusColor(DownloadStatus status, {bool waitingForWifi = false}) {
+    switch (status) {
+      case DownloadStatus.waiting:
+        return waitingForWifi ? Colors.blue : Colors.grey;
       case DownloadStatus.downloading:
         return Colors.blue;
       case DownloadStatus.completed:
@@ -259,8 +362,42 @@ class DownloadProgressItem extends StatelessWidget {
       case DownloadStatus.failed:
       case DownloadStatus.cancelled:
         return Colors.red;
+    }
+  }
+
+  Color _getCardColor(BuildContext context, DownloadStatus status, {bool waitingForWifi = false}) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    switch (status) {
+      case DownloadStatus.waiting:
+        if (waitingForWifi) {
+          return isDark ? Colors.blue.withValues(alpha: 0.08) : Colors.blue.withValues(alpha: 0.05);
+        }
+        return isDark ? Colors.white.withValues(alpha: 0.05) : Colors.white.withValues(alpha: 0.6);
+      case DownloadStatus.completed:
+        return isDark ? Colors.green.withValues(alpha: 0.08) : Colors.green.withValues(alpha: 0.05);
+      case DownloadStatus.failed:
+      case DownloadStatus.cancelled:
+        return isDark ? Colors.red.withValues(alpha: 0.08) : Colors.red.withValues(alpha: 0.05);
       default:
-        return Colors.grey;
+        return isDark ? Colors.white.withValues(alpha: 0.05) : Colors.white.withValues(alpha: 0.6);
+    }
+  }
+
+  Color _getBorderColor(BuildContext context, DownloadStatus status, {bool waitingForWifi = false}) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    switch (status) {
+      case DownloadStatus.waiting:
+        if (waitingForWifi) {
+          return Colors.blue.withValues(alpha: isDark ? 0.2 : 0.15);
+        }
+        return isDark ? Colors.white.withValues(alpha: 0.1) : Colors.white.withValues(alpha: 0.3);
+      case DownloadStatus.completed:
+        return Colors.green.withValues(alpha: isDark ? 0.2 : 0.15);
+      case DownloadStatus.failed:
+      case DownloadStatus.cancelled:
+        return Colors.red.withValues(alpha: isDark ? 0.2 : 0.15);
+      default:
+        return isDark ? Colors.white.withValues(alpha: 0.1) : Colors.white.withValues(alpha: 0.3);
     }
   }
 

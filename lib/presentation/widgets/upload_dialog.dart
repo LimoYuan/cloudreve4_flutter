@@ -1,16 +1,38 @@
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:lucide_icons/lucide_icons.dart';
 import 'package:provider/provider.dart';
 import '../providers/upload_manager_provider.dart';
 import '../providers/file_manager_provider.dart';
+import '../providers/navigation_provider.dart';
+import 'glassmorphism_container.dart';
 import 'toast_helper.dart';
 
-/// 显示上传对话框
+/// 显示上传对话框（毛玻璃风格）
 void showUploadDialog(BuildContext context) {
-  showModalBottomSheet(
+  showGeneralDialog(
     context: context,
-    builder: (context) => const _UploadDialogContent(),
+    barrierDismissible: true,
+    barrierLabel: '上传',
+    barrierColor: Colors.black38,
+    transitionDuration: const Duration(milliseconds: 250),
+    transitionBuilder: (context, animation, secondaryAnimation, child) {
+      final scaleAnim = CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeOutCubic,
+      ).drive(Tween(begin: 0.92, end: 1.0));
+      final fadeAnim = CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeOut,
+      ).drive(Tween(begin: 0.0, end: 1.0));
+      return ScaleTransition(
+        scale: scaleAnim,
+        child: FadeTransition(opacity: fadeAnim, child: child),
+      );
+    },
+    pageBuilder: (context, animation, secondaryAnimation) =>
+        const _UploadDialogContent(),
   );
 }
 
@@ -19,43 +41,60 @@ class _UploadDialogContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: MediaQuery.of(context).size.height * 0.8,
-      child: Column(
-        children: [
-          _buildHeader(context),
-          Expanded(
-            child: _buildFileSelectionButtons(context),
+    final screenWidth = MediaQuery.of(context).size.width;
+    final dialogWidth = screenWidth >= 600 ? 420.0 : screenWidth - 48.0;
+
+    return Center(
+      child: SizedBox(
+        width: dialogWidth,
+        child: GlassmorphismContainer(
+          borderRadius: 16,
+          sigmaX: 20,
+          sigmaY: 20,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: Material(
+              color: Colors.transparent,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildHeader(context),
+                  const Divider(height: 1),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
+                    child: _buildFileSelectionButtons(context),
+                  ),
+                  const Divider(height: 1),
+                  _buildViewTasksButton(context),
+                ],
+              ),
+            ),
           ),
-          _buildViewTasksButton(context),
-        ],
+        ),
       ),
     );
   }
 
   Widget _buildHeader(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(color: Colors.grey.shade200),
-        ),
-      ),
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 8, 12),
       child: Row(
         children: [
-          const Text(
+          Icon(LucideIcons.uploadCloud, size: 20, color: theme.hintColor),
+          const SizedBox(width: 10),
+          Text(
             '选择要上传的文件',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w600,
             ),
           ),
           const Spacer(),
           IconButton(
-            icon: const Icon(Icons.close),
-            onPressed: () {
-              Navigator.of(context).pop();
-            },
+            icon: const Icon(LucideIcons.x, size: 20),
+            onPressed: () => Navigator.of(context).pop(),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
           ),
         ],
       ),
@@ -63,73 +102,122 @@ class _UploadDialogContent extends StatelessWidget {
   }
 
   Widget _buildFileSelectionButtons(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.cloud_upload, size: 64, color: Colors.blue),
-          const SizedBox(height: 16),
-          _buildUploadButton(
-            context,
-            icon: Icons.photo_library,
-            label: '选择图片',
-            type: FileType.image,
-          ),
-          const SizedBox(height: 12),
-          _buildUploadButton(
-            context,
-            icon: Icons.video_library,
-            label: '选择视频',
-            type: FileType.video,
-          ),
-          const SizedBox(height: 12),
-          _buildUploadButton(
-            context,
-            icon: Icons.attach_file,
-            label: '选择所有文件',
-            type: FileType.any,
-          ),
-        ],
-      ),
+    final colorScheme = Theme.of(context).colorScheme;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildUploadOption(
+          context,
+          icon: LucideIcons.image,
+          label: '选择图片',
+          description: 'JPG, PNG, GIF, WebP 等',
+          color: Colors.purple.shade400,
+          onTap: () => _pickFiles(context, FileType.image),
+        ),
+        const SizedBox(height: 12),
+        _buildUploadOption(
+          context,
+          icon: LucideIcons.video,
+          label: '选择视频',
+          description: 'MP4, AVI, MKV 等',
+          color: Colors.orange.shade400,
+          onTap: () => _pickFiles(context, FileType.video),
+        ),
+        const SizedBox(height: 12),
+        _buildUploadOption(
+          context,
+          icon: LucideIcons.file,
+          label: '选择所有文件',
+          description: '任意类型文件',
+          color: colorScheme.primary,
+          onTap: () => _pickFiles(context, FileType.any),
+        ),
+      ],
     );
   }
 
-  Widget _buildUploadButton(
+  Widget _buildUploadOption(
     BuildContext context, {
     required IconData icon,
     required String label,
-    required FileType type,
+    required String description,
+    required Color color,
+    required VoidCallback onTap,
   }) {
-    return FilledButton.icon(
-      icon: Icon(icon),
-      label: Text(label),
-      onPressed: () => _pickFiles(context, type),
-      style: FilledButton.styleFrom(
-        minimumSize: const Size(200, 50),
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          border: Border.all(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.1)
+                : Colors.black.withValues(alpha: 0.06),
+          ),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, size: 20, color: color),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w500,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    description,
+                    style: TextStyle(fontSize: 12, color: Theme.of(context).hintColor),
+                  ),
+                ],
+              ),
+            ),
+            Icon(LucideIcons.chevronRight, size: 18, color: Theme.of(context).hintColor),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildViewTasksButton(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        border: Border(
-          top: BorderSide(color: Colors.grey.shade200),
-        ),
-      ),
-      child: SizedBox(
-        width: double.infinity,
-        child: FilledButton.icon(
-          icon: const Icon(Icons.list),
-          label: const Text('查看上传任务'),
-          onPressed: () {
-            Navigator.of(context).pop();
-            showUploadDialogWidget(context);
-          },
-          style: FilledButton.styleFrom(
-            minimumSize: const Size(200, 50),
-          ),
+    final colorScheme = Theme.of(context).colorScheme;
+    return InkWell(
+      onTap: () {
+        Navigator.of(context).pop();
+        Provider.of<NavigationProvider>(context, listen: false).setIndex(2);
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(LucideIcons.list, size: 18, color: colorScheme.primary),
+            const SizedBox(width: 8),
+            Text(
+              '查看上传任务',
+              style: TextStyle(
+                fontWeight: FontWeight.w500,
+                color: colorScheme.primary,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -174,13 +262,11 @@ class _UploadDialogContent extends StatelessWidget {
         listen: false,
       );
 
-      // 标记应该显示上传对话框
       uploadManager.markShouldShowDialog();
-
       await uploadManager.startUpload(files, fileManager.currentPath);
 
       if (context.mounted) {
-        showUploadDialogWidget(context);
+        ToastHelper.info('上传已开始，查看任务页');
       }
     } catch (e) {
       if (!context.mounted) return;

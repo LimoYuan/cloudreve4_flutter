@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons/lucide_icons.dart';
 import '../../core/utils/app_logger.dart';
 
 /// 文件菜单选项
@@ -10,6 +11,7 @@ enum FileMenuAction {
   move,
   copy,
   share,
+  info,
   delete,
   restore,
 }
@@ -26,6 +28,7 @@ Future<FileMenuAction?> showFileMenu({
   required bool hasShare,
   required bool hasDelete,
   required bool hasRestore,
+  bool hasInfo = false,
 }) async {
   final renderBox = context.findRenderObject() as RenderBox?;
   if (renderBox == null) {
@@ -125,6 +128,17 @@ Future<FileMenuAction?> showFileMenu({
               Icon(Icons.share, size: 20),
               SizedBox(width: 12),
               Text('分享'),
+            ],
+          ),
+        ),
+      if (hasInfo)
+        const PopupMenuItem(
+          value: FileMenuAction.info,
+          child: Row(
+            children: [
+              Icon(LucideIcons.info, size: 20),
+              SizedBox(width: 12),
+              Text('详情'),
             ],
           ),
         ),

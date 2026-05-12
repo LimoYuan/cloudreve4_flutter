@@ -116,4 +116,37 @@ class StorageService {
   /// 上次选中的服务器 label
   Future<String?> get lastSelectedServerLabel => getString(StorageKeys.lastSelectedServer);
   Future<bool> setLastSelectedServerLabel(String? value) => setString(StorageKeys.lastSelectedServer, value);
+
+  /// 搜索历史（最新在前，最多 20 条）
+  Future<List<String>> getSearchHistory() async {
+    final json = await getString(StorageKeys.searchHistory);
+    if (json == null || json.isEmpty) return [];
+    try {
+      final list = jsonDecode(json) as List<dynamic>;
+      return list.cast<String>();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<bool> setSearchHistory(List<String> history) async {
+    try {
+      final json = jsonEncode(history);
+      return await setString(StorageKeys.searchHistory, json);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> addToSearchHistory(String query) async {
+    final history = await getSearchHistory();
+    history.remove(query);
+    history.insert(0, query);
+    if (history.length > 20) history.removeRange(20, history.length);
+    await setSearchHistory(history);
+  }
+
+  Future<void> clearSearchHistory() async {
+    await remove(StorageKeys.searchHistory);
+  }
 }

@@ -5,7 +5,8 @@ class DateUtils {
   /// 格式化日期
   static String formatDate(DateTime? date, {String pattern = 'yyyy-MM-dd'}) {
     if (date == null) return '-';
-    return DateFormat(pattern).format(date);
+    final localDate = date.isUtc ? date.toLocal() : date;
+    return DateFormat(pattern).format(localDate);
   }
 
   /// 格式化日期时间

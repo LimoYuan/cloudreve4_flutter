@@ -18,10 +18,11 @@ class DownloadTaskModel {
   final String? downloadUrl;   // 实际下载URL
   final int fileSize;
   final String savePath;
-  final String? backgroundTaskId; // background_downloader 的 task ID
+  String? backgroundTaskId; // background_downloader 的 task ID（可变，用于重启后恢复映射）
   DownloadStatus status;
   int downloadedBytes;
   int speed; // 下载速度，字节/秒
+  bool waitingForWifi; // 是否在等待WiFi（非持久化）
   final DateTime createdAt;
   DateTime? completedAt;
   String? errorMessage;
@@ -46,7 +47,7 @@ class DownloadTaskModel {
   String get statusText {
     switch (status) {
       case DownloadStatus.waiting:
-        return '等待中';
+        return waitingForWifi ? '等待WiFi' : '等待中';
       case DownloadStatus.downloading:
         return '下载中';
       case DownloadStatus.completed:
@@ -71,6 +72,7 @@ class DownloadTaskModel {
     this.status = DownloadStatus.waiting,
     this.downloadedBytes = 0,
     this.speed = 0,
+    this.waitingForWifi = false,
     DateTime? createdAt,
     this.completedAt,
     this.errorMessage,
@@ -87,6 +89,7 @@ class DownloadTaskModel {
     DownloadStatus? status,
     int? downloadedBytes,
     int? speed,
+    bool? waitingForWifi,
     DateTime? createdAt,
     DateTime? completedAt,
     String? errorMessage,
@@ -102,6 +105,7 @@ class DownloadTaskModel {
       status: status ?? this.status,
       downloadedBytes: downloadedBytes ?? this.downloadedBytes,
       speed: speed ?? this.speed,
+      waitingForWifi: waitingForWifi ?? this.waitingForWifi,
       createdAt: createdAt ?? this.createdAt,
       completedAt: completedAt ?? this.completedAt,
       errorMessage: errorMessage ?? this.errorMessage,

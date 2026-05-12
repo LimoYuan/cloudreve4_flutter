@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:cloudreve4_flutter/core/utils/app_logger.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:path_provider/path_provider.dart';
 import '../data/models/cache_settings_model.dart';
@@ -27,7 +28,7 @@ class CacheManagerService {
       await _initializeManager();
     } catch (e) {
       // 忽略初始化错误，使用默认值
-      print('CacheManagerService initialize error: $e');
+      AppLogger.e('CacheManagerService initialize error: $e');
     }
   }
 
@@ -89,9 +90,26 @@ class CacheManagerService {
   Future<void> clearCache() async {
     final cacheDir = await getCacheDir();
     if (cacheDir.existsSync()) {
-      await cacheDir.delete(recursive: true);
+      try {
+        await cacheDir.delete(recursive: true);
+      } on PathAccessException {
+        // Windows 文件占用，逐个删除可删除的文件
+        try {
+          final entities = cacheDir.listSync(recursive: true, followLinks: false);
+          for (final entity in entities) {
+            if (entity is File) {
+              try { await entity.delete(); } catch (_) {}
+            }
+          }
+          try { await cacheDir.delete(recursive: true); } catch (_) {}
+        } catch (_) {}
+      }
     }
-    await _manager?.emptyCache();
+    try {
+      await _manager?.emptyCache();
+    } on PathAccessException {
+      // nothing to do
+    }
     await _initializeManager();
   }
 
@@ -168,7 +186,11 @@ class CacheManagerService {
   Future<void> deleteCacheFile(String path) async {
     final file = File(path);
     if (file.existsSync()) {
-      await file.delete();
+      try {
+        await file.delete();
+      } on PathAccessException {
+        // Windows 文件占用，忽略
+      }
     }
   }
 

@@ -72,6 +72,9 @@ class ApiService {
   /// 是否正在刷新token
   bool get isRefreshing => _isRefreshing;
 
+  /// 暴露 Dio 实例（用于二进制下载等不走 _parseResponse 的场景）
+  Dio get dio => _dio;
+
   /// 获取单例
   static ApiService get instance {
     _instance ??= ApiService._();
@@ -310,12 +313,13 @@ class ApiService {
     String path, {
     Map<String, dynamic>? queryParameters,
     bool noAuth = false,
-    isNoData = false,
+    bool isNoData = false,
+    Map<String, dynamic>? headers,
   }) async {
     final response = await _dio.get<T>(
       path,
       queryParameters: queryParameters,
-      options: Options(extra: {'noAuth': noAuth}),
+      options: Options(extra: {'noAuth': noAuth}, headers: headers),
     );
     // 如果是分享请求, 则不进入 _parseResponse
     if (isNoData) {

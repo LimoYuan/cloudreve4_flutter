@@ -6,8 +6,9 @@ import '../../../services/file_service.dart';
 /// 音频预览页面
 class AudioPreviewPage extends StatefulWidget {
   final FileModel file;
+  final String? entityId;
 
-  const AudioPreviewPage({super.key, required this.file});
+  const AudioPreviewPage({super.key, required this.file, this.entityId});
 
   @override
   State<AudioPreviewPage> createState() => _AudioPreviewPageState();
@@ -30,6 +31,7 @@ class _AudioPreviewPageState extends State<AudioPreviewPage> {
       final response = await FileService().getDownloadUrls(
         uris: [widget.file.relativePath],
         download: false,
+        entity: widget.entityId,
       );
 
       final urls = response['urls'] as List<dynamic>? ?? [];

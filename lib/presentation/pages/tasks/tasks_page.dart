@@ -1,0 +1,120 @@
+import 'package:cloudreve4_flutter/data/models/upload_task_model.dart';
+import 'package:cloudreve4_flutter/presentation/providers/download_manager_provider.dart';
+import 'package:cloudreve4_flutter/presentation/providers/upload_manager_provider.dart';
+import 'package:flutter/material.dart';
+import 'package:lucide_icons/lucide_icons.dart';
+import 'package:provider/provider.dart';
+import 'widgets/upload_tasks_tab.dart';
+import 'widgets/download_tasks_tab.dart';
+
+class TasksPage extends StatelessWidget {
+  const TasksPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('任务'),
+          bottom: const _TasksTabBar(),
+        ),
+        body: const TabBarView(
+          children: [
+            UploadTasksTab(),
+            DownloadTasksTab(),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TasksTabBar extends StatelessWidget implements PreferredSizeWidget {
+  const _TasksTabBar();
+
+  @override
+  Size get preferredSize => const Size.fromHeight(48);
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Consumer2<UploadManagerProvider, DownloadManagerProvider>(
+      builder: (context, uploadManager, downloadManager, _) {
+        final uploadActiveCount = uploadManager.allTasks
+            .where((t) =>
+                t.status == UploadStatus.uploading ||
+                t.status == UploadStatus.waiting ||
+                t.status == UploadStatus.paused)
+            .length;
+        final downloadActiveCount = downloadManager.activeTaskCount;
+
+        return TabBar(
+          tabs: [
+            Tab(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(LucideIcons.upload, size: 16),
+                  const SizedBox(width: 6),
+                  const Text('上传'),
+                  if (uploadActiveCount > 0) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: colorScheme.primary.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      constraints: const BoxConstraints(minWidth: 18),
+                      child: Text(
+                        '$uploadActiveCount',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: colorScheme.primary,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            Tab(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(LucideIcons.download, size: 16),
+                  const SizedBox(width: 6),
+                  const Text('下载'),
+                  if (downloadActiveCount > 0) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: colorScheme.primary.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      constraints: const BoxConstraints(minWidth: 18),
+                      child: Text(
+                        '$downloadActiveCount',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: colorScheme.primary,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}

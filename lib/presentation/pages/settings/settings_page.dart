@@ -7,6 +7,7 @@ import '../../../data/models/user_setting_model.dart';
 import '../../../services/user_setting_service.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/user_setting_provider.dart';
+import '../../widgets/user_avatar.dart';
 import '../../widgets/toast_helper.dart';
 import '../../widgets/desktop_constrained.dart';
 import 'profile_edit_page.dart';
@@ -14,6 +15,7 @@ import 'security_settings_page.dart';
 import 'file_preferences_page.dart';
 import 'app_settings_page.dart';
 import 'credit_history_page.dart';
+import 'quick_access_settings_page.dart';
 
 /// 设置主页
 class SettingsPage extends StatefulWidget {
@@ -103,6 +105,12 @@ class _SettingsPageState extends State<SettingsPage> {
           _buildSection(
             title: '偏好',
             children: [
+              _SettingsTile(
+                icon: Icons.apps_outlined,
+                title: '快捷入口',
+                subtitle: '自定义概览页快捷目录',
+                onTap: () => _navigateTo(context, const QuickAccessSettingsPage()),
+              ),
               _SettingsTile(
                 icon: Icons.folder_outlined,
                 title: '文件偏好',
@@ -262,23 +270,11 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Widget _buildAvatar(BuildContext context, UserModel? user, double size) {
-    final avatarUrl = user?.avatar;
-    if (avatarUrl != null && avatarUrl.isNotEmpty) {
-      return CircleAvatar(
-        radius: size / 2,
-        backgroundImage: NetworkImage(avatarUrl),
-        onBackgroundImageError: (_, _) {},
-        child: Container(),
-      );
-    }
-    return CircleAvatar(
+    return UserAvatar(
+      userId: user?.id ?? '',
+      email: user?.email,
+      displayName: user?.nickname ?? '用户',
       radius: size / 2,
-      backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-      child: Icon(
-        Icons.person,
-        size: size * 0.5,
-        color: Theme.of(context).colorScheme.onPrimaryContainer,
-      ),
     );
   }
 
@@ -443,6 +439,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
     try {
       await UserSettingService.instance.updateUserSetting(groupExpires: true);
+      if (!context.mounted) return;
       await context.read<UserSettingProvider>().loadSettings();
       if (mounted) ToastHelper.success('会员已取消');
     } catch (e) {
@@ -452,6 +449,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Future<void> _navigateTo(BuildContext context, Widget page) async {
     await Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
+    if (!context.mounted) return;
     if (mounted) {
       context.read<UserSettingProvider>().loadAll();
     }
@@ -476,9 +474,8 @@ class _SettingsPageState extends State<SettingsPage> {
 
     if (confirmed == true && mounted) {
       await auth.logout();
-      if (mounted) {
-        Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
-      }
+      if (!context.mounted) return;
+      Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
     }
   }
 

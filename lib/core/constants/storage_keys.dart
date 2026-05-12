@@ -12,7 +12,19 @@ class StorageKeys {
 
   // 下载相关
   static const String downloadTasks = 'download_tasks';
+  static const String downloadWifiOnly = 'download_wifi_only';
+  static const String downloadRetries = 'download_retries';
+
+  // 任务记录
+  static const String taskRetentionDays = 'task_retention_days';
 
   // 缓存相关
   static const String cacheSettings = 'cache_settings';
+
+  // Gravatar 镜像
+  static const String gravatarMirrorEnabled = 'gravatar_mirror_enabled';
+  static const String gravatarMirrorUrl = 'gravatar_mirror_url';
+
+  // 搜索历史
+  static const String searchHistory = 'search_history';
 }

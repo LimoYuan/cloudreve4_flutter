@@ -14,7 +14,8 @@ import '../../../core/utils/file_type_utils.dart';
 /// 文档预览页面
 class DocumentPreviewPage extends StatefulWidget {
   final FileModel file;
-  const DocumentPreviewPage({super.key, required this.file});
+  final String? entityId;
+  const DocumentPreviewPage({super.key, required this.file, this.entityId});
 
   @override
   State<DocumentPreviewPage> createState() => _DocumentPreviewPageState();
@@ -55,6 +56,7 @@ class _DocumentPreviewPageState extends State<DocumentPreviewPage> {
       final response = await FileService().getDownloadUrls(
         uris: [widget.file.relativePath],
         download: true,
+        entity: widget.entityId,
       );
       final urls = response['urls'] as List<dynamic>? ?? [];
       if (urls.isEmpty) throw Exception('获取URL为空');

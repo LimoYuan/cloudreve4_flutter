@@ -1,10 +1,23 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import '../../data/models/file_model.dart';
 import '../../services/file_service.dart';
+import '../../services/thumbnail_service.dart';
 import '../../core/utils/app_logger.dart';
+import '../../core/utils/file_utils.dart';
 
 /// 文件视图类型
 enum FileViewType { list, grid, gallery }
+
+/// 刷新结果
+class RefreshResult {
+  final int added;
+  final int removed;
+  final int updated;
+  const RefreshResult({required this.added, required this.removed, required this.updated});
+  bool get isUnchanged => added == 0 && removed == 0 && updated == 0;
+}
 
 /// 文件管理Provider
 class FileManagerProvider extends ChangeNotifier {
@@ -16,6 +29,8 @@ class FileManagerProvider extends ChangeNotifier {
   bool _hasMore = true;
   String? _errorMessage;
   String? _contextHint;
+  String? _highlightPath;
+  Timer? _highlightTimer;
 
   String get currentPath => _currentPath;
   List<FileModel> get files => _files;
@@ -26,9 +41,10 @@ class FileManagerProvider extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
   String? get contextHint => _contextHint;
   bool get hasSelection => _selectedFiles.isNotEmpty;
+  String? get highlightPath => _highlightPath;
 
   /// 加载文件列表
-  Future<void> loadFiles({bool refresh = false}) async {
+  Future<void> loadFiles({bool refresh = false, Duration timeout = const Duration(seconds: 5)}) async {
     if (refresh) {
       _selectedFiles.clear();
     }
@@ -42,10 +58,8 @@ class FileManagerProvider extends ChangeNotifier {
       final response = await FileService().listFiles(
         uri: _currentPath,
         pageSize: 50,
-      );
+      ).timeout(timeout);
 
-      // ApiService._parseResponse 已经返回了 data 字段的内容
-      // response 是包含 files, parent, pagination 等字段的对象
       final List<dynamic> filesData = response['files'] as List<dynamic>? ?? [];
       final pagination = response['pagination'] as Map<String, dynamic>? ?? {};
       AppLogger.d("获取files列表: $filesData");
@@ -55,6 +69,11 @@ class FileManagerProvider extends ChangeNotifier {
             .toList();
         _hasMore = pagination['next_token'] != null;
         _contextHint = response['context_hint'] as String?;
+      });
+    } on TimeoutException {
+      setState(() {
+        _errorMessage = '加载超时，请检查网络后重试';
+        _hasMore = false;
       });
     } catch (e) {
       setState(() {
@@ -72,6 +91,9 @@ class FileManagerProvider extends ChangeNotifier {
   Future<void> enterFolder(String path) async {
     _currentPath = path;
     _selectedFiles.clear();
+    _highlightPath = null;
+    _highlightTimer?.cancel();
+    ThumbnailService.instance.clearAll();
     await loadFiles();
   }
 
@@ -87,6 +109,9 @@ class FileManagerProvider extends ChangeNotifier {
       _currentPath = '/';
     }
     _selectedFiles.clear();
+    _highlightPath = null;
+    _highlightTimer?.cancel();
+    ThumbnailService.instance.clearAll();
     notifyListeners();
     await loadFiles();
   }
@@ -139,7 +164,6 @@ class FileManagerProvider extends ChangeNotifier {
       AppLogger.d("删除文件: ${_selectedFiles.join(', ')}");
       await FileService().deleteFiles(uris: _selectedFiles);
 
-      // 从本地列表中移除已删除的文件
       setState(() {
         _files.removeWhere((file) => _selectedFiles.contains(file.path));
       });
@@ -156,7 +180,6 @@ class FileManagerProvider extends ChangeNotifier {
   /// 创建文件夹
   Future<String?> createFolder(String name) async {
     try {
-      // 构建 uri，将新文件夹名添加到当前路径
       String uri;
       if (_currentPath == '/' || _currentPath.isEmpty) {
         uri = '/$name';
@@ -170,7 +193,6 @@ class FileManagerProvider extends ChangeNotifier {
         errOnConflict: true,
       );
 
-      // 从响应中提取新文件夹信息并添加到本地列表
       final newFolder = FileModel.fromJson(response);
 
       setState(() {
@@ -185,25 +207,109 @@ class FileManagerProvider extends ChangeNotifier {
     }
   }
 
-  /// 移动文件
-  Future<void> moveFiles(List<String> uris, String destination) async {
+  /// 删除单个文件（增量移除）
+  Future<String?> deleteFile(String path) async {
     try {
-      await FileService().moveFiles(uris: uris, dst: destination);
-      clearSelection();
-      await loadFiles();
+      await FileService().deleteFiles(uris: [path]);
+      setState(() {
+        _files.removeWhere((file) => file.path == path);
+        _selectedFiles.remove(path);
+      });
+      return null;
     } catch (e) {
-      setErrorMessage(e.toString());
+      final error = e.toString();
+      setErrorMessage(error);
+      return error;
     }
   }
 
-  /// 重命名文件
-  Future<void> renameFile(String path, String newName) async {
+  /// 移动文件（增量更新）
+  Future<String?> moveFiles(List<String> uris, String destination, {bool copy = false}) async {
     try {
-      await FileService().renameFile(uri: path, newName: newName);
-      await loadFiles();
+      await FileService().moveFiles(uris: uris, dst: destination);
+      clearSelection();
+
+      if (!copy) {
+        // 移动：文件离开当前目录，直接从列表移除
+        setState(() {
+          _files.removeWhere((file) => uris.contains(file.path));
+        });
+      } else {
+        // 复制：仅当目标是当前目录时需要刷新
+        final normalizedDst = FileUtils.toCloudreveUri(destination);
+        final normalizedCur = FileUtils.toCloudreveUri(_currentPath);
+        if (normalizedDst == normalizedCur) {
+          await loadFiles();
+        }
+      }
+      return null;
     } catch (e) {
-      setErrorMessage(e.toString());
+      final error = e.toString();
+      setErrorMessage(error);
+      return error;
     }
+  }
+
+  /// 重命名文件（原地更新，不刷新列表）
+  Future<String?> renameFile(String path, String newName) async {
+    try {
+      final response = await FileService().renameFile(uri: path, newName: newName);
+      if (response.isEmpty) {
+        await loadFiles();
+        return null;
+      }
+      final updatedFile = FileModel.fromJson(response);
+      final index = _files.indexWhere((f) => f.path == path);
+      if (index != -1) {
+        setState(() {
+          _files[index] = updatedFile;
+        });
+      }
+      return null;
+    } catch (e) {
+      final error = e.toString();
+      setErrorMessage(error);
+      return error;
+    }
+  }
+
+  /// 通过 URI 获取文件信息并添加到列表（用于上传完成后）
+  Future<void> addFileByUri(String fileUri) async {
+    try {
+      final response = await FileService().getFileInfo(uri: fileUri);
+      final newFile = FileModel.fromJson(response);
+      final exists = _files.any((f) => f.id == newFile.id);
+      if (!exists) {
+        setState(() {
+          _files.insert(0, newFile);
+        });
+      }
+    } catch (e) {
+      AppLogger.d('获取上传文件信息失败: $e');
+    }
+  }
+
+  /// 高亮指定文件路径（3 秒后自动清除）
+  void setHighlightPath(String? path) {
+    _highlightTimer?.cancel();
+    _highlightPath = path;
+    notifyListeners();
+    if (path != null) {
+      _highlightTimer = Timer(const Duration(seconds: 3), () {
+        _highlightPath = null;
+        notifyListeners();
+      });
+    }
+  }
+
+  /// 导航到指定文件夹并高亮目标文件
+  Future<void> navigateAndHighlight(String folderPath, String filePath) async {
+    _currentPath = folderPath;
+    _selectedFiles.clear();
+    _highlightPath = null;
+    _highlightTimer?.cancel();
+    await loadFiles();
+    setHighlightPath(filePath);
   }
 
   /// 清空文件列表
@@ -217,7 +323,7 @@ class FileManagerProvider extends ChangeNotifier {
   }
 
   /// 智能刷新 - 只更新差异部分
-  Future<void> refreshFiles() async {
+  Future<RefreshResult> refreshFiles({Duration timeout = const Duration(seconds: 5)}) async {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -227,41 +333,48 @@ class FileManagerProvider extends ChangeNotifier {
       final response = await FileService().listFiles(
         uri: _currentPath,
         pageSize: 50,
-      );
+      ).timeout(timeout);
 
       final List<dynamic> filesData = response['files'] as List<dynamic>? ?? [];
       final newFiles = filesData
           .map((f) => FileModel.fromJson(f as Map<String, dynamic>))
           .toList();
 
-      // 创建当前文件的 path -> FileModel 映射
       final currentMap = <String, FileModel>{};
       for (final file in _files) {
         currentMap[file.path] = file;
       }
 
-      // 创建新文件的 path -> FileModel 映射
       final newMap = <String, FileModel>{};
       for (final file in newFiles) {
         newMap[file.path] = file;
       }
 
+      int added = 0;
+      int removed = 0;
+      int updated = 0;
+
       final updatedFiles = <FileModel>[];
 
-      // 1. 保留或更新的文件
       for (final file in newFiles) {
         final existingFile = currentMap[file.path];
         if (existingFile != null) {
-          // 文件已存在，检查是否需要更新（通过比较修改时间和大小）
           if (existingFile.updatedAt != file.updatedAt ||
               existingFile.size != file.size) {
             updatedFiles.add(file);
+            updated++;
           } else {
             updatedFiles.add(existingFile);
           }
         } else {
-          // 新增的文件
           updatedFiles.add(file);
+          added++;
+        }
+      }
+
+      for (final file in _files) {
+        if (!newMap.containsKey(file.path)) {
+          removed++;
         }
       }
 
@@ -270,14 +383,28 @@ class FileManagerProvider extends ChangeNotifier {
         _hasMore = response['pagination']?['next_token'] != null;
         _contextHint = response['context_hint'] as String?;
       });
+
+      return RefreshResult(added: added, removed: removed, updated: updated);
+    } on TimeoutException {
+      setState(() {
+        _errorMessage = '加载超时，请检查网络后重试';
+      });
+      return const RefreshResult(added: 0, removed: 0, updated: 0);
     } catch (e) {
       setState(() {
         _errorMessage = e.toString();
       });
+      return const RefreshResult(added: 0, removed: 0, updated: 0);
     } finally {
       setState(() {
         _isLoading = false;
       });
     }
+  }
+
+  @override
+  void dispose() {
+    _highlightTimer?.cancel();
+    super.dispose();
   }
 }

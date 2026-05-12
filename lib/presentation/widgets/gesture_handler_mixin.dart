@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
 import '../providers/file_manager_provider.dart';
 import 'exit_hint_overlay.dart';
-import '../../core/utils/app_logger.dart';
 import '../../services/desktop_service.dart';
 
 /// 手势处理 Mixin
@@ -11,34 +10,16 @@ mixin GestureHandlerMixin<T extends StatefulWidget> on State<T> {
   DateTime? _lastSwipeTime;
   final ExitHintOverlay _exitHintOverlay = ExitHintOverlay();
 
-  /// 子类需要提供 Scaffold 的 key
-  GlobalKey<ScaffoldState>? get scaffoldKey => null;
-
   /// 处理滑动手势
   void handleSwipe(
     BuildContext context,
     FileManagerProvider fileManager,
     DragEndDetails details,
   ) {
-    if (details.primaryVelocity == null) {
-      AppLogger.d('Swipe velocity is null');
-      return;
-    }
+    if (details.primaryVelocity == null) return;
 
-    // 调试输出
-    AppLogger.d('Swipe primaryVelocity: ${details.primaryVelocity}');
-
-    // primaryVelocity > 0: 从左往右滑 → 打开侧边栏
-    // primaryVelocity < 0: 从右往左滑 → 返回或退出
-
-    // 从左往右滑（velocity > 0）：打开侧边栏
-    if (details.primaryVelocity! > 0) {
-      AppLogger.d('Right swipe detected (velocity > 0), opening drawer');
-      scaffoldKey?.currentState?.openDrawer();
-    }
     // 从右往左滑（velocity < 0）：返回或退出
-    else if (details.primaryVelocity! < 0) {
-      AppLogger.d('Left swipe detected (velocity < 0)');
+    if (details.primaryVelocity! < 0) {
       if (fileManager.currentPath == '/') {
         checkExitApp(context);
       } else {

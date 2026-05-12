@@ -26,10 +26,12 @@ claude_project.md
 PROJECT_REQUIREMENTS.md
 DESIGN_OVERVIEW.md
 DESIGN.md
+refactory.md
 DESIGN-copy.md
 *.txt
 *.json
 *.jsonl
+example.dart
 install.sh
 android/app/key.properties
 dist/

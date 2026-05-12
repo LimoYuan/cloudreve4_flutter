@@ -6,12 +6,14 @@ class ShareModel {
   final int? downloaded;
   final int? price;
   final bool unlocked;
-  final int sourceType; // 0: 文件, 1: 文件夹
-  final ShareOwner owner;
+  final int sourceType;
+  final ShareOwner? owner;
   final DateTime createdAt;
+  final DateTime? expires;
   final bool expired;
   final String url;
-  final SharePermissionSetting permissionSetting;
+  final int? size;
+  final SharePermissionSetting? permissionSetting;
   final bool? isPrivate;
   final String? password;
   final bool? shareView;
@@ -27,11 +29,13 @@ class ShareModel {
     this.price,
     required this.unlocked,
     required this.sourceType,
-    required this.owner,
+    this.owner,
     required this.createdAt,
+    this.expires,
     required this.expired,
     required this.url,
-    required this.permissionSetting,
+    this.size,
+    this.permissionSetting,
     this.isPrivate,
     this.password,
     this.shareView,
@@ -44,16 +48,26 @@ class ShareModel {
     return ShareModel(
       id: json['id'] as String,
       name: json['name'] as String,
-      visited: json['visited'] as int,
-      downloaded: json['downloaded'] as int?,
-      price: json['price'] as int?,
-      unlocked: json['unlocked'] as bool,
-      sourceType: json['source_type'] as int,
-      owner: ShareOwner.fromJson(json['owner'] as Map<String, dynamic>),
-      createdAt: DateTime.parse(json['created_at'] as String),
-      expired: json['expired'] as bool,
-      url: json['url'] as String,
-      permissionSetting: SharePermissionSetting.fromJson(json['permission_setting'] as Map<String, dynamic>? ?? {}),
+      visited: (json['visited'] as num?)?.toInt() ?? 0,
+      downloaded: (json['downloaded'] as num?)?.toInt(),
+      price: (json['price'] as num?)?.toInt(),
+      unlocked: json['unlocked'] as bool? ?? false,
+      sourceType: (json['source_type'] as num?)?.toInt() ?? 0,
+      owner: json['owner'] is Map<String, dynamic>
+          ? ShareOwner.fromJson(json['owner'] as Map<String, dynamic>)
+          : null,
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'] as String)
+          : DateTime.now(),
+      expires: json['expires'] != null
+          ? DateTime.parse(json['expires'] as String)
+          : null,
+      expired: json['expired'] as bool? ?? false,
+      url: json['url'] as String? ?? '',
+      size: (json['size'] as num?)?.toInt(),
+      permissionSetting: json['permission_setting'] is Map<String, dynamic>
+          ? SharePermissionSetting.fromJson(json['permission_setting'] as Map<String, dynamic>)
+          : null,
       isPrivate: json['is_private'] as bool?,
       password: json['password'] as String?,
       shareView: json['share_view'] as bool?,
@@ -65,24 +79,26 @@ class ShareModel {
 
   Map<String, dynamic> toJson() {
     return {
-    'id': id,
-    'name': name,
-    'visited': visited,
-    'downloaded': downloaded,
-    'price': price,
-    'unlocked': unlocked,
-    'source_type': sourceType,
-    'owner': owner.toJson(),
-    'created_at': createdAt.toIso8601String(),
-    'expired': expired,
-    'url': url,
-    'permission_setting': permissionSetting.toJson(),
-    'is_private': isPrivate,
-    'password': password,
-    'share_view': shareView,
-    'source_uri': sourceUri,
-    'show_readme': showReadme,
-    'password_protected': passwordProtected,
+      'id': id,
+      'name': name,
+      'visited': visited,
+      'downloaded': downloaded,
+      'price': price,
+      'unlocked': unlocked,
+      'source_type': sourceType,
+      'owner': owner?.toJson(),
+      'created_at': createdAt.toIso8601String(),
+      'expires': expires?.toIso8601String(),
+      'expired': expired,
+      'url': url,
+      'size': size,
+      'permission_setting': permissionSetting?.toJson(),
+      'is_private': isPrivate,
+      'password': password,
+      'share_view': shareView,
+      'source_uri': sourceUri,
+      'show_readme': showReadme,
+      'password_protected': passwordProtected,
     };
   }
 
@@ -96,12 +112,16 @@ class ShareOwner {
   final String? email;
   final String nickname;
   final DateTime createdAt;
+  final ShareOwnerGroup? group;
+  final String? shareLinksInProfile;
 
   ShareOwner({
     required this.id,
     this.email,
     required this.nickname,
     required this.createdAt,
+    this.group,
+    this.shareLinksInProfile,
   });
 
   factory ShareOwner.fromJson(Map<String, dynamic> json) {
@@ -109,7 +129,13 @@ class ShareOwner {
       id: json['id'] as String,
       email: json['email'] as String?,
       nickname: json['nickname'] as String,
-      createdAt: DateTime.parse(json['created_at'] as String),
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'] as String)
+          : DateTime.now(),
+      group: json['group'] is Map<String, dynamic>
+          ? ShareOwnerGroup.fromJson(json['group'] as Map<String, dynamic>)
+          : null,
+      shareLinksInProfile: json['share_links_in_profile'] as String?,
     );
   }
 
@@ -119,8 +145,27 @@ class ShareOwner {
       'email': email,
       'nickname': nickname,
       'created_at': createdAt.toIso8601String(),
+      'group': group?.toJson(),
+      'share_links_in_profile': shareLinksInProfile,
     };
   }
+}
+
+/// 分享所有者所属组
+class ShareOwnerGroup {
+  final String id;
+  final String name;
+
+  ShareOwnerGroup({required this.id, required this.name});
+
+  factory ShareOwnerGroup.fromJson(Map<String, dynamic> json) {
+    return ShareOwnerGroup(
+      id: json['id'] as String,
+      name: json['name'] as String,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {'id': id, 'name': name};
 }
 
 /// 权限设置

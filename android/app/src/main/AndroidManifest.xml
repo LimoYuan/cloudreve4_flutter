@@ -11,9 +11,11 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
     <!-- 后台下载权限 -->
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <!-- 基础前台服务权限 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
-    <!-- ✅ Android 14+ 必须添加这一行，否则无法开启 dataDownload 类型服务 -->
+    <!-- ✅ Android 14+ 必须添加这两行，否则无法开启 dataDownload / dataSync 类型服务 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_DOWNLOAD" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <!-- ✅ 如果你还需要在后台弹出通知显示进度，必须添加此权限 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -48,30 +50,6 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
-        <!-- Don't delete the meta-data below.
-             This is used by (flutter_downloader) to initialize
-             background download service -->
-        <service
-            android:name="vn.hunghd.flutterdownloader.DownloadService"
-            android:authorities="${applicationId}.flutter_downloader.provider"
-            android:exported="false"
-            android:foregroundServiceType="dataSync"
-            android:grantUriPermissions="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-            </intent-filter>
-        </service>
-        <!-- Don't delete the meta-data below.
-             This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
-        <provider
-            android:name="vn.hunghd.flutterdownloader.DownloadedFileProvider"
-            android:authorities="${applicationId}.flutter_downloader.provider"
-            android:exported="false"
-            android:grantUriPermissions="true">
-        <meta-data
-            android:name="android.support.FILE_PROVIDER_PATHS"
-            android:resource="@xml/provider_paths" />
-        </provider>
 
         <meta-data
             android:name="flutterEmbedding"

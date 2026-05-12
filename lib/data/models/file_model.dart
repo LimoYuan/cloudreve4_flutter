@@ -1,3 +1,4 @@
+import 'share_model.dart';
 
 /// 文件模型
 class FileModel {
@@ -36,7 +37,7 @@ class FileModel {
       name: json['name'] as String,
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
-      size: json['size'] as int,
+      size: (json['size'] as num?)?.toInt() ?? 0,
       path: json['path'] as String,
       metadata: json['metadata'] as Map<String, dynamic>?,
       permission: json['permission'] as String?,
@@ -66,6 +67,36 @@ class FileModel {
   bool get isFile => type == 0;
 
   bool get isFolder => type == 1;
+
+  FileModel copyWith({
+    int? type,
+    String? id,
+    String? name,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    int? size,
+    String? path,
+    Map<String, dynamic>? metadata,
+    String? permission,
+    String? primaryEntity,
+    String? capability,
+    bool? owned,
+  }) {
+    return FileModel(
+      type: type ?? this.type,
+      id: id ?? this.id,
+      name: name ?? this.name,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      size: size ?? this.size,
+      path: path ?? this.path,
+      metadata: metadata ?? this.metadata,
+      permission: permission ?? this.permission,
+      primaryEntity: primaryEntity ?? this.primaryEntity,
+      capability: capability ?? this.capability,
+      owned: owned ?? this.owned,
+    );
+  }
 
   /// 获取相对于 cloudreve://my 的路径
   /// 例如: cloudreve://my/Games -> /Games
@@ -99,9 +130,9 @@ class FolderSummaryModel {
 
   factory FolderSummaryModel.fromJson(Map<String, dynamic> json) {
     return FolderSummaryModel(
-      size: json['size'] as int,
-      files: json['files'] as int,
-      folders: json['folders'] as int,
+      size: (json['size'] as num?)?.toInt() ?? 0,
+      files: (json['files'] as num?)?.toInt() ?? 0,
+      folders: (json['folders'] as num?)?.toInt() ?? 0,
       completed: json['completed'] as bool,
       calculatedAt: DateTime.parse(json['calculated_at'] as String),
     );
@@ -120,11 +151,15 @@ class FolderSummaryModel {
 
 /// 扩展信息模型
 class ExtendedInfoModel {
+  final StoragePolicyModel? storagePolicy;
+  final int? storageUsed;
   final List<ShareModel>? shares;
   final List<EntityModel>? entities;
   final List<DirectLinkModel>? directLinks;
 
   ExtendedInfoModel({
+    this.storagePolicy,
+    this.storageUsed,
     this.shares,
     this.entities,
     this.directLinks,
@@ -132,6 +167,10 @@ class ExtendedInfoModel {
 
   factory ExtendedInfoModel.fromJson(Map<String, dynamic> json) {
     return ExtendedInfoModel(
+      storagePolicy: json['storage_policy'] is Map<String, dynamic>
+          ? StoragePolicyModel.fromJson(json['storage_policy'] as Map<String, dynamic>)
+          : null,
+      storageUsed: (json['storage_used'] as num?)?.toInt(),
       shares: json['shares'] != null
           ? (json['shares'] as List)
               .map((e) => ShareModel.fromJson(e as Map<String, dynamic>))
@@ -152,6 +191,8 @@ class ExtendedInfoModel {
 
   Map<String, dynamic> toJson() {
     return {
+      'storage_policy': storagePolicy?.toJson(),
+      'storage_used': storageUsed,
       'shares': shares?.map((e) => e.toJson()).toList(),
       'entities': entities?.map((e) => e.toJson()).toList(),
       'direct_links': directLinks?.map((e) => e.toJson()).toList(),
@@ -159,52 +200,27 @@ class ExtendedInfoModel {
   }
 }
 
-/// 分享模型
-class ShareModel {
-  final String id;
-  final String? name;
-  final DateTime? expires;
-  final bool? isPrivate;
-  final int? remainDownloads;
-  final DateTime createdAt;
-  final String url;
-  final int visited;
-  final int downloaded;
-  final bool expired;
-  final bool unlocked;
-  final bool password;
 
-  ShareModel({
+/// 存储策略模型
+class StoragePolicyModel {
+  final String id;
+  final String name;
+  final String type;
+  final int? maxSize;
+
+  StoragePolicyModel({
     required this.id,
-    this.name,
-    this.expires,
-    this.isPrivate,
-    this.remainDownloads,
-    required this.createdAt,
-    required this.url,
-    required this.visited,
-    required this.downloaded,
-    required this.expired,
-    required this.unlocked,
-    required this.password,
+    required this.name,
+    required this.type,
+    this.maxSize,
   });
 
-  factory ShareModel.fromJson(Map<String, dynamic> json) {
-    return ShareModel(
+  factory StoragePolicyModel.fromJson(Map<String, dynamic> json) {
+    return StoragePolicyModel(
       id: json['id'] as String,
-      name: json['name'] as String?,
-      expires: json['expires'] != null
-          ? DateTime.parse(json['expires'] as String)
-          : null,
-      isPrivate: json['is_private'] as bool?,
-      remainDownloads: json['remain_downloads'] as int?,
-      createdAt: DateTime.parse(json['created_at'] as String),
-      url: json['url'] as String,
-      visited: json['visited'] as int,
-      downloaded: json['downloaded'] as int,
-      expired: json['expired'] as bool,
-      unlocked: json['unlocked'] as bool,
-      password: json['password'] as bool,
+      name: json['name'] as String,
+      type: json['type'] as String,
+      maxSize: (json['max_size'] as num?)?.toInt(),
     );
   }
 
@@ -212,27 +228,54 @@ class ShareModel {
     return {
       'id': id,
       'name': name,
-      'expires': expires?.toIso8601String(),
-      'is_private': isPrivate,
-      'remain_downloads': remainDownloads,
-      'created_at': createdAt.toIso8601String(),
-      'url': url,
-      'visited': visited,
-      'downloaded': downloaded,
-      'expired': expired,
-      'unlocked': unlocked,
-      'password': password,
+      'type': type,
+      'max_size': maxSize,
     };
   }
 }
 
-/// 实体模型
+/// 实体创建者模型
+class EntityCreatedByModel {
+  final String id;
+  final String nickname;
+  final String? avatar;
+  final DateTime createdAt;
+
+  EntityCreatedByModel({
+    required this.id,
+    required this.nickname,
+    this.avatar,
+    required this.createdAt,
+  });
+
+  factory EntityCreatedByModel.fromJson(Map<String, dynamic> json) {
+    return EntityCreatedByModel(
+      id: json['id'] as String,
+      nickname: json['nickname'] as String,
+      avatar: json['avatar'] as String?,
+      createdAt: DateTime.parse(json['created_at'] as String),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'nickname': nickname,
+      'avatar': avatar,
+      'created_at': createdAt.toIso8601String(),
+    };
+  }
+}
+
+/// 实体模型（文件版本/Blob）
 class EntityModel {
   final String id;
   final int type;
   final DateTime createdAt;
   final int size;
   final String? encryptedWith;
+  final StoragePolicyModel? storagePolicy;
+  final EntityCreatedByModel? createdBy;
 
   EntityModel({
     required this.id,
@@ -240,6 +283,8 @@ class EntityModel {
     required this.createdAt,
     required this.size,
     this.encryptedWith,
+    this.storagePolicy,
+    this.createdBy,
   });
 
   factory EntityModel.fromJson(Map<String, dynamic> json) {
@@ -247,8 +292,14 @@ class EntityModel {
       id: json['id'] as String,
       type: json['type'] as int,
       createdAt: DateTime.parse(json['created_at'] as String),
-      size: json['size'] as int,
+      size: (json['size'] as num?)?.toInt() ?? 0,
       encryptedWith: json['encrypted_with'] as String?,
+      storagePolicy: json['storage_policy'] is Map<String, dynamic>
+          ? StoragePolicyModel.fromJson(json['storage_policy'] as Map<String, dynamic>)
+          : null,
+      createdBy: json['created_by'] is Map<String, dynamic>
+          ? EntityCreatedByModel.fromJson(json['created_by'] as Map<String, dynamic>)
+          : null,
     );
   }
 
@@ -259,6 +310,8 @@ class EntityModel {
       'created_at': createdAt.toIso8601String(),
       'size': size,
       'encrypted_with': encryptedWith,
+      'storage_policy': storagePolicy?.toJson(),
+      'created_by': createdBy?.toJson(),
     };
   }
 }
@@ -282,7 +335,7 @@ class DirectLinkModel {
       id: json['id'] as String,
       createdAt: DateTime.parse(json['created_at'] as String),
       url: json['url'] as String,
-      downloaded: json['downloaded'] as int,
+      downloaded: (json['downloaded'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -293,5 +346,30 @@ class DirectLinkModel {
       'url': url,
       'downloaded': downloaded,
     };
+  }
+}
+
+/// 文件详情模型（/file/info 接口返回）
+class FileInfoModel {
+  final FileModel file;
+  final FolderSummaryModel? folderSummary;
+  final ExtendedInfoModel? extendedInfo;
+
+  FileInfoModel({
+    required this.file,
+    this.folderSummary,
+    this.extendedInfo,
+  });
+
+  factory FileInfoModel.fromJson(Map<String, dynamic> json) {
+    return FileInfoModel(
+      file: FileModel.fromJson(json),
+      folderSummary: json['folder_summary'] is Map<String, dynamic>
+          ? FolderSummaryModel.fromJson(json['folder_summary'] as Map<String, dynamic>)
+          : null,
+      extendedInfo: json['extended_info'] is Map<String, dynamic>
+          ? ExtendedInfoModel.fromJson(json['extended_info'] as Map<String, dynamic>)
+          : null,
+    );
   }
 }

@@ -1,5 +1,13 @@
 /// 文件工具类
 class FileUtils {
+  /// 将路径转换为 Cloudreve URI 格式
+  /// "/" → "cloudreve://my", "/subfolder" → "cloudreve://my/subfolder"
+  static String toCloudreveUri(String path) {
+    if (path.startsWith('cloudreve://')) return path;
+    if (path == '/' || path.isEmpty) return 'cloudreve://my';
+    final cleanPath = path.startsWith('/') ? path.substring(1) : path;
+    return 'cloudreve://my/$cleanPath';
+  }
   /// 获取文件扩展名
   static String getFileExtension(String fileName) {
     final dotIndex = fileName.lastIndexOf('.');

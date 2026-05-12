@@ -5,6 +5,8 @@ class SelectionToolbar extends StatelessWidget {
   final int selectionCount;
   final VoidCallback onCancel;
   final VoidCallback? onRename;
+  final VoidCallback? onMove;
+  final VoidCallback? onCopy;
   final VoidCallback onDelete;
 
   const SelectionToolbar({
@@ -12,6 +14,8 @@ class SelectionToolbar extends StatelessWidget {
     required this.selectionCount,
     required this.onCancel,
     this.onRename,
+    this.onMove,
+    this.onCopy,
     required this.onDelete,
   });
 
@@ -46,6 +50,18 @@ class SelectionToolbar extends StatelessWidget {
               icon: const Icon(Icons.edit),
               onPressed: onRename,
               tooltip: '重命名',
+            ),
+          if (onMove != null)
+            IconButton(
+              icon: const Icon(Icons.drive_file_move_outline),
+              onPressed: onMove,
+              tooltip: '移动',
+            ),
+          if (onCopy != null)
+            IconButton(
+              icon: const Icon(Icons.content_copy),
+              onPressed: onCopy,
+              tooltip: '复制',
             ),
           IconButton(
             icon: const Icon(Icons.delete),

@@ -7,6 +7,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/user_setting_provider.dart';
 import '../../widgets/toast_helper.dart';
 import '../../widgets/desktop_constrained.dart';
+import '../../widgets/user_avatar.dart';
 
 /// 个人资料编辑页
 class ProfileEditPage extends StatefulWidget {
@@ -108,18 +109,11 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
   }
 
   Widget _buildAvatar(BuildContext context, UserModel? user, double size) {
-    final avatarUrl = user?.avatar;
-    if (avatarUrl != null && avatarUrl.isNotEmpty) {
-      return CircleAvatar(
-        radius: size / 2,
-        backgroundImage: NetworkImage(avatarUrl),
-        onBackgroundImageError: (_, _) {},
-      );
-    }
-    return CircleAvatar(
+    return UserAvatar(
+      userId: user?.id ?? '',
+      email: user?.email,
+      displayName: user?.nickname ?? '用户',
       radius: size / 2,
-      backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-      child: Icon(Icons.person, size: size * 0.5, color: Theme.of(context).colorScheme.onPrimaryContainer),
     );
   }
 
@@ -188,9 +182,13 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
       final bytes = await image.readAsBytes();
       final service = UserSettingService.instance;
       await service.updateAvatar(bytes);
-
+      if (!mounted) return;
       // 刷新用户信息
       await context.read<AuthProvider>().refreshUser();
+      // 清除头像缓存，使其他页面的 UserAvatar 刷新
+      if (!mounted) return;
+      final userId = context.read<AuthProvider>().user?.id ?? '';
+      await UserAvatar.evictCache(userId);
 
       if (mounted) {
         setState(() => _isUploadingAvatar = false);
@@ -209,7 +207,12 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
       setState(() => _isUploadingAvatar = true);
       final service = UserSettingService.instance;
       await service.updateAvatar(null);
+      if (!mounted) return;
       await context.read<AuthProvider>().refreshUser();
+      if (!mounted) return;
+      // 清除头像缓存，使其他页面的 UserAvatar 刷新
+      final userId = context.read<AuthProvider>().user?.id ?? '';
+      await UserAvatar.evictCache(userId);
 
       if (mounted) {
         setState(() => _isUploadingAvatar = false);
@@ -265,10 +268,10 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
 
     final newNick = controller.text.trim();
     if (newNick == user?.nickname) return;
-
+    if (!context.mounted) return;
     final success = await context.read<UserSettingProvider>().updateNick(newNick);
     if (!mounted) return;
-
+    if (!context.mounted) return;
     if (success) {
       // 同步刷新 AuthProvider 中的用户信息
       await context.read<AuthProvider>().refreshUser();

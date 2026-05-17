@@ -9,7 +9,7 @@ import '../core/utils/app_logger.dart';
 class ApiResponse<T> {
   final int code;
   final String message;
-  final T? data;
+  final dynamic data;
   final String? error;
   final String? correlationId;
 
@@ -25,7 +25,7 @@ class ApiResponse<T> {
     return ApiResponse<T>(
       code: json['code'] as int? ?? 0,
       message: json['msg'] as String? ?? '',
-      data: json['data'] as T?,
+      data: json['data'],
       error: json['error'] as String?,
       correlationId: json['correlation_id'] as String?,
     );
@@ -350,9 +350,12 @@ class ApiService {
     AppLogger.d('Response Data: ${response.data}');
     
     var isActivEmail = 0;
-    if (response.statusCode == 200) {
-      Map<String, dynamic>? tmp = response.data as Map<String, dynamic>?;
-      isActivEmail = tmp?['code'] as int;
+    if (response.statusCode == 200 && response.data is Map) {
+      final tmp = Map<String, dynamic>.from(response.data as Map);
+      final code = tmp['code'];
+      if (code is int) {
+        isActivEmail = code;
+      }
     }
 
     if (isNoData || isActivEmail == 203) {
@@ -440,13 +443,29 @@ class ApiService {
   /// 解析响应
   T _parseResponse<T>(Response response) {
     final data = response.data;
+
     if (data is Map<String, dynamic>) {
-      final apiResponse = ApiResponse<T>.fromJson(data);
+      final apiResponse = ApiResponse<dynamic>.fromJson(data);
       if (!apiResponse.isSuccess && !apiResponse.isContinue) {
         throw ServerException(apiResponse.message, code: apiResponse.code);
       }
-      return apiResponse.data as T;
+
+      final payload = apiResponse.data;
+
+      // ApiService 已经把 Cloudreve 外层 {code,msg,data} 拆了一层。
+      // 调用方应直接使用 payload。若 payload 是 List 而泛型写成 Map，
+      // 这里不要再强制把 List 当 Map；优先在类型匹配时返回。
+      if (payload is T) {
+        return payload as T;
+      }
+
+      if (data is T) {
+        return data as T;
+      }
+
+      return payload as T;
     }
+
     return data as T;
   }
 }

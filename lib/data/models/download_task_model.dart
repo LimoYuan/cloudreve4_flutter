@@ -1,5 +1,3 @@
-import '../../core/utils/app_logger.dart';
-
 /// 下载状态
 enum DownloadStatus {
   waiting,    // 等待中
@@ -28,20 +26,18 @@ class DownloadTaskModel {
   String? errorMessage;
 
   double get progress => fileSize > 0 ? downloadedBytes / fileSize : 0.0;
-  int get remainingBytes => fileSize - downloadedBytes;
+  int get remainingBytes => (fileSize - downloadedBytes).clamp(0, fileSize);
   String get speedText {
-    if (speed <= 0) return '';
-    if (speed < 1024) return '$speed B/s';
-    if (speed < 1024 * 1024) return '${(speed / 1024).toStringAsFixed(1)} KB/s';
-    return '${(speed / (1024 * 1024)).toStringAsFixed(1)} MB/s';
+    final value = speed < 0 ? 0 : speed;
+    if (value < 1024) return '$value B/s';
+    if (value < 1024 * 1024) return '${(value / 1024).toStringAsFixed(1)} KB/s';
+    return '${(value / (1024 * 1024)).toStringAsFixed(1)} MB/s';
   }
   String get progressText {
     if (status == DownloadStatus.completed) {
       return '100%';
     }
-    AppLogger.d('DownloadTaskModel -> 已经初始化, status: $status');
-    final percent = (progress * 100).toStringAsFixed(1);
-    AppLogger.d('DownloadTaskModel -> 已经初始化, percent: $percent');
+    final percent = (progress * 100).clamp(0.0, 100.0).toStringAsFixed(1);
     return '$percent%';
   }
   String get statusText {

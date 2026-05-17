@@ -26,7 +26,7 @@ class DownloadService {
   final Map<String, bd.DownloadTask> _bdTasks = {};
 
   // 回调处理器
-  static Function(String taskId, DownloadStatus status, int progress)?
+  static Function(String taskId, DownloadStatus status, double? progressPercent)?
       _callbackHandler;
 
   final FileService _fileService = FileService();
@@ -36,7 +36,8 @@ class DownloadService {
 
   /// 设置回调处理器
   static void setCallbackHandler(
-      Function(String taskId, DownloadStatus status, int progress) handler) {
+      Function(String taskId, DownloadStatus status, double? progressPercent)
+          handler) {
     _callbackHandler = handler;
   }
 
@@ -117,7 +118,7 @@ class DownloadService {
 
   /// 初始化下载器
   Future<void> initialize(
-      {Function(String taskId, DownloadStatus status, int progress)?
+      {Function(String taskId, DownloadStatus status, double? progressPercent)?
           callbackHandler}) async {
     if (callbackHandler != null) {
       setCallbackHandler(callbackHandler);
@@ -203,8 +204,11 @@ class DownloadService {
     AppLogger.d(
         'background_downloader 状态更新: taskId=${update.task.taskId}, internalId=$resolvedInternalId, status=$status');
 
-    final progress = status == DownloadStatus.completed ? 100 : 0;
-    _callbackHandler?.call(resolvedInternalId, status, progress);
+    // 状态回调不应该把进度重置为 0。
+    // 之前 running/enqueued/paused/failed 都传 progress=0，导致任务页进度条一段段跳动、
+    // 甚至从已有进度回退到 0。只有完成状态明确传 100，其它状态保持现有进度。
+    final progressPercent = status == DownloadStatus.completed ? 100.0 : null;
+    _callbackHandler?.call(resolvedInternalId, status, progressPercent);
   }
 
   /// background_downloader 进度回调
@@ -212,8 +216,20 @@ class DownloadService {
     final internalId = _externalTaskIdToInternalId[update.task.taskId];
     if (internalId == null) return;
 
-    final progress = (update.progress * 100).toInt().clamp(0, 100);
-    _callbackHandler?.call(internalId, DownloadStatus.downloading, progress);
+    final rawProgress = update.progress;
+
+    // background_downloader 在部分状态下可能返回负数或非正常进度。
+    // 这些不是有效进度，不能用来刷新 UI。
+    if (rawProgress.isNaN || rawProgress < 0) {
+      return;
+    }
+
+    final progressPercent = (rawProgress * 100).clamp(0.0, 100.0).toDouble();
+    _callbackHandler?.call(
+      internalId,
+      DownloadStatus.downloading,
+      progressPercent,
+    );
   }
 
   /// 开始下载（新任务）

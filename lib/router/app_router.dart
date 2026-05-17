@@ -7,12 +7,14 @@ import '../presentation/pages/recycle_bin/recycle_bin_page.dart';
 import '../presentation/pages/webdav/webdav_page.dart';
 import '../presentation/pages/remote_download/remote_download_page.dart';
 import '../presentation/pages/settings/settings_page.dart';
+import '../presentation/pages/profile/account_switcher_page.dart';
 import '../presentation/pages/preview/image_preview_page.dart';
 import '../presentation/pages/preview/pdf_preview_page.dart';
 import '../presentation/pages/preview/video_preview_page.dart';
 import '../presentation/pages/preview/audio_preview_page.dart';
 import '../presentation/pages/preview/document_preview_page.dart';
 import '../presentation/pages/preview/markdown_preview_page.dart';
+import '../presentation/pages/files/category_files_page.dart';
 import '../data/models/file_model.dart';
 
 /// 路由名称
@@ -22,6 +24,7 @@ class RouteNames {
   static const String home = '/home';
   static const String settings = '/settings';
   static const String profile = '/profile';
+  static const String accountSwitcher = '/account-switcher';
   static const String share = '/share';
   static const String fileDetail = '/file-detail';
   static const String recycleBin = '/recycle-bin';
@@ -33,6 +36,7 @@ class RouteNames {
   static const String audioPreview = '/audio-preview';
   static const String documentPreview = '/document-preview';
   static const String markdownPreview = '/markdown-preview';
+  static const String categoryFiles = '/category-files';
 }
 
 /// 应用路由
@@ -55,6 +59,12 @@ class AppRouter {
         return MaterialPageRoute(
           settings: settings,
           builder: (context) => const AppShell(),
+        );
+
+      case RouteNames.accountSwitcher:
+        return MaterialPageRoute(
+          settings: settings,
+          builder: (context) => const AccountSwitcherPage(),
         );
 
       case RouteNames.share:
@@ -187,6 +197,35 @@ class AppRouter {
         return MaterialPageRoute(
           settings: settings,
           builder: (context) => MarkdownPreviewPage(file: file),
+        );
+
+
+      case RouteNames.categoryFiles:
+        final args = settings.arguments;
+        if (args is CategoryFilesPageArgs) {
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => CategoryFilesPage(args: args),
+          );
+        }
+        if (args is Map<String, dynamic>) {
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => CategoryFilesPage(
+              args: CategoryFilesPageArgs.fromMap(args),
+            ),
+          );
+        }
+        return MaterialPageRoute(
+          settings: settings,
+          builder: (context) => const CategoryFilesPage(
+            args: CategoryFilesPageArgs(
+              category: 'image',
+              title: '图片',
+              icon: Icons.image,
+              color: Color(0xFFF0ABFC),
+            ),
+          ),
         );
 
       default:

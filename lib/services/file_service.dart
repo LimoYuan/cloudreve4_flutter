@@ -1,3 +1,5 @@
+import 'package:dio/dio.dart';
+
 import 'api_service.dart';
 import '../core/utils/app_logger.dart';
 import '../core/utils/file_utils.dart';
@@ -29,6 +31,32 @@ class FileService {
     return response;
   }
 
+
+  /// 按 Cloudreve V4 预设分类列出文件。
+  ///
+  /// category 可用值：
+  /// image / video / audio / document
+  Future<Map<String, dynamic>> listFilesByCategory({
+    required String category,
+    int page = 0,
+    int? pageSize,
+    String? orderBy,
+    String? orderDirection,
+    String? nextPageToken,
+  }) {
+    final normalizedCategory = category.trim().toLowerCase();
+    final categoryUri = 'cloudreve://my?category=$normalizedCategory';
+
+    return listFiles(
+      uri: categoryUri,
+      page: page,
+      pageSize: pageSize,
+      orderBy: orderBy,
+      orderDirection: orderDirection,
+      nextPageToken: nextPageToken,
+    );
+  }
+
   /// 创建文件/文件夹
   Future<Map<String, dynamic>> createFile({
     required String uri,
@@ -50,6 +78,10 @@ class FileService {
   }
 
   /// 删除文件
+  ///
+  /// Cloudreve V4 中，正在上传或被其他应用占用的文件会带锁。
+  /// 普通删除遇到 Lock conflict(code: 40073) 时，响应 data 中会返回锁 token。
+  /// 文件拥有者可以调用 /file/lock 强制解锁，然后重新删除。
   Future<void> deleteFiles({
     required List<String> uris,
     bool unlink = false,
@@ -61,7 +93,78 @@ class FileService {
       if (skipSoftDelete) 'skip_soft_delete': true,
     };
 
-    await ApiService.instance.delete<void>('/file', data: data);
+    final response = await _deleteFilesRaw(data);
+    final body = _asMap(response.data);
+    final code = body?['code'];
+
+    if (code == 0 || code == null) return;
+
+    if (code == 40073) {
+      final tokens = _extractLockTokens(body);
+      if (tokens.isNotEmpty) {
+        AppLogger.d('Delete files lock conflict, force unlock and retry: ${tokens.length}');
+        await forceUnlock(tokens);
+
+        final retryResponse = await _deleteFilesRaw(data);
+        _ensureCloudreveSuccess(_asMap(retryResponse.data));
+        return;
+      }
+    }
+
+    _ensureCloudreveSuccess(body);
+  }
+
+  Future<Response<dynamic>> _deleteFilesRaw(Map<String, dynamic> data) {
+    return ApiService.instance.dio.delete<dynamic>(
+      '/file',
+      data: data,
+      options: Options(contentType: 'application/json'),
+    );
+  }
+
+  /// 强制解锁文件锁。
+  Future<void> forceUnlock(List<String> tokens) async {
+    if (tokens.isEmpty) return;
+
+    final response = await ApiService.instance.dio.delete<dynamic>(
+      '/file/lock',
+      data: {'tokens': tokens},
+      options: Options(contentType: 'application/json'),
+    );
+
+    _ensureCloudreveSuccess(_asMap(response.data));
+  }
+
+  Map<String, dynamic>? _asMap(dynamic data) {
+    if (data is Map<String, dynamic>) return data;
+    if (data is Map) return Map<String, dynamic>.from(data);
+    return null;
+  }
+
+  List<String> _extractLockTokens(Map<String, dynamic>? data) {
+    final raw = data?['data'];
+    if (raw is! List) return const [];
+
+    final tokens = <String>[];
+    for (final item in raw) {
+      if (item is Map) {
+        final token = item['token']?.toString();
+        if (token != null && token.isNotEmpty) {
+          tokens.add(token);
+        }
+      }
+    }
+    return tokens;
+  }
+
+  void _ensureCloudreveSuccess(Map<String, dynamic>? data) {
+    if (data == null) return;
+
+    final code = data['code'];
+    if (code == null || code == 0) return;
+
+    final msg = data['msg'] ?? data['message'] ?? data['error'] ?? '操作失败';
+    throw Exception('$msg (code: $code)');
   }
 
   /// 移动/复制文件

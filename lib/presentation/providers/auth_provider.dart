@@ -117,55 +117,61 @@ class AuthProvider extends ChangeNotifier {
   }
 
   /// 密码登录
-  Future<bool> passwordLogin({
-    required String email,
-    required String password,
-    bool rememberMe = false,
-  }) async {
-    try {
-      setState(AuthState.loading);
+Future<bool> passwordLogin({
+  required String email,
+  required String password,
+  bool rememberMe = false,
+  String? captcha,
+  String? ticket,
+}) async {
+  try {
+    setState(AuthState.loading);
 
-      // 获取当前服务器
-      final server = ServerService.instance.currentServer;
-      if (server == null) {
-        _errorMessage = '请先选择服务器';
-        _user = null;
-        setState(AuthState.error);
-        return false;
-      }
-
-      // 每次登录时都重新设置 API 的 baseUrl，确保使用最新的服务器地址
-      await _setApiBaseUrl(server.baseUrl);
-
-      // 执行登录
-      final response = await AuthService.instance.passwordLogin(
-        email: email,
-        password: password,
-      );
-      AppLogger.d('AuthProvider 登录成功: $response');
-      // 保存登录信息到当前服务器（包含完整 user 和 token）
-      await ServerService.instance.updateCurrentServerLogin(
-        email: rememberMe ? email : null,
-        password: rememberMe ? password : null,
-        user: response.user,
-        rememberMe: rememberMe,
-      );
-
-      setUser(response.user);
-      setState(AuthState.authenticated);
-
-      return true;
-    } on TwoFactorRequiredException {
-      // 两步验证需要，不设置 error 状态，重新抛出让调用方处理
-      setState(AuthState.unauthenticated);
-      rethrow;
-    } catch (e) {
-      _errorMessage = e.toString();
+    // 获取当前服务器
+    final server = ServerService.instance.currentServer;
+    if (server == null) {
+      _errorMessage = '请先选择服务器';
       _user = null;
       setState(AuthState.error);
       return false;
     }
+
+    // 每次登录时都重新设置 API 的 baseUrl，确保使用最新的服务器地址
+    await _setApiBaseUrl(server.baseUrl);
+
+    // 执行登录
+    final response = await AuthService.instance.passwordLogin(
+      email: email,
+      password: password,
+      captcha: captcha,
+      ticket: ticket,
+    );
+
+    AppLogger.d('AuthProvider 登录成功: $response');
+
+    // 保存登录信息到当前服务器（包含完整 user 和 token）
+    await ServerService.instance.updateCurrentServerLogin(
+      email: rememberMe ? email : null,
+      password: rememberMe ? password : null,
+      user: response.user,
+      rememberMe: rememberMe,
+    );
+
+    setUser(response.user);
+    setState(AuthState.authenticated);
+
+    return true;
+  } on TwoFactorRequiredException {
+    // 两步验证需要，不设置 error 状态，重新抛出让调用方处理
+    setState(AuthState.unauthenticated);
+    rethrow;
+  } catch (e) {
+    _errorMessage = e.toString();
+    _user = null;
+    setState(AuthState.error);
+    return false;
   }
+}
 
   /// 两步验证登录
   Future<bool> twoFactorLogin({
@@ -311,6 +317,125 @@ class AuthProvider extends ChangeNotifier {
   void clearRefreshTokenExpired() {
     _hasRefreshTokenExpired = false;
     notifyListeners();
+  }
+
+  /// 切换到当前站点下已保存的账号。
+  Future<bool> switchToAccount(String accountKey) async {
+    try {
+      setState(AuthState.loading);
+
+      await ServerService.instance.switchCurrentServerAccount(accountKey);
+      final server = ServerService.instance.currentServer;
+      if (server == null) {
+        _user = null;
+        setState(AuthState.unauthenticated);
+        return false;
+      }
+
+      await _setApiBaseUrl(server.baseUrl);
+      _setupApiCallbacks();
+
+      final savedUser = server.user;
+      if (savedUser != null &&
+          savedUser.token != null &&
+          !savedUser.token!.isRefreshTokenExpired) {
+        setUser(savedUser);
+        _hasRefreshTokenExpired = false;
+        setState(AuthState.authenticated);
+        return true;
+      }
+
+      _user = null;
+      setState(AuthState.unauthenticated);
+      return false;
+    } catch (e) {
+      _errorMessage = e.toString();
+      _user = null;
+      setState(AuthState.error);
+      return false;
+    }
+  }
+
+  /// 兼容旧入口：切换服务器配置。
+  Future<bool> switchToServerAccount(String label) async {
+    try {
+      setState(AuthState.loading);
+
+      await ServerService.instance.selectServer(label);
+      final server = ServerService.instance.currentServer;
+      if (server == null) {
+        _user = null;
+        setState(AuthState.unauthenticated);
+        return false;
+      }
+
+      await _setApiBaseUrl(server.baseUrl);
+      _setupApiCallbacks();
+
+      final savedUser = server.user;
+      if (savedUser != null &&
+          savedUser.token != null &&
+          !savedUser.token!.isRefreshTokenExpired) {
+        setUser(savedUser);
+        _hasRefreshTokenExpired = false;
+        setState(AuthState.authenticated);
+        return true;
+      }
+
+      _user = null;
+      setState(AuthState.unauthenticated);
+      return false;
+    } catch (e) {
+      _errorMessage = e.toString();
+      _user = null;
+      setState(AuthState.error);
+      return false;
+    }
+  }
+
+  /// 准备在当前站点添加另一个账号。
+  ///
+  /// 不清空当前账号、不创建空账号槽。
+  /// 用户进入登录页后：
+  /// - 登录成功：新账号会通过 updateCurrentServerLogin 写入 accounts 并成为当前账号；
+  /// - 直接返回：原账号仍保持登录，账号列表不会出现空账号。
+  Future<void> createAccountSlotForCurrentSite() async {
+    final current = ServerService.instance.currentServer;
+    if (current == null) {
+      throw Exception('当前没有选中的站点');
+    }
+
+    await _setApiBaseUrl(current.baseUrl);
+    _setupApiCallbacks();
+
+    _errorMessage = null;
+    _hasRefreshTokenExpired = false;
+    notifyListeners();
+  }
+
+  /// 删除当前站点保存的账号。
+  ///
+  /// 如果删除的是当前账号，会退出到未登录状态。
+  Future<bool> removeSavedAccount(String accountKey) async {
+    try {
+      final removingCurrent =
+          _user != null && (_user!.id == accountKey || _user!.email == accountKey);
+
+      await ServerService.instance.removeCurrentServerAccount(accountKey);
+
+      if (removingCurrent) {
+        _clearUserData();
+        setState(AuthState.unauthenticated);
+      } else {
+        notifyListeners();
+      }
+
+      return removingCurrent;
+    } catch (e) {
+      _errorMessage = e.toString();
+      notifyListeners();
+      rethrow;
+    }
   }
 
   /// 获取上次登录的邮箱（用于填充输入框）

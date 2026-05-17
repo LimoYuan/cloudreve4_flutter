@@ -1,4 +1,3 @@
-import 'package:animations/animations.dart';
 import 'package:cloudreve4_flutter/presentation/providers/auth_provider.dart';
 import 'package:cloudreve4_flutter/presentation/providers/download_manager_provider.dart';
 import 'package:cloudreve4_flutter/presentation/providers/file_manager_provider.dart';
@@ -14,7 +13,29 @@ import '../../../router/app_router.dart';
 import '../files/files_page.dart';
 import '../overview/overview_page.dart';
 import '../tasks/tasks_page.dart';
+import '../store/store_page.dart';
 import '../profile/profile_page.dart';
+
+class _ShellPageSlot extends StatefulWidget {
+  final Widget child;
+
+  const _ShellPageSlot({required this.child});
+
+  @override
+  State<_ShellPageSlot> createState() => _ShellPageSlotState();
+}
+
+class _ShellPageSlotState extends State<_ShellPageSlot>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return widget.child;
+  }
+}
 
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
@@ -24,6 +45,7 @@ class AppShell extends StatefulWidget {
 }
 
 class _AppShellState extends State<AppShell> with GestureHandlerMixin {
+  final Set<int> _visitedPageIndexes = <int>{0};
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
@@ -57,28 +79,36 @@ class _AppShellState extends State<AppShell> with GestureHandlerMixin {
   }
 
   Widget _buildPageContent(BuildContext context, int currentIndex) {
-    const pages = [
-      OverviewPage(),
-      FilesPage(),
-      TasksPage(),
-      ProfilePage(),
-    ];
+    _visitedPageIndexes.add(currentIndex);
 
-    return PageTransitionSwitcher(
-      duration: const Duration(milliseconds: 300),
-      transitionBuilder: (child, animation, secondaryAnimation) {
-        return SharedAxisTransition(
-          animation: animation,
-          secondaryAnimation: secondaryAnimation,
-          transitionType: SharedAxisTransitionType.horizontal,
-          child: child,
-        );
-      },
-      child: KeyedSubtree(
-        key: ValueKey(currentIndex),
-        child: pages[currentIndex],
+    return RepaintBoundary(
+      child: IndexedStack(
+        index: currentIndex,
+        children: List.generate(5, (index) {
+          if (!_visitedPageIndexes.contains(index)) {
+            return const SizedBox.shrink();
+          }
+          return _ShellPageSlot(child: _pageForIndex(index));
+        }),
       ),
     );
+  }
+
+  Widget _pageForIndex(int index) {
+    switch (index) {
+      case 0:
+        return const OverviewPage();
+      case 1:
+        return const FilesPage();
+      case 2:
+        return const TasksPage();
+      case 3:
+        return const StorePage();
+      case 4:
+        return const ProfilePage();
+      default:
+        return const OverviewPage();
+    }
   }
 
   Widget _buildMobileLayout(BuildContext context, NavigationProvider navProvider) {
@@ -92,6 +122,7 @@ class _AppShellState extends State<AppShell> with GestureHandlerMixin {
 
             return NavigationBar(
               height: 64,
+              labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
               selectedIndex: navProvider.currentIndex,
               onDestinationSelected: (i) => navProvider.setIndex(i),
               destinations: [
@@ -117,6 +148,11 @@ class _AppShellState extends State<AppShell> with GestureHandlerMixin {
                     child: const Icon(LucideIcons.listChecks, weight: 700),
                   ),
                   label: '任务',
+                ),
+                const NavigationDestination(
+                  icon: Icon(Icons.storefront_outlined),
+                  selectedIcon: Icon(Icons.storefront),
+                  label: '商店',
                 ),
                 const NavigationDestination(
                   icon: Icon(LucideIcons.user),
@@ -146,11 +182,11 @@ class _AppShellState extends State<AppShell> with GestureHandlerMixin {
             leading: Padding(
               padding: const EdgeInsets.symmetric(vertical: 16),
               child: GestureDetector(
-                onTap: () => navProvider.setIndex(3),
+                onTap: () => navProvider.setIndex(4),
                 child: Container(
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    border: navProvider.currentIndex == 3
+                    border: navProvider.currentIndex == 4
                         ? Border.all(
                             color: theme.colorScheme.primary,
                             width: 2.5,
@@ -190,6 +226,11 @@ class _AppShellState extends State<AppShell> with GestureHandlerMixin {
                 ),
                 selectedIcon: const Icon(LucideIcons.listChecks, weight: 700),
                 label: const Text('任务'),
+              ),
+              const NavigationRailDestination(
+                icon: Icon(Icons.storefront_outlined),
+                selectedIcon: Icon(Icons.storefront),
+                label: Text('商店'),
               ),
               const NavigationRailDestination(
                 icon: Icon(LucideIcons.user),

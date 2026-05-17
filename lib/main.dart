@@ -20,6 +20,9 @@ import 'presentation/providers/user_setting_provider.dart';
 import 'presentation/providers/admin_provider.dart';
 import 'presentation/providers/theme_provider.dart';
 import 'services/upload_service.dart';
+import 'services/upload_foreground_service.dart';
+import 'services/android_compat_service.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'services/api_service.dart';
 import 'services/server_service.dart';
 import 'services/cache_manager_service.dart';
@@ -33,6 +36,7 @@ final RouteObserver<PageRoute> routeObserver = RouteObserver<PageRoute>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  UploadForegroundService.initCommunicationPort();
 
   // 捕获 flutter_cache_manager 在 Windows 上删除缓存文件时的文件占用异常
   // 该异常是后台异步抛出的，无法通过 try-catch 拦截，需绑定错误处理器静默忽略
@@ -108,6 +112,18 @@ void main() async {
 
   // 初始化头像缓存服务
   await AvatarCacheService.instance.init();
+
+  // Android 13+：请求通知权限，避免上传/下载进度通知无法显示。
+  await AndroidCompatService.initialize();
+
+  // 初始化上传前台服务配置（Android 后台上传通知）。
+  await UploadForegroundService.initialize();
+
+  // Android 15+ targetSdk 35/36 会默认 Edge-to-edge；这里显式开启，
+  // 并由各 Scaffold / SafeArea 处理系统栏避让。
+  if (Platform.isAndroid) {
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  }
 
   // 设置横竖屏方向（仅移动端）
   if (Platform.isAndroid || Platform.isIOS) {
@@ -206,8 +222,29 @@ class AppView extends StatelessWidget {
             // 添加全局错误处理
             currentWidget = FilterQualityWidget(child: currentWidget);
           }
-          // 添加全局错误处理
-          return ErrorHandler(child: currentWidget);
+          // 添加全局错误处理。Android 端外层包裹 WithForegroundTask，
+          // 让 flutter_foreground_task 能正确接收通知点击和前台服务事件。
+          final wrapped = Platform.isAndroid
+              ? WithForegroundTask(child: ErrorHandler(child: currentWidget))
+              : ErrorHandler(child: currentWidget);
+
+          final overlayStyle = SystemUiOverlayStyle(
+            statusBarColor: Colors.transparent,
+            systemNavigationBarColor: Colors.transparent,
+            systemStatusBarContrastEnforced: false,
+            systemNavigationBarContrastEnforced: false,
+            statusBarIconBrightness:
+                themeProvider.isDark ? Brightness.light : Brightness.dark,
+            statusBarBrightness:
+                themeProvider.isDark ? Brightness.dark : Brightness.light,
+            systemNavigationBarIconBrightness:
+                themeProvider.isDark ? Brightness.light : Brightness.dark,
+          );
+
+          return AnnotatedRegion<SystemUiOverlayStyle>(
+            value: overlayStyle,
+            child: wrapped,
+          );
         },
       ),
     );

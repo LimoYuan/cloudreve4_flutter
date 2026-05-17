@@ -129,6 +129,18 @@ class ThemeProvider extends ChangeNotifier {
     return ThemeData(
       textTheme: textTheme,
       useMaterial3: true,
+      visualDensity: VisualDensity.standard,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      splashFactory: InkRipple.splashFactory,
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: FadeUpwardsPageTransitionsBuilder(),
+          TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.linux: FadeUpwardsPageTransitionsBuilder(),
+          TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.windows: FadeUpwardsPageTransitionsBuilder(),
+        },
+      ),
       colorScheme: colorScheme,
       scaffoldBackgroundColor: isLight ? lightScaffoldBg : darkScaffoldBg,
       appBarTheme: AppBarTheme(
@@ -200,11 +212,25 @@ class ThemeProvider extends ChangeNotifier {
         ),
       ),
       bottomSheetTheme: const BottomSheetThemeData(
+        clipBehavior: Clip.antiAlias,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(
-            top: Radius.circular(16),
+            top: Radius.circular(18),
           ),
         ),
+      ),
+      listTileTheme: ListTileThemeData(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+      ),
+      dividerTheme: DividerThemeData(
+        color: isLight
+            ? Colors.black.withValues(alpha: 0.06)
+            : Colors.white.withValues(alpha: 0.08),
+        thickness: 1,
+        space: 1,
       ),
       navigationBarTheme: NavigationBarThemeData(
         elevation: 0,

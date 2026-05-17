@@ -2,6 +2,8 @@ import 'package:cloudreve4_flutter/presentation/providers/auth_provider.dart';
 import 'package:cloudreve4_flutter/presentation/providers/user_setting_provider.dart';
 import 'package:cloudreve4_flutter/presentation/pages/profile/widgets/thick_storage_bar.dart';
 import 'package:cloudreve4_flutter/presentation/widgets/user_avatar.dart';
+import 'package:cloudreve4_flutter/router/app_router.dart';
+import 'package:lucide_icons/lucide_icons.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -87,6 +89,16 @@ class ProfileInfoCard extends StatelessWidget {
                         ),
                       ),
                     ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Tooltip(
+                  message: '切换账号',
+                  child: IconButton.filledTonal(
+                    icon: const Icon(LucideIcons.userPlus, size: 20),
+                    onPressed: () => Navigator.of(context).pushNamed(
+                      RouteNames.accountSwitcher,
+                    ),
                   ),
                 ),
               ],

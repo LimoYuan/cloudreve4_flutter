@@ -16,6 +16,7 @@ class FileIconUtils {
   static const _torrentExtensions = {'torrent'};
 
   static IconData getFileIcon(String fileName) {
+    if (FileUtils.isPsdFile(fileName)) return LucideIcons.image;
     if (FileUtils.isImageFile(fileName)) return LucideIcons.image;
     if (FileUtils.isVideoFile(fileName)) return LucideIcons.video;
     if (FileUtils.isAudioFile(fileName)) return LucideIcons.music;
@@ -36,6 +37,7 @@ class FileIconUtils {
   }
 
   static Color getFileIconColor(String fileName) {
+    if (FileUtils.isPsdFile(fileName)) return const Color(0xFFEC4899);
     if (FileUtils.isImageFile(fileName)) return const Color(0xFFA855F7);
     if (FileUtils.isVideoFile(fileName)) return const Color(0xFFF97316);
     if (FileUtils.isAudioFile(fileName)) return const Color(0xFF3B82F6);
@@ -71,6 +73,7 @@ class FileIconUtils {
   /// 文件类型中文标签
   static String getFileTypeLabel(String fileName, {bool isFolder = false}) {
     if (isFolder) return '文件夹';
+    if (FileUtils.isPsdFile(fileName)) return 'PSD';
     if (FileUtils.isImageFile(fileName)) return '图片';
     if (FileUtils.isVideoFile(fileName)) return '视频';
     if (FileUtils.isAudioFile(fileName)) return '音频';

@@ -8,6 +8,7 @@ class FileUtils {
     final cleanPath = path.startsWith('/') ? path.substring(1) : path;
     return 'cloudreve://my/$cleanPath';
   }
+
   /// 获取文件扩展名
   static String getFileExtension(String fileName) {
     final dotIndex = fileName.lastIndexOf('.');
@@ -18,15 +19,54 @@ class FileUtils {
   /// 判断是否为图片文件
   static bool isImageFile(String fileName) {
     const imageExtensions = [
-      'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'heic'
+      'jpg',
+      'jpeg',
+      'png',
+      'gif',
+      'webp',
+      'bmp',
+      'svg',
+      'heic',
+      'heif',
+      'avif',
+      'tif',
+      'tiff',
     ];
     return imageExtensions.contains(getFileExtension(fileName));
+  }
+
+  /// 判断是否为 Flutter Image 可以直接解码的图片文件
+  ///
+  /// 注意：文件列表缩略图不直接加载原文件，而是加载 Cloudreve /file/thumb
+  /// 返回的缩略图 URL；这里主要用于普通图片预览或本地图标判断。
+  static bool isFlutterRenderableImageFile(String fileName) {
+    const renderableImageExtensions = [
+      'jpg',
+      'jpeg',
+      'png',
+      'gif',
+      'webp',
+      'bmp',
+    ];
+    return renderableImageExtensions.contains(getFileExtension(fileName));
   }
 
   /// 判断是否为视频文件
   static bool isVideoFile(String fileName) {
     const videoExtensions = [
-      'mp4', 'webm', 'mkv', 'avi', 'mov', 'flv', 'wmv'
+      'mp4',
+      'webm',
+      'mkv',
+      'avi',
+      'mov',
+      'flv',
+      'wmv',
+      'm4v',
+      'mpg',
+      'mpeg',
+      '3gp',
+      'ts',
+      'm2ts',
     ];
     return videoExtensions.contains(getFileExtension(fileName));
   }
@@ -37,6 +77,27 @@ class FileUtils {
       'mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a'
     ];
     return audioExtensions.contains(getFileExtension(fileName));
+  }
+
+  /// 判断是否为 PSD / Photoshop 文件
+  static bool isPsdFile(String fileName) {
+    const psdExtensions = ['psd', 'psb'];
+    return psdExtensions.contains(getFileExtension(fileName));
+  }
+
+  /// 判断是否应该尝试加载 Cloudreve 缩略图
+  ///
+  /// Cloudreve 会在访问 /file/thumb 时触发缩略图生成。
+  /// 这里不要只限制为 Flutter 原生可解码图片；视频、PSD 等文件也应交给后端缩略图生成器处理。
+  static bool isThumbnailableFile(String fileName) {
+    final ext = getFileExtension(fileName);
+    if (ext.isEmpty) return false;
+
+    // SVG 原文件 Flutter Image 不支持；如果服务端能转成缩略图，也可以打开。
+    // 这里为了避免无意义请求，默认不请求 SVG 缩略图。
+    if (ext == 'svg') return false;
+
+    return isImageFile(fileName) || isVideoFile(fileName) || isPsdFile(fileName);
   }
 
   /// 判断是否为PDF文件
@@ -93,14 +154,34 @@ class FileUtils {
       'png': 'image/png',
       'gif': 'image/gif',
       'webp': 'image/webp',
+      'bmp': 'image/bmp',
       'svg': 'image/svg+xml',
+      'heic': 'image/heic',
+      'heif': 'image/heif',
+      'avif': 'image/avif',
+      'tif': 'image/tiff',
+      'tiff': 'image/tiff',
+      'psd': 'image/vnd.adobe.photoshop',
+      'psb': 'image/vnd.adobe.photoshop',
       'mp4': 'video/mp4',
       'webm': 'video/webm',
       'mkv': 'video/x-matroska',
       'avi': 'video/x-msvideo',
+      'mov': 'video/quicktime',
+      'flv': 'video/x-flv',
+      'wmv': 'video/x-ms-wmv',
+      'm4v': 'video/x-m4v',
+      'mpg': 'video/mpeg',
+      'mpeg': 'video/mpeg',
+      '3gp': 'video/3gpp',
+      'ts': 'video/mp2t',
+      'm2ts': 'video/mp2t',
       'mp3': 'audio/mpeg',
       'wav': 'audio/wav',
       'ogg': 'audio/ogg',
+      'flac': 'audio/flac',
+      'aac': 'audio/aac',
+      'm4a': 'audio/mp4',
       'pdf': 'application/pdf',
       'txt': 'text/plain',
       'json': 'application/json',

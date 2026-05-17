@@ -187,6 +187,7 @@ class _FilesPageState extends State<FilesPage> {
     return SizedBox(
       height: 40,
       child: ListView(
+        key: const PageStorageKey('mobile_breadcrumb'),
         scrollDirection: Axis.horizontal,
         children: [
           _buildBreadcrumbChip(
@@ -702,6 +703,9 @@ class _FilesPageState extends State<FilesPage> {
             child: NotificationListener<ScrollNotification>(
               onNotification: _onScrollNotification,
               child: ListView.builder(
+                key: PageStorageKey('files_list_${fileManager.currentPath}'),
+                cacheExtent: 900,
+                keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                 itemCount: fileManager.files.length,
                 itemBuilder: (context, index) {
                   final file = fileManager.files[index];
@@ -771,6 +775,9 @@ class _FilesPageState extends State<FilesPage> {
       child: NotificationListener<ScrollNotification>(
         onNotification: _onScrollNotification,
         child: GridView.builder(
+          key: PageStorageKey('files_grid_${fileManager.currentPath}'),
+          cacheExtent: 1100,
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           padding: const EdgeInsets.all(8),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: crossAxisCount,

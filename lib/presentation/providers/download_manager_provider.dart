@@ -18,6 +18,15 @@ class DownloadManagerProvider extends ChangeNotifier {
   // 速度追踪：记录每个任务的上次进度更新时间和字节数
   final Map<String, DateTime> _lastProgressTime = {};
   final Map<String, int> _lastProgressBytes = {};
+  DateTime? _lastProgressPersistTime;
+
+  /// 暂停/恢复后的基准字节数。
+  ///
+  /// background_downloader 在 pause/resume 后，某些情况下 progress 会从
+  /// 本次 resume 的 0% 重新报，而不是全文件累计进度。
+  /// 如果直接用 fileSize * progress，会小于已有 downloadedBytes，
+  /// 旧逻辑为了避免倒退会一直卡住，直到本次进度超过旧累计百分比。
+  final Map<String, int> _resumeBaseBytes = {};
 
   /// 获取所有下载任务
   List<DownloadTaskModel> get tasks => _tasks.values.toList()
@@ -171,71 +180,146 @@ class DownloadManagerProvider extends ChangeNotifier {
   }
 
   /// 处理下载回调
+  ///
+  /// [progressPercent] 为 null 表示这是纯状态更新，不应该重置已有进度。
   void _handleDownloadCallback(
-      String taskId, DownloadStatus status, int progress) async {
+    String taskId,
+    DownloadStatus status,
+    double? progressPercent,
+  ) async {
     AppLogger.d(
-        'DownloadManagerProvider._handleDownloadCallback: taskId=$taskId, status=$status, progress=$progress');
+      'DownloadManagerProvider._handleDownloadCallback: '
+      'taskId=$taskId, status=$status, progressPercent=$progressPercent',
+    );
 
-    // 获取当前任务
     final task = _tasks[taskId];
     if (task == null) {
       AppLogger.d('任务不存在: taskId=$taskId');
       return;
     }
 
-    // 计算下载字节数和速度
-    final downloadedBytes = (task.fileSize * progress / 100).toInt();
-    int speed = 0;
-    final now = DateTime.now();
-    final lastTime = _lastProgressTime[taskId];
-    final lastBytes = _lastProgressBytes[taskId] ?? 0;
+    var downloadedBytes = task.downloadedBytes;
+    final hasProgress = progressPercent != null && progressPercent.isFinite;
 
-    if (status == DownloadStatus.downloading && lastTime != null) {
-      final elapsed = now.difference(lastTime).inMilliseconds;
-      if (elapsed > 0) {
-        speed = ((downloadedBytes - lastBytes) * 1000 / elapsed).round();
+    if (status == DownloadStatus.completed) {
+      downloadedBytes = task.fileSize;
+      _resumeBaseBytes.remove(taskId);
+    } else if (hasProgress && task.fileSize > 0) {
+      final normalized = progressPercent.clamp(0.0, 100.0);
+      final calculatedWholeBytes =
+          (task.fileSize * normalized / 100.0).round().clamp(0, task.fileSize);
+
+      final resumeBase = _resumeBaseBytes[taskId];
+
+      if (resumeBase != null &&
+          resumeBase > 0 &&
+          calculatedWholeBytes < resumeBase) {
+        // pause/resume 后，background_downloader 可能把 progress 当作
+        // “剩余部分”的进度重新从 0 上报。
+        // 真实累计进度 = 恢复前字节 + 剩余字节 * 本次进度。
+        final remainingBytes = (task.fileSize - resumeBase).clamp(0, task.fileSize);
+        final resumedBytes =
+            (resumeBase + remainingBytes * normalized / 100.0)
+                .round()
+                .clamp(0, task.fileSize);
+
+        if (resumedBytes >= downloadedBytes || downloadedBytes == 0) {
+          downloadedBytes = resumedBytes;
+        }
+      } else {
+        // 正常累计进度，或本次 progress 已经追上/超过恢复前基准。
+        if (calculatedWholeBytes >= downloadedBytes || downloadedBytes == 0) {
+          downloadedBytes = calculatedWholeBytes;
+        }
+
+        if (resumeBase != null && calculatedWholeBytes >= resumeBase) {
+          _resumeBaseBytes.remove(taskId);
+        }
       }
     }
 
-    if (status == DownloadStatus.downloading) {
+    var speed = task.speed;
+    final now = DateTime.now();
+
+    if (status == DownloadStatus.downloading && hasProgress) {
+      final lastTime = _lastProgressTime[taskId];
+      final lastBytes = _lastProgressBytes[taskId];
+
+      if (lastTime != null && lastBytes != null) {
+        final elapsedMs = now.difference(lastTime).inMilliseconds;
+        final bytesDelta = downloadedBytes - lastBytes;
+
+        // 低于 300ms 的回调容易造成速度抖动；字节倒退时不计算速度。
+        if (elapsedMs >= 300 && bytesDelta >= 0) {
+          speed = (bytesDelta * 1000 / elapsedMs).round();
+        }
+      }
+
       _lastProgressTime[taskId] = now;
       _lastProgressBytes[taskId] = downloadedBytes;
+    } else if (status == DownloadStatus.downloading && !hasProgress) {
+      // running 状态回调，不动速度和进度。
+      speed = task.speed;
     } else {
+      speed = 0;
       _lastProgressTime.remove(taskId);
       _lastProgressBytes.remove(taskId);
     }
 
-    // 判断是否在等待WiFi
     final waitingForWifi =
-        status == DownloadStatus.waiting && _isWifiOnlyEnabled;
+        status == DownloadStatus.waiting && (_isWifiOnlyEnabled || task.waitingForWifi);
 
-    // 更新任务
     final updatedTask = task.copyWith(
       status: status,
       downloadedBytes: downloadedBytes,
       speed: speed,
       waitingForWifi: waitingForWifi,
+      completedAt: status == DownloadStatus.completed ? DateTime.now() : task.completedAt,
     );
 
-    // 如果下载完成，设置完成时间
-    if (status == DownloadStatus.completed) {
-      _tasks[taskId] = updatedTask.copyWith(
-        completedAt: DateTime.now(),
-        speed: 0,
-      );
-    } else {
-      _tasks[taskId] = updatedTask;
+    _tasks[taskId] = updatedTask;
+
+    AppLogger.d(
+      '下载任务更新: ${updatedTask.fileName}, '
+      'status=${updatedTask.status}, '
+      'bytes=${updatedTask.downloadedBytes}/${updatedTask.fileSize}, '
+      'progress=${updatedTask.progressText}, '
+      'speed=${updatedTask.speedText}',
+    );
+
+    final shouldPersistNow =
+        status != DownloadStatus.downloading || _shouldPersistProgress(now);
+
+    if (shouldPersistNow) {
+      await _saveTasks();
+      _lastProgressPersistTime = now;
     }
 
-    AppLogger.d('任务已更新: ${_tasks[taskId]!.status}');
-    await _saveTasks();
     notifyListeners();
+  }
+
+  bool _shouldPersistProgress(DateTime now) {
+    final last = _lastProgressPersistTime;
+    if (last == null) return true;
+    return now.difference(last).inSeconds >= 2;
   }
 
   /// 恢复下载
   Future<void> resumeDownload(String taskId) async {
     final task = _tasks[taskId];
     if (task != null) {
+      _resumeBaseBytes[taskId] = task.downloadedBytes;
+      _lastProgressTime[taskId] = DateTime.now();
+      _lastProgressBytes[taskId] = task.downloadedBytes;
+
+      _tasks[taskId] = task.copyWith(
+        status: DownloadStatus.waiting,
+        speed: 0,
+        waitingForWifi: false,
+      );
+      await _saveTasks();
+      notifyListeners();
+
       await _downloadService.resumeDownload(taskId);
     }
   }
@@ -247,6 +331,7 @@ class DownloadManagerProvider extends ChangeNotifier {
     final task = _tasks[taskId];
     if (task != null) {
       if (task.status == DownloadStatus.downloading) {
+        _resumeBaseBytes[taskId] = task.downloadedBytes;
         _tasks[taskId] = task.copyWith(
             status: DownloadStatus.paused, speed: 0, waitingForWifi: false);
         _lastProgressTime.remove(taskId);
@@ -263,6 +348,7 @@ class DownloadManagerProvider extends ChangeNotifier {
 
     final task = _tasks[taskId];
     if (task != null) {
+      _resumeBaseBytes.remove(taskId);
       _tasks[taskId] = task.copyWith(
           status: DownloadStatus.cancelled, waitingForWifi: false);
       await _saveTasks();
@@ -288,6 +374,7 @@ class DownloadManagerProvider extends ChangeNotifier {
       }
 
       // 移除任务
+      _resumeBaseBytes.remove(taskId);
       _tasks.remove(taskId);
       _downloadService.disposeTask(taskId);
       await _saveTasks();
@@ -311,6 +398,7 @@ class DownloadManagerProvider extends ChangeNotifier {
         completedAt: null,
         waitingForWifi: false,
       );
+      _resumeBaseBytes.remove(taskId);
       _lastProgressTime.remove(taskId);
       _lastProgressBytes.remove(taskId);
       await _saveTasks();
@@ -333,6 +421,7 @@ class DownloadManagerProvider extends ChangeNotifier {
   Future<void> clearFailedTasks() async {
     final failedTasks = getTasksByStatus(DownloadStatus.failed);
     for (final task in failedTasks) {
+      _resumeBaseBytes.remove(task.id);
       _tasks.remove(task.id);
       _downloadService.disposeTask(task.id);
     }
@@ -411,11 +500,15 @@ class DownloadManagerProvider extends ChangeNotifier {
         if (task.status == DownloadStatus.downloading ||
             task.status == DownloadStatus.waiting) {
           AppLogger.d('恢复下载任务: ${task.fileName}');
+          _resumeBaseBytes[task.id] = task.downloadedBytes;
+          _lastProgressTime[task.id] = DateTime.now();
+          _lastProgressBytes[task.id] = task.downloadedBytes;
           // 使用 resumeDownloadAfterRestart 支持断点续传
           await _downloadService.resumeDownloadAfterRestart(task);
         } else if (task.status == DownloadStatus.paused) {
           // 修复5：暂停的任务需要重建 bdTasks 映射，以便继续下载
           AppLogger.d('重建暂停任务映射: ${task.fileName}');
+          _resumeBaseBytes[task.id] = task.downloadedBytes;
           await _downloadService.resumeDownloadAfterRestart(task);
           // 重建映射后立即暂停，保持任务在暂停状态
           await _downloadService.pauseDownload(task.id);
@@ -441,6 +534,8 @@ class DownloadManagerProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _lastProgressTime.clear();
+    _lastProgressBytes.clear();
     _downloadService.dispose();
     super.dispose();
   }

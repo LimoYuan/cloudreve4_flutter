@@ -39,21 +39,56 @@ class UploadSessionModel {
   });
 
   factory UploadSessionModel.fromJson(Map<String, dynamic> json) {
+    final storagePolicyJson = json['storage_policy'] as Map<String, dynamic>? ??
+        json['storagePolicy'] as Map<String, dynamic>? ??
+        <String, dynamic>{
+          'id': '',
+          'name': '',
+          'type': '',
+          'max_size': 0,
+        };
+
     return UploadSessionModel(
-      sessionId: json['session_id'] as String,
-      uploadId: json['upload_id'] as String?,
-      chunkSize: json['chunk_size'] as int,
-      expires: json['expires'] as int,
+      sessionId: json['session_id']?.toString() ??
+          json['sessionId']?.toString() ??
+          '',
+      uploadId: json['upload_id']?.toString() ?? json['uploadId']?.toString(),
+      chunkSize: (json['chunk_size'] as num?)?.toInt() ??
+          (json['chunkSize'] as num?)?.toInt() ??
+          0,
+      expires: (json['expires'] as num?)?.toInt() ?? 0,
       uploadUrls: json['upload_urls'] != null
-          ? (json['upload_urls'] as List).map((e) => e as String).toList()
-          : null,
-      credential: json['credential'] as String?,
-      completeUrl: json['completeURL'] as String?,
-      storagePolicy: StoragePolicyModel.fromJson(json['storage_policy'] as Map<String, dynamic>),
-      mimeType: json['mime_type'] as String?,
-      uploadPolicy: json['upload_policy'] as String?,
-      callbackSecret: json['callback_secret'] as String?,
+          ? (json['upload_urls'] as List).map((e) => e.toString()).toList()
+          : json['uploadUrls'] != null
+              ? (json['uploadUrls'] as List).map((e) => e.toString()).toList()
+              : null,
+      credential: json['credential']?.toString(),
+      completeUrl: json['completeURL']?.toString() ??
+          json['complete_url']?.toString() ??
+          json['completeUrl']?.toString(),
+      storagePolicy: StoragePolicyModel.fromJson(storagePolicyJson),
+      mimeType: json['mime_type']?.toString() ?? json['mimeType']?.toString(),
+      uploadPolicy:
+          json['upload_policy']?.toString() ?? json['uploadPolicy']?.toString(),
+      callbackSecret: json['callback_secret']?.toString() ??
+          json['callbackSecret']?.toString(),
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'session_id': sessionId,
+      'upload_id': uploadId,
+      'chunk_size': chunkSize,
+      'expires': expires,
+      'upload_urls': uploadUrls,
+      'credential': credential,
+      'completeURL': completeUrl,
+      'storage_policy': storagePolicy.toJson(),
+      'mime_type': mimeType,
+      'upload_policy': uploadPolicy,
+      'callback_secret': callbackSecret,
+    };
   }
 
   /// 是否支持分片上传
@@ -81,22 +116,46 @@ class StoragePolicyModel {
 
   factory StoragePolicyModel.fromJson(Map<String, dynamic> json) {
     return StoragePolicyModel(
-      id: json['id'] as String,
-      name: json['name'] as String,
-      type: json['type'] as String,
-      maxSize: json['max_size'] as int,
+      id: json['id']?.toString() ?? '',
+      name: json['name']?.toString() ?? '',
+      type: json['type']?.toString() ??
+          json['policy_type']?.toString() ??
+          json['policyType']?.toString() ??
+          '',
+      maxSize: (json['max_size'] as num?)?.toInt() ??
+          (json['maxSize'] as num?)?.toInt() ??
+          0,
       relay: json['relay'] as bool?,
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'type': type,
+      'max_size': maxSize,
+      'relay': relay,
+    };
   }
 }
 
 /// 上传任务模型
 class UploadTaskModel {
+  static const Object _unset = Object();
+
   final String id;
   final File file;
   final String fileName;
   final int fileSize;
   final String targetPath; // 目标路径，例如 cloudreve://my/subfolder
+
+  /// Android SAF / ContentResolver 原始文件 URI。
+  ///
+  /// 如果非空且以 content:// 开头，上传时优先通过 Android 原生 ContentResolver
+  /// 按 offset/length 分片读取，不再依赖 file_picker 复制出来的缓存文件。
+  final String? sourceUri;
+
   final DateTime createdAt;
   DateTime? completedAt;
   final UploadStatus status;
@@ -114,6 +173,7 @@ class UploadTaskModel {
     required this.fileName,
     required this.fileSize,
     required this.targetPath,
+    this.sourceUri,
     DateTime? createdAt,
     this.completedAt,
     UploadStatus? status,
@@ -126,6 +186,9 @@ class UploadTaskModel {
     this.speed = 0,
   })  : createdAt = createdAt ?? DateTime.now(),
       status = status ?? UploadStatus.waiting;
+
+  bool get usesContentUri =>
+      sourceUri != null && sourceUri!.toLowerCase().startsWith('content://');
 
   /// 计算总分片数
   int calculateTotalChunks(int chunkSize) {
@@ -174,23 +237,28 @@ class UploadTaskModel {
 
   /// 获取可读的上传速度
   String get speedText {
-    if (speed <= 0) return '';
-    if (speed < 1024) return '$speed B/s';
-    if (speed < 1024 * 1024) return '${(speed / 1024).toStringAsFixed(1)} KB/s';
-    return '${(speed / (1024 * 1024)).toStringAsFixed(1)} MB/s';
+    final value = speed < 0 ? 0 : speed;
+    if (value < 1024) return '$value B/s';
+    if (value < 1024 * 1024) {
+      return '${(value / 1024).toStringAsFixed(1)} KB/s';
+    }
+    return '${(value / (1024 * 1024)).toStringAsFixed(1)} MB/s';
   }
 
   /// 克隆任务
+  ///
+  /// session/errorMessage 支持传 null 来主动清空。
   UploadTaskModel copyWith({
     UploadStatus? status,
     int? uploadedBytes,
     double? progress,
     int? uploadedChunks,
     int? totalChunks,
-    String? errorMessage,
-    UploadSessionModel? session,
+    Object? errorMessage = _unset,
+    Object? session = _unset,
     DateTime? completedAt,
     int? speed,
+    String? sourceUri,
   }) {
     return UploadTaskModel(
       id: id,
@@ -198,6 +266,7 @@ class UploadTaskModel {
       fileName: fileName,
       fileSize: fileSize,
       targetPath: targetPath,
+      sourceUri: sourceUri ?? this.sourceUri,
       createdAt: createdAt,
       completedAt: completedAt ?? this.completedAt,
       status: status ?? this.status,
@@ -205,8 +274,12 @@ class UploadTaskModel {
       progress: progress ?? this.progress,
       uploadedChunks: uploadedChunks ?? this.uploadedChunks,
       totalChunks: totalChunks ?? this.totalChunks,
-      errorMessage: errorMessage ?? this.errorMessage,
-      session: session ?? this.session,
+      errorMessage: identical(errorMessage, _unset)
+          ? this.errorMessage
+          : errorMessage as String?,
+      session: identical(session, _unset)
+          ? this.session
+          : session as UploadSessionModel?,
       speed: speed ?? this.speed,
     );
   }
@@ -219,6 +292,7 @@ class UploadTaskModel {
       'file_name': fileName,
       'file_size': fileSize,
       'target_path': targetPath,
+      'source_uri': sourceUri,
       'created_at': createdAt.toIso8601String(),
       'completed_at': completedAt?.toIso8601String(),
       'status': status.index,
@@ -228,6 +302,7 @@ class UploadTaskModel {
       'total_chunks': totalChunks,
       'error_message': errorMessage,
       'speed': speed,
+      'session': session?.toJson(),
     };
   }
 
@@ -235,21 +310,27 @@ class UploadTaskModel {
   factory UploadTaskModel.fromJson(Map<String, dynamic> json) {
     return UploadTaskModel(
       id: json['id'] as String,
-      file: File(json['file_path'] as String),
+      file: File(json['file_path']?.toString() ?? ''),
       fileName: json['file_name'] as String,
-      fileSize: json['file_size'] as int,
+      fileSize: (json['file_size'] as num?)?.toInt() ?? 0,
       targetPath: json['target_path'] as String,
+      sourceUri: json['source_uri']?.toString(),
       createdAt: DateTime.parse(json['created_at'] as String),
       completedAt: json['completed_at'] != null
           ? DateTime.parse(json['completed_at'] as String)
           : null,
-      status: UploadStatus.values[json['status'] as int],
-      uploadedBytes: json['uploaded_bytes'] as int,
-      progress: json['progress'] as double,
-      uploadedChunks: json['uploaded_chunks'] as int,
-      totalChunks: json['total_chunks'] as int,
+      status: UploadStatus.values[(json['status'] as num?)?.toInt() ?? 0],
+      uploadedBytes: (json['uploaded_bytes'] as num?)?.toInt() ?? 0,
+      progress: (json['progress'] as num?)?.toDouble() ?? 0,
+      uploadedChunks: (json['uploaded_chunks'] as num?)?.toInt() ?? 0,
+      totalChunks: (json['total_chunks'] as num?)?.toInt() ?? 1,
       errorMessage: json['error_message'] as String?,
-      speed: json['speed'] as int? ?? 0,
+      session: json['session'] is Map
+          ? UploadSessionModel.fromJson(
+              Map<String, dynamic>.from(json['session'] as Map),
+            )
+          : null,
+      speed: (json['speed'] as num?)?.toInt() ?? 0,
     );
   }
 }

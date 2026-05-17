@@ -32,10 +32,10 @@ class QuickAccessConfig {
   static const storageKey = 'quick_access_shortcuts_v2';
 
   static const defaults = [
-    QuickAccessConfig(id: 'img', label: '图片', icon: LucideIcons.image, path: '/Images', color: Color(0xFFF0ABFC), isDefault: true),
-    QuickAccessConfig(id: 'vid', label: '视频', icon: LucideIcons.video, path: '/Videos', color: Color(0xFFFCD34D), isDefault: true),
-    QuickAccessConfig(id: 'doc', label: '文档', icon: LucideIcons.fileText, path: '/Documents', color: Color(0xFF93C5FD), isDefault: true),
-    QuickAccessConfig(id: 'mus', label: '音乐', icon: LucideIcons.music, path: '/Music', color: Color(0xFF86EFAC), isDefault: true),
+    QuickAccessConfig(id: 'img', label: '图片', icon: LucideIcons.image, path: 'cloudreve://my?category=image', color: Color(0xFFF0ABFC), isDefault: true),
+    QuickAccessConfig(id: 'vid', label: '视频', icon: LucideIcons.video, path: 'cloudreve://my?category=video', color: Color(0xFFFCD34D), isDefault: true),
+    QuickAccessConfig(id: 'doc', label: '文档', icon: LucideIcons.fileText, path: 'cloudreve://my?category=document', color: Color(0xFF93C5FD), isDefault: true),
+    QuickAccessConfig(id: 'mus', label: '音乐', icon: LucideIcons.music, path: 'cloudreve://my?category=audio', color: Color(0xFF86EFAC), isDefault: true),
   ];
 
   static const iconPool = <IconData>[

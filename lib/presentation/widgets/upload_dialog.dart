@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../providers/upload_manager_provider.dart';
 import '../providers/file_manager_provider.dart';
 import '../providers/navigation_provider.dart';
+import '../../services/native_content_reader.dart';
 import 'glassmorphism_container.dart';
 import 'toast_helper.dart';
 
@@ -225,6 +226,43 @@ class _UploadDialogContent extends StatelessWidget {
 
   Future<void> _pickFiles(BuildContext context, FileType type) async {
     try {
+      final uploadManager = Provider.of<UploadManagerProvider>(
+        context,
+        listen: false,
+      );
+      final fileManager = Provider.of<FileManagerProvider>(
+        context,
+        listen: false,
+      );
+
+      if (Platform.isAndroid) {
+        final files = await NativeContentReader.instance.pickFiles(
+          type: _nativePickerType(type),
+          allowMultiple: true,
+        );
+
+        if (context.mounted) {
+          Navigator.of(context).pop();
+        }
+
+        if (!context.mounted) return;
+        if (files.isEmpty) {
+          ToastHelper.warning('未选择文件');
+          return;
+        }
+
+        uploadManager.markShouldShowDialog();
+        await uploadManager.startUploadNativeFiles(
+          files,
+          fileManager.currentPath,
+        );
+
+        if (context.mounted) {
+          ToastHelper.info('上传已开始，查看任务页');
+        }
+        return;
+      }
+
       final result = await FilePicker.platform.pickFiles(
         type: type,
         allowMultiple: true,
@@ -240,30 +278,11 @@ class _UploadDialogContent extends StatelessWidget {
         return;
       }
 
-      final files = <File>[];
-      for (final file in result.files) {
-        if (file.path != null) {
-          files.add(File(file.path!));
-        }
-      }
-
-      if (files.isEmpty) {
-        if (!context.mounted) return;
-        ToastHelper.error('无法获取文件路径');
-        return;
-      }
-
-      final uploadManager = Provider.of<UploadManagerProvider>(
-        context,
-        listen: false,
-      );
-      final fileManager = Provider.of<FileManagerProvider>(
-        context,
-        listen: false,
-      );
-
       uploadManager.markShouldShowDialog();
-      await uploadManager.startUpload(files, fileManager.currentPath);
+      await uploadManager.startUploadPlatformFiles(
+        result.files,
+        fileManager.currentPath,
+      );
 
       if (context.mounted) {
         ToastHelper.info('上传已开始，查看任务页');
@@ -271,6 +290,19 @@ class _UploadDialogContent extends StatelessWidget {
     } catch (e) {
       if (!context.mounted) return;
       ToastHelper.failure('选择文件失败: $e');
+    }
+  }
+
+  String _nativePickerType(FileType type) {
+    switch (type) {
+      case FileType.image:
+        return 'image';
+      case FileType.video:
+        return 'video';
+      case FileType.audio:
+        return 'audio';
+      default:
+        return 'any';
     }
   }
 }

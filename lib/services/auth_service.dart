@@ -5,13 +5,10 @@ import '../core/exceptions/app_exception.dart';
 
 /// 认证服务
 class AuthService {
-  // 私有化构造函数，防止在外部被直接实例化
   AuthService._internal();
 
-  // 存储单例的静态私有变量
   static final AuthService _instance = AuthService._internal();
 
-  // 公开一个 getter 叫 instance (或者使用工厂构造函数)
   static AuthService get instance => _instance;
 
   /// 准备登录
@@ -24,16 +21,66 @@ class AuthService {
     return response as Map<String, bool>;
   }
 
+  /// 获取图形验证码
+  Future<Map<String, String>> getCaptcha() async {
+    final response = await ApiService.instance.get<Map<String, dynamic>>(
+      '/site/captcha',
+      noAuth: true,
+    );
+
+    // 兼容 ApiService 已经解包 data 的情况，以及未解包的原始响应。
+    final data = response['data'] is Map
+        ? Map<String, dynamic>.from(response['data'] as Map)
+        : response;
+
+    return {
+      'image': data['image'] as String? ?? '',
+      'ticket': data['ticket'] as String? ?? '',
+    };
+  }
+
+
+  /// 获取站点基础配置
+  ///
+  /// 登录页用这个接口读取验证码类型：
+  /// - captcha_type: normal / recaptcha / turnstile / cap
+  /// - captcha_ReCaptchaKey
+  /// - turnstile_site_id
+  /// - captcha_cap_instance_url
+  /// - captcha_cap_site_key
+  /// - captcha_cap_asset_server
+  Future<Map<String, dynamic>> getBasicSiteConfig() async {
+    final response = await ApiService.instance.get<Map<String, dynamic>>(
+      '/site/config/basic',
+      noAuth: true,
+    );
+
+    AppLogger.d('AuthService -> 站点基础配置响应: $response');
+
+    final data = response['data'];
+    if (data is Map<String, dynamic>) {
+      return data;
+    }
+    if (data is Map) {
+      return Map<String, dynamic>.from(data);
+    }
+
+    // 兼容 ApiService 已经解包 data 的情况。
+    return response;
+  }
+
   /// 密码登录
   Future<LoginResponseModel> passwordLogin({
     required String email,
     required String password,
     String? captcha,
+    String? ticket,
   }) async {
     final data = <String, dynamic>{
       'email': email,
       'password': password,
-      ...captcha != null ? {'captcha': captcha} : {},
+      if (captcha != null && captcha.isNotEmpty) 'captcha': captcha,
+      if (ticket != null && ticket.isNotEmpty) 'ticket': ticket,
     };
 
     final response = await ApiService.instance.post<Map<String, dynamic>>(
@@ -44,12 +91,15 @@ class AuthService {
 
     AppLogger.d('AuthService -> 登录响应: $response');
 
-    // code 203 表示需要两步验证
-    final code = response['code'] as int?;
-    if (code == 203) {
-      final sessionId = response['data'] as String;
-      throw TwoFactorRequiredException(sessionId);
-    }
+
+  // code 203 表示需要两步验证
+  final code = response['code'] as int?;
+  if (code == 203) {
+    final sessionId = response['data'] as String;
+    throw TwoFactorRequiredException(sessionId);
+  }
+
+  // 下面你原来的代码保持不变
 
     return LoginResponseModel.fromJson(response);
   }

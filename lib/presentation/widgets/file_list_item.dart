@@ -51,17 +51,19 @@ class FileListItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _FileListItemHover(
-      file: file,
-      isSelected: isSelected,
-      isHighlighted: isHighlighted,
-      index: index,
-      isDesktop: isDesktop,
-      showCheckbox: showCheckbox,
-      tapToShowMenu: tapToShowMenu,
-      onTap: tapToShowMenu ? null : onTap,
-      onLongPress: () => _showMenu(context),
-      onSelect: onSelect,
+    return RepaintBoundary(
+      child: _FileListItemHover(
+        file: file,
+        isSelected: isSelected,
+        isHighlighted: isHighlighted,
+        index: index,
+        isDesktop: isDesktop,
+        showCheckbox: showCheckbox,
+        tapToShowMenu: tapToShowMenu,
+        onTap: tapToShowMenu ? null : onTap,
+        onLongPress: () => _showMenu(context),
+        onSelect: onSelect,
+      ),
     );
   }
 

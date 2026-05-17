@@ -1,17 +1,23 @@
+import 'dart:convert';
+
 import 'package:cloudreve4_flutter/presentation/widgets/desktop_constrained.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:provider/provider.dart';
+
 import '../../../core/exceptions/app_exception.dart';
 import '../../../core/validators/string_validator.dart';
 import '../../../data/models/server_model.dart';
-import '../../providers/auth_provider.dart';
-import '../../../services/server_service.dart';
 import '../../../router/app_router.dart';
+import '../../../services/api_service.dart';
+import '../../../services/auth_service.dart';
+import '../../../services/server_service.dart';
+import '../../providers/auth_provider.dart';
+import '../../widgets/toast_helper.dart';
 import 'forgot_password_page.dart';
 import 'register_page.dart';
-import '../../widgets/toast_helper.dart';
+import 'captcha_challenge_page.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -24,21 +30,97 @@ class _LoginPageState extends State<LoginPage> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _captchaController = TextEditingController();
   final _focusNode = FocusNode();
+
   bool _obscurePassword = true;
   bool _rememberMe = false;
   bool _isLoading = false;
+
+  String? _captchaImage;
+  String? _captchaTicket;
+  String? _captchaType;
+
+  String? _recaptchaSiteKey;
+  String? _turnstileSiteKey;
+  String? _capInstanceUrl;
+  String? _capSiteKey;
+  String? _capAssetServer;
+
+  String? _captchaToken;
+  bool _isLoadingCaptcha = false;
+
+  bool get _isWebCaptcha => _captchaWebConfig != null;
+
+  CaptchaWebConfig? get _captchaWebConfig {
+    final type = _normalizedCaptchaType;
+    if (type == 'turnstile' &&
+        _turnstileSiteKey != null &&
+        _turnstileSiteKey!.isNotEmpty) {
+      return CaptchaWebConfig.turnstile(
+        siteKey: _turnstileSiteKey!,
+        displayName: 'Cloudflare Turnstile',
+      );
+    }
+
+    if (type == 'recaptcha' &&
+        _recaptchaSiteKey != null &&
+        _recaptchaSiteKey!.isNotEmpty) {
+      return CaptchaWebConfig.recaptchaV2(
+        siteKey: _recaptchaSiteKey!,
+        displayName: 'reCAPTCHA V2',
+      );
+    }
+
+    if (type == 'cap' &&
+        _capInstanceUrl != null &&
+        _capInstanceUrl!.isNotEmpty &&
+        _capSiteKey != null &&
+        _capSiteKey!.isNotEmpty) {
+      return CaptchaWebConfig.cap(
+        instanceUrl: _capInstanceUrl!,
+        siteKey: _capSiteKey!,
+        assetServer: _capAssetServer,
+        displayName: 'Cap',
+      );
+    }
+
+    return null;
+  }
+
+  String get _normalizedCaptchaType {
+    final raw = (_captchaType ?? '').trim().toLowerCase();
+    if (raw == 'recaptcha_v2' ||
+        raw == 'recaptchav2' ||
+        raw == 'google' ||
+        raw == 'google_recaptcha' ||
+        raw == 'google-recaptcha') {
+      return 'recaptcha';
+    }
+    if (raw == 'cloudflare_turnstile' || raw == 'cloudflare-turnstile') {
+      return 'turnstile';
+    }
+    if (raw == 'image' || raw == 'graphic' || raw == 'captcha') {
+      return 'normal';
+    }
+    return raw;
+  }
 
   @override
   void initState() {
     super.initState();
     _loadRememberedInfo();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadCaptcha();
+    });
   }
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _captchaController.dispose();
     _focusNode.dispose();
     super.dispose();
   }
@@ -58,26 +140,246 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
+  Future<void> _loadCaptcha() async {
+    if (_isLoadingCaptcha) return;
+
+    final server = ServerService.instance.currentServer;
+    if (server == null) {
+      return;
+    }
+
+    setState(() {
+      _isLoadingCaptcha = true;
+    });
+
+    try {
+      await ApiService.instance.setBaseUrl(server.baseUrl);
+
+      Map<String, dynamic> config = <String, dynamic>{};
+
+      try {
+        config = await AuthService.instance
+            .getBasicSiteConfig()
+            .timeout(const Duration(seconds: 10));
+
+        debugPrint('[LoginPage] basic site config: $config');
+      } catch (e) {
+        debugPrint('[LoginPage] getBasicSiteConfig failed: $e');
+      }
+
+      final captchaType = _normalizeCaptchaType(
+        (config['captcha_type'] ??
+                config['captchaType'] ??
+                config['captcha'])
+            ?.toString(),
+      );
+
+      final recaptchaKey = _firstNonEmptyString(config, const [
+        'captcha_ReCaptchaKey',
+        'captcha_re_captcha_key',
+        'captchaReCaptchaKey',
+        'recaptcha_site_key',
+        'recaptchaSiteKey',
+        'recaptcha_key',
+        'reCaptchaKey',
+      ]);
+
+      final turnstileSiteKey = _firstNonEmptyString(config, const [
+        'turnstile_site_id',
+        'turnstileSiteId',
+        'turnstile_site_key',
+        'turnstileSiteKey',
+      ]);
+
+      final capInstanceUrl = _firstNonEmptyString(config, const [
+        'captcha_cap_instance_url',
+        'captchaCapInstanceUrl',
+        'cap_instance_url',
+        'capInstanceUrl',
+      ]);
+
+      final capSiteKey = _firstNonEmptyString(config, const [
+        'captcha_cap_site_key',
+        'captchaCapSiteKey',
+        'cap_site_key',
+        'capSiteKey',
+      ]);
+
+      final capAssetServer = _firstNonEmptyString(config, const [
+        'captcha_cap_asset_server',
+        'captchaCapAssetServer',
+        'cap_asset_server',
+        'capAssetServer',
+      ]);
+
+      debugPrint(
+        '[LoginPage] captchaType=$captchaType, '
+        'recaptchaKey=$recaptchaKey, '
+        'turnstileSiteKey=$turnstileSiteKey, '
+        'capInstanceUrl=$capInstanceUrl, '
+        'capSiteKey=$capSiteKey, '
+        'capAssetServer=$capAssetServer',
+      );
+
+      if (!mounted) return;
+
+      final isExternalCaptcha = captchaType == 'turnstile' ||
+          captchaType == 'recaptcha' ||
+          captchaType == 'cap';
+
+      if (isExternalCaptcha) {
+        setState(() {
+          _captchaType = captchaType;
+          _recaptchaSiteKey = recaptchaKey;
+          _turnstileSiteKey = turnstileSiteKey;
+          _capInstanceUrl = capInstanceUrl;
+          _capSiteKey = capSiteKey;
+          _capAssetServer = capAssetServer;
+          _captchaToken = null;
+
+          _captchaImage = null;
+          _captchaTicket = null;
+          _captchaController.clear();
+        });
+        return;
+      }
+
+      final captcha = await AuthService.instance.getCaptcha();
+
+      if (!mounted) return;
+
+      setState(() {
+        _captchaType = captchaType.isEmpty ? 'normal' : captchaType;
+        _recaptchaSiteKey = null;
+        _turnstileSiteKey = null;
+        _capInstanceUrl = null;
+        _capSiteKey = null;
+        _capAssetServer = null;
+        _captchaToken = null;
+
+        _captchaImage = captcha['image'];
+        _captchaTicket = captcha['ticket'];
+        _captchaController.clear();
+      });
+    } catch (e) {
+      debugPrint('[LoginPage] _loadCaptcha failed: $e');
+
+      if (!mounted) return;
+
+      setState(() {
+        _captchaType = null;
+        _recaptchaSiteKey = null;
+        _turnstileSiteKey = null;
+        _capInstanceUrl = null;
+        _capSiteKey = null;
+        _capAssetServer = null;
+        _captchaToken = null;
+
+        _captchaImage = null;
+        _captchaTicket = null;
+        _captchaController.clear();
+      });
+
+      ToastHelper.failure('验证码加载失败');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingCaptcha = false;
+        });
+      }
+    }
+  }
+
+  String _normalizeCaptchaType(String? rawType) {
+    final value = (rawType ?? '').trim().toLowerCase();
+    if (value.isEmpty) return 'normal';
+
+    if (value == 'image' || value == 'graphic' || value == 'captcha') {
+      return 'normal';
+    }
+
+    if (value == 'recaptcha_v2' ||
+        value == 'recaptchav2' ||
+        value == 'google' ||
+        value == 'google_recaptcha' ||
+        value == 'google-recaptcha') {
+      return 'recaptcha';
+    }
+
+    if (value == 'cloudflare_turnstile' || value == 'cloudflare-turnstile') {
+      return 'turnstile';
+    }
+
+    return value;
+  }
+
+  String? _firstNonEmptyString(Map<String, dynamic> source, List<String> keys) {
+    for (final key in keys) {
+      final value = source[key];
+      if (value == null) continue;
+      final text = value.toString().trim();
+      if (text.isNotEmpty) return text;
+    }
+    return null;
+  }
+
+  Future<void> _openCaptchaChallenge() async {
+    final server = ServerService.instance.currentServer;
+    final config = _captchaWebConfig;
+
+    if (server == null || config == null) {
+      ToastHelper.failure('验证码配置无效');
+      return;
+    }
+
+    final token = await Navigator.of(context).push<String>(
+      MaterialPageRoute(
+        builder: (_) => CaptchaChallengePage(
+          config: config,
+          baseUrl: server.baseUrl,
+        ),
+      ),
+    );
+
+    if (!mounted) return;
+
+    if (token != null && token.isNotEmpty) {
+      setState(() {
+        _captchaToken = token;
+      });
+
+      ToastHelper.success('人机验证完成');
+    }
+  }
+
   Future<void> _showServerSelector() async {
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (context) => ServerSelectorSheet(),
+      builder: (context) => const ServerSelectorSheet(),
     );
     await _loadRememberedInfo();
+    await _loadCaptcha();
   }
 
   Future<void> _showServerManagement() async {
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (context) => ServerManagementSheet(),
+      builder: (context) => const ServerManagementSheet(),
     );
     await _loadRememberedInfo();
+    await _loadCaptcha();
   }
 
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
+
+    if (_isWebCaptcha &&
+        (_captchaToken == null || _captchaToken!.isEmpty)) {
+      ToastHelper.failure('请先完成人机验证');
+      return;
+    }
 
     final navigator = Navigator.of(context);
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
@@ -85,14 +387,24 @@ class _LoginPageState extends State<LoginPage> {
     setState(() => _isLoading = true);
 
     try {
-      final success = await authProvider.passwordLogin(
-        email: _emailController.text.trim(),
-        password: _passwordController.text,
-        rememberMe: _rememberMe,
-      ).timeout(
-        const Duration(seconds: 5),
-        onTimeout: () => throw Exception('请求超时'),
-      );
+      final success = await authProvider
+          .passwordLogin(
+            email: _emailController.text.trim(),
+            password: _passwordController.text,
+            rememberMe: _rememberMe,
+            // 普通图形验证码：captcha=用户输入，ticket=/site/captcha 返回的 ticket。
+            // reCAPTCHA / Turnstile / Cap：浏览器组件返回 token。
+            // Cloudreve V4 登录接口只有 captcha/ticket 两个字段；不同验证码实现
+            // 可能读取不同字段，因此外部验证码 token 同时放入 captcha 和 ticket。
+            captcha: _isWebCaptcha
+                ? _captchaToken
+                : _captchaController.text.trim(),
+            ticket: _isWebCaptcha ? _captchaToken : _captchaTicket,
+          )
+          .timeout(
+            const Duration(seconds: 15),
+            onTimeout: () => throw Exception('请求超时'),
+          );
 
       if (mounted) setState(() => _isLoading = false);
 
@@ -102,6 +414,8 @@ class _LoginPageState extends State<LoginPage> {
         await Future.delayed(const Duration(seconds: 1));
         if (mounted) navigator.pushReplacementNamed(RouteNames.home);
       } else if (mounted) {
+        await _loadCaptcha();
+
         final errorMessage = authProvider.errorMessage;
         if (errorMessage != null && errorMessage.isNotEmpty) {
           final errorMsg = _parseErrorMessage(errorMessage);
@@ -118,6 +432,8 @@ class _LoginPageState extends State<LoginPage> {
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
+        await _loadCaptcha();
+
         final errorMsg = _parseErrorMessage(e.toString());
         ToastHelper.failure(errorMsg);
       }
@@ -169,6 +485,110 @@ class _LoginPageState extends State<LoginPage> {
     return error.isEmpty ? '登录失败: 未知原因' : '登录失败: $error';
   }
 
+  Widget _buildCaptchaInput() {
+    if (_isWebCaptcha) {
+      final config = _captchaWebConfig;
+      final displayName = config?.displayName ?? '人机验证';
+
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          OutlinedButton.icon(
+            onPressed: _isLoadingCaptcha ? null : _openCaptchaChallenge,
+            icon: Icon(
+              _captchaToken == null
+                  ? Icons.verified_user_outlined
+                  : Icons.verified,
+            ),
+            label: Text(
+              _captchaToken == null
+                  ? '点击完成 $displayName'
+                  : '$displayName 已完成，点击重新验证',
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '当前验证码类型：$displayName',
+            style: TextStyle(
+              fontSize: 12,
+              color: Theme.of(context).hintColor,
+            ),
+          ),
+        ],
+      );
+    }
+
+    Widget captchaPreview;
+
+    if (_isLoadingCaptcha) {
+      captchaPreview = const SizedBox(
+        width: 20,
+        height: 20,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      );
+    } else if (_captchaImage != null && _captchaImage!.isNotEmpty) {
+      try {
+        final base64Part = _captchaImage!.contains(',')
+            ? _captchaImage!.split(',').last
+            : _captchaImage!;
+
+        captchaPreview = Image.memory(
+          base64Decode(base64Part),
+          fit: BoxFit.contain,
+          gaplessPlayback: true,
+        );
+      } catch (_) {
+        captchaPreview = const Text('刷新');
+      }
+    } else {
+      captchaPreview = const Text('刷新');
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: TextFormField(
+            controller: _captchaController,
+            textInputAction: TextInputAction.done,
+            decoration: const InputDecoration(
+              labelText: '验证码',
+              hintText: '请输入验证码',
+              prefixIcon: Icon(Icons.verified_user_outlined),
+            ),
+            validator: (value) {
+              final needCaptcha =
+                  _captchaTicket != null && _captchaTicket!.isNotEmpty;
+
+              if (needCaptcha && (value == null || value.trim().isEmpty)) {
+                return '请输入验证码';
+              }
+
+              return null;
+            },
+            onFieldSubmitted: (_) => _login(),
+          ),
+        ),
+        const SizedBox(width: 12),
+        InkWell(
+          onTap: _isLoadingCaptcha ? null : _loadCaptcha,
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            width: 130,
+            height: 56,
+            alignment: Alignment.center,
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              border: Border.all(color: Theme.of(context).dividerColor),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: captchaPreview,
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -204,15 +624,11 @@ class _LoginPageState extends State<LoginPage> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            // 服务器选择器
                             _ServerSelector(
                               onTap: _showServerSelector,
                               onManage: _showServerManagement,
                             ),
-
                             const SizedBox(height: 16),
-
-                            // 邮箱
                             TextFormField(
                               controller: _emailController,
                               keyboardType: TextInputType.emailAddress,
@@ -223,12 +639,10 @@ class _LoginPageState extends State<LoginPage> {
                                 hintText: '请输入邮箱地址',
                                 prefixIcon: Icon(LucideIcons.mail),
                               ),
-                              onFieldSubmitted: (_) => _focusNode.requestFocus(),
+                              onFieldSubmitted: (_) =>
+                                  _focusNode.requestFocus(),
                             ),
-
                             const SizedBox(height: 16),
-
-                            // 密码
                             TextFormField(
                               controller: _passwordController,
                               focusNode: _focusNode,
@@ -246,18 +660,20 @@ class _LoginPageState extends State<LoginPage> {
                                     size: 20,
                                   ),
                                   onPressed: () {
-                                    setState(() => _obscurePassword = !_obscurePassword);
+                                    setState(() {
+                                      _obscurePassword = !_obscurePassword;
+                                    });
                                   },
                                 ),
                               ),
                               onFieldSubmitted: (_) => _login(),
                             ),
-
+                            const SizedBox(height: 16),
+                            _buildCaptchaInput(),
                             const SizedBox(height: 12),
-
-                            // 记住我
                             InkWell(
-                              onTap: () => setState(() => _rememberMe = !_rememberMe),
+                              onTap: () =>
+                                  setState(() => _rememberMe = !_rememberMe),
                               borderRadius: BorderRadius.circular(8),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
@@ -267,7 +683,9 @@ class _LoginPageState extends State<LoginPage> {
                                     height: 24,
                                     child: Checkbox(
                                       value: _rememberMe,
-                                      onChanged: (v) => setState(() => _rememberMe = v ?? false),
+                                      onChanged: (v) => setState(
+                                        () => _rememberMe = v ?? false,
+                                      ),
                                     ),
                                   ),
                                   const SizedBox(width: 8),
@@ -275,10 +693,7 @@ class _LoginPageState extends State<LoginPage> {
                                 ],
                               ),
                             ),
-
                             const SizedBox(height: 20),
-
-                            // 链接按钮
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
@@ -286,7 +701,8 @@ class _LoginPageState extends State<LoginPage> {
                                   onPressed: () {
                                     Navigator.of(context).push(
                                       MaterialPageRoute(
-                                        builder: (context) => const ForgotPasswordPage(),
+                                        builder: (context) =>
+                                            const ForgotPasswordPage(),
                                       ),
                                     );
                                   },
@@ -296,7 +712,8 @@ class _LoginPageState extends State<LoginPage> {
                                   onPressed: () {
                                     Navigator.of(context).push(
                                       MaterialPageRoute(
-                                        builder: (context) => const RegisterPage(),
+                                        builder: (context) =>
+                                            const RegisterPage(),
                                       ),
                                     );
                                   },
@@ -304,10 +721,7 @@ class _LoginPageState extends State<LoginPage> {
                                 ),
                               ],
                             ),
-
                             const SizedBox(height: 16),
-
-                            // 登录按钮
                             FilledButton(
                               onPressed: _isLoading ? null : _login,
                               style: FilledButton.styleFrom(
@@ -320,7 +734,9 @@ class _LoginPageState extends State<LoginPage> {
                                   ? const SizedBox(
                                       width: 24,
                                       height: 24,
-                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
                                     )
                                   : const Text('登录'),
                             ),
@@ -377,7 +793,11 @@ class _ServerSelector extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Icon(LucideIcons.server, size: 20, color: theme.colorScheme.onSurfaceVariant),
+            Icon(
+              LucideIcons.server,
+              size: 20,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -385,7 +805,10 @@ class _ServerSelector extends StatelessWidget {
                 children: [
                   Text(
                     currentServer?.label ?? '选择服务器',
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                   if (currentServer != null) ...[
                     const SizedBox(height: 2),
@@ -400,7 +823,11 @@ class _ServerSelector extends StatelessWidget {
               ),
             ),
             IconButton(
-              icon: Icon(LucideIcons.pencil, size: 20, color: theme.colorScheme.onSurfaceVariant),
+              icon: Icon(
+                LucideIcons.pencil,
+                size: 20,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
               onPressed: onManage,
               tooltip: '管理服务器',
             ),
@@ -492,7 +919,9 @@ class _ServerListItem extends StatelessWidget {
       ),
       title: Text(
         server.label,
-        style: TextStyle(fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal),
+        style: TextStyle(
+          fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+        ),
       ),
       subtitle: Text(
         server.baseUrl,
@@ -500,7 +929,8 @@ class _ServerListItem extends StatelessWidget {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
-      tileColor: isSelected ? Theme.of(context).colorScheme.primaryContainer : null,
+      tileColor:
+          isSelected ? Theme.of(context).colorScheme.primaryContainer : null,
       onTap: onTap,
     );
   }
@@ -634,7 +1064,10 @@ class _ServerManagementSheetState extends State<ServerManagementSheet> {
     }
   }
 
-  Future<void> _showEditServerDialog(BuildContext context, ServerModel server) async {
+  Future<void> _showEditServerDialog(
+    BuildContext context,
+    ServerModel server,
+  ) async {
     final labelController = TextEditingController(text: server.label);
     final urlController = TextEditingController(text: server.baseUrl);
 
@@ -699,7 +1132,10 @@ class _ServerManagementSheetState extends State<ServerManagementSheet> {
     }
   }
 
-  Future<void> _showDeleteConfirmDialog(BuildContext context, ServerModel server) async {
+  Future<void> _showDeleteConfirmDialog(
+    BuildContext context,
+    ServerModel server,
+  ) async {
     final colorScheme = Theme.of(context).colorScheme;
     final result = await showDialog<bool>(
       context: context,
@@ -747,7 +1183,10 @@ class _ServerManagementItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return ListTile(
-      title: Text(server.label, style: const TextStyle(fontWeight: FontWeight.w500)),
+      title: Text(
+        server.label,
+        style: const TextStyle(fontWeight: FontWeight.w500),
+      ),
       subtitle: Text(
         server.baseUrl,
         style: TextStyle(fontSize: 12, color: theme.hintColor),
@@ -758,12 +1197,20 @@ class _ServerManagementItem extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           IconButton(
-            icon: Icon(LucideIcons.pencil, size: 20, color: theme.colorScheme.onSurfaceVariant),
+            icon: Icon(
+              LucideIcons.pencil,
+              size: 20,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
             onPressed: onEdit,
             tooltip: '编辑',
           ),
           IconButton(
-            icon: Icon(LucideIcons.trash2, size: 20, color: theme.colorScheme.error),
+            icon: Icon(
+              LucideIcons.trash2,
+              size: 20,
+              color: theme.colorScheme.error,
+            ),
             onPressed: onDelete,
             tooltip: '删除',
           ),
@@ -813,10 +1260,12 @@ class _TwoFactorDialogState extends State<_TwoFactorDialog>
       TweenSequenceItem(tween: Tween(begin: 8, end: -8), weight: 1),
       TweenSequenceItem(tween: Tween(begin: -8, end: 4), weight: 1),
       TweenSequenceItem(tween: Tween(begin: 4, end: 0), weight: 1),
-    ]).animate(CurvedAnimation(
-      parent: _shakeController,
-      curve: Curves.easeInOut,
-    ));
+    ]).animate(
+      CurvedAnimation(
+        parent: _shakeController,
+        curve: Curves.easeInOut,
+      ),
+    );
     _controller.addListener(_onTextChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusNode.requestFocus();
@@ -846,16 +1295,18 @@ class _TwoFactorDialogState extends State<_TwoFactorDialog>
 
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     try {
-      final success = await authProvider.twoFactorLogin(
-        otp: code,
-        sessionId: widget.sessionId,
-        email: widget.email,
-        password: widget.password,
-        rememberMe: widget.rememberMe,
-      ).timeout(
-        const Duration(seconds: 5),
-        onTimeout: () => throw Exception('请求超时'),
-      );
+      final success = await authProvider
+          .twoFactorLogin(
+            otp: code,
+            sessionId: widget.sessionId,
+            email: widget.email,
+            password: widget.password,
+            rememberMe: widget.rememberMe,
+          )
+          .timeout(
+            const Duration(seconds: 5),
+            onTimeout: () => throw Exception('请求超时'),
+          );
 
       if (!mounted) return;
 
@@ -953,7 +1404,8 @@ class _TwoFactorDialogState extends State<_TwoFactorDialog>
       ),
       actions: [
         TextButton(
-          onPressed: _isSubmitting ? null : () => Navigator.of(context).pop(false),
+          onPressed:
+              _isSubmitting ? null : () => Navigator.of(context).pop(false),
           child: const Text('取消'),
         ),
         FilledButton(

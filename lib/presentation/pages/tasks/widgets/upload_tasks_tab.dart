@@ -78,7 +78,7 @@ class UploadTasksTab extends StatelessWidget {
           _buildSectionHeader(context, '进行中', activeTasks.length),
           ...activeTasks.map((task) => UploadProgressItem(
             task: task,
-            onPause: () => uploadManager.cancelUpload(task.id),
+            onPause: () => uploadManager.pauseUpload(task.id),
             onResume: () => uploadManager.retryUpload(task.id),
             onCancel: () => uploadManager.cancelUpload(task.id),
           )),
@@ -268,12 +268,12 @@ class UploadTasksTab extends StatelessWidget {
           Text(
             task.status == UploadStatus.completed
                 ? (task.completedAt != null ? _formatDateTime(task.completedAt!) : '-')
-                : (task.speedText.isNotEmpty ? task.speedText : '-'),
+                : task.speedText,
             style: TextStyle(
               fontSize: 13,
               color: task.status == UploadStatus.completed
                   ? null
-                  : (task.speedText.isNotEmpty ? colorScheme.primary : null),
+                  : colorScheme.primary,
             ),
           ),
         ),
@@ -300,7 +300,7 @@ class UploadTasksTab extends StatelessWidget {
         return [
           IconButton(
             icon: const Icon(Icons.pause, size: 18),
-            onPressed: () => uploadManager.cancelUpload(task.id),
+            onPressed: () => uploadManager.pauseUpload(task.id),
             tooltip: '暂停',
           ),
         ];

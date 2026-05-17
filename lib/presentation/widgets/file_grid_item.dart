@@ -50,25 +50,27 @@ class FileGridItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Builder(
-      builder: (builderContext) => LayoutBuilder(
-        builder: (context, constraints) {
-          final fontSize = (constraints.maxWidth * 0.1).clamp(10.0, 13.0);
+    return RepaintBoundary(
+      child: Builder(
+        builder: (builderContext) => LayoutBuilder(
+          builder: (context, constraints) {
+            final fontSize = (constraints.maxWidth * 0.1).clamp(10.0, 13.0);
 
-          return _FileGridItemHover(
-            file: file,
-            isSelected: isSelected,
-            isHighlighted: isHighlighted,
-            showCheckbox: showCheckbox,
-            contextHint: contextHint,
-            fontSize: fontSize,
-            tapToShowMenu: tapToShowMenu,
-            onTap: tapToShowMenu ? null : onTap,
-            onLongPress: () => _showMenu(builderContext),
-            onSelect: onSelect,
-            onMore: () => _showMenu(builderContext),
-          );
-        },
+            return _FileGridItemHover(
+              file: file,
+              isSelected: isSelected,
+              isHighlighted: isHighlighted,
+              showCheckbox: showCheckbox,
+              contextHint: contextHint,
+              fontSize: fontSize,
+              tapToShowMenu: tapToShowMenu,
+              onTap: tapToShowMenu ? null : onTap,
+              onLongPress: () => _showMenu(builderContext),
+              onSelect: onSelect,
+              onMore: () => _showMenu(builderContext),
+            );
+          },
+        ),
       ),
     );
   }
@@ -318,10 +320,8 @@ class _FileGridItemHoverState extends State<_FileGridItemHover> {
 
   Widget _buildIconArea(BuildContext context) {
     final file = widget.file;
-    final ext = FileUtils.getFileExtension(file.name);
-    final isThumbnailable = !file.isFolder
-        && FileUtils.isImageFile(file.name)
-        && ext != 'svg';
+    final isThumbnailable =
+        !file.isFolder && FileUtils.isThumbnailableFile(file.name);
 
     if (!isThumbnailable) {
       return Center(
@@ -335,10 +335,52 @@ class _FileGridItemHoverState extends State<_FileGridItemHover> {
       );
     }
 
-    return ThumbnailImage(
-      file: file,
-      contextHint: widget.contextHint,
-      borderRadius: 10,
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        ThumbnailImage(
+          file: file,
+          contextHint: widget.contextHint,
+          borderRadius: 10,
+        ),
+        if (FileUtils.isVideoFile(file.name))
+          Center(
+            child: Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.45),
+                borderRadius: BorderRadius.circular(17),
+              ),
+              child: const Icon(
+                LucideIcons.play,
+                color: Colors.white,
+                size: 18,
+              ),
+            ),
+          ),
+        if (FileUtils.isPsdFile(file.name))
+          Positioned(
+            left: 6,
+            bottom: 6,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.55),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: const Text(
+                'PSD',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.2,
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

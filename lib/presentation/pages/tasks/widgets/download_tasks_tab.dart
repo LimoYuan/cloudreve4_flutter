@@ -306,22 +306,24 @@ class DownloadTasksTab extends StatelessWidget {
   ) {
     switch (task.status) {
       case DownloadStatus.waiting:
-        if (task.waitingForWifi) {
-          return [
-            IconButton(
-              icon: Icon(Icons.cancel, size: 18, color: errorColor),
-              onPressed: () => downloadManager.cancelDownload(task.id),
-              tooltip: '取消',
-            ),
-          ];
-        }
-        return [];
+        return [
+          IconButton(
+            icon: Icon(Icons.cancel, size: 18, color: errorColor),
+            onPressed: () => downloadManager.cancelDownload(task.id),
+            tooltip: '取消',
+          ),
+        ];
       case DownloadStatus.downloading:
         return [
           IconButton(
             icon: const Icon(Icons.pause, size: 18),
             onPressed: () => downloadManager.pauseDownload(task.id),
             tooltip: '暂停',
+          ),
+          IconButton(
+            icon: Icon(Icons.cancel, size: 18, color: errorColor),
+            onPressed: () => downloadManager.cancelDownload(task.id),
+            tooltip: '取消',
           ),
         ];
       case DownloadStatus.paused:

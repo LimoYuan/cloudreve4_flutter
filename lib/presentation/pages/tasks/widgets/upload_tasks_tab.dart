@@ -303,6 +303,11 @@ class UploadTasksTab extends StatelessWidget {
             onPressed: () => uploadManager.pauseUpload(task.id),
             tooltip: '暂停',
           ),
+          IconButton(
+            icon: Icon(Icons.cancel, size: 18, color: errorColor),
+            onPressed: () => uploadManager.cancelUpload(task.id),
+            tooltip: '取消',
+          ),
         ];
       case UploadStatus.paused:
         return [

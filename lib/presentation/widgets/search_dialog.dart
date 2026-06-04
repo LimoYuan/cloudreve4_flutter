@@ -173,11 +173,12 @@ class _SearchDialogState extends State<SearchDialog> {
     if (!filePath.startsWith(prefix)) return null;
 
     final relativePath = filePath.substring(prefix.length);
-    if (relativePath.isEmpty) return null;
+    if (relativePath.isEmpty || relativePath == '/') return '/';
 
-    final parts = relativePath.split('/');
-    if (parts.length > 1) parts.removeLast();
-    return parts.isEmpty ? '/' : parts.join('/');
+    final parts = relativePath.split('/')..removeWhere((p) => p.isEmpty);
+    if (parts.length <= 1) return '/';
+    parts.removeLast();
+    return '/${parts.join('/')}';
   }
 
   @override

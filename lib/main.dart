@@ -40,6 +40,9 @@ import 'src/rust/frb_generated.dart' show RustSyncApi;
 
 final RouteObserver<PageRoute> routeObserver = RouteObserver<PageRoute>();
 
+/// 全局标记：当前是否处于登录页，登录页不显示自定义标题栏
+final ValueNotifier<bool> isOnLoginPage = ValueNotifier(false);
+
 Level _parseLogLevel(String level) {
   return switch (level) {
     'error' => Level.error,
@@ -231,10 +234,10 @@ class AppView extends StatelessWidget {
           if (Platform.isWindows || Platform.isLinux) {
             currentWidget = Material(
               color: themeProvider.isDark ? Colors.black.withValues(alpha: 0.92) : Colors.white.withValues(alpha: 0.92),
-              child: ValueListenableBuilder<bool>(
-                valueListenable: videoFullscreenNotifier,
-                builder: (context, isVideoFullscreen, child) {
-                  if (isVideoFullscreen) {
+              child: ListenableBuilder(
+                listenable: Listenable.merge([videoFullscreenNotifier, isOnLoginPage]),
+                builder: (context, child) {
+                  if (videoFullscreenNotifier.value || isOnLoginPage.value) {
                     return child!;
                   }
                   return Column(

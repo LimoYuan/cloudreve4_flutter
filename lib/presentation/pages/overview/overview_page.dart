@@ -1,4 +1,5 @@
 import 'package:cloudreve4_flutter/presentation/providers/auth_provider.dart';
+import 'package:cloudreve4_flutter/presentation/providers/navigation_provider.dart';
 import 'package:cloudreve4_flutter/presentation/providers/user_setting_provider.dart';
 import 'package:cloudreve4_flutter/services/avatar_cache_service.dart';
 import 'package:flutter/material.dart';
@@ -7,6 +8,84 @@ import 'widgets/storage_usage_card.dart';
 import 'widgets/quick_access_grid.dart';
 import 'widgets/recent_activity_list.dart';
 import 'widgets/search_entry_card.dart';
+
+/// 入场动画包装：交错淡入 + 缩放 + 上滑。
+/// 监听 NavigationProvider，切回概览页时自动重播。
+class _OverviewEntrance extends StatefulWidget {
+  final Widget child;
+  final int delayMs;
+
+  const _OverviewEntrance({required this.child, this.delayMs = 0});
+
+  @override
+  State<_OverviewEntrance> createState() => _OverviewEntranceState();
+}
+
+class _OverviewEntranceState extends State<_OverviewEntrance>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _opacity;
+  late Animation<double> _scale;
+  late Animation<Offset> _slide;
+  int _lastTabIndex = 0;
+  bool _firstBuild = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 520),
+    );
+    _opacity = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
+    );
+    _scale = Tween<double>(begin: 0.92, end: 1).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.elasticOut),
+    );
+    _slide = Tween<Offset>(begin: const Offset(0, 0.03), end: Offset.zero)
+        .animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
+    );
+    Future.delayed(Duration(milliseconds: widget.delayMs), () {
+      if (mounted) _controller.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _replay() {
+    _controller.forward(from: 0);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final currentTab = context.watch<NavigationProvider>().currentIndex;
+
+    if (!_firstBuild && currentTab == 0 && _lastTabIndex != 0) {
+      Future.microtask(() {
+        if (mounted) _replay();
+      });
+    }
+    _firstBuild = false;
+    _lastTabIndex = currentTab;
+
+    return FadeTransition(
+      opacity: _opacity,
+      child: ScaleTransition(
+        scale: _scale,
+        child: SlideTransition(
+          position: _slide,
+          child: widget.child,
+        ),
+      ),
+    );
+  }
+}
 
 class OverviewPage extends StatefulWidget {
   const OverviewPage({super.key});
@@ -71,12 +150,12 @@ class _OverviewPageState extends State<OverviewPage> {
   Widget _buildWideLayout() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: const [
-        SearchEntryCard(),
-        SizedBox(height: 16),
-        _WideStorageAndShortcuts(),
-        SizedBox(height: 16),
-        RecentActivityList(),
+      children: [
+        _OverviewEntrance(delayMs: 40, child: const SearchEntryCard()),
+        const SizedBox(height: 16),
+        _OverviewEntrance(delayMs: 110, child: const _WideStorageAndShortcuts()),
+        const SizedBox(height: 16),
+        _OverviewEntrance(delayMs: 180, child: const RecentActivityList()),
       ],
     );
   }
@@ -85,15 +164,15 @@ class _OverviewPageState extends State<OverviewPage> {
   Widget _buildNarrowLayout() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: const [
-        SearchEntryCard(),
-        SizedBox(height: 16),
-        StorageUsageCard(),
-        SizedBox(height: 16),
-        Card(child: Padding(
-            padding: EdgeInsets.all(16), child: QuickAccessGrid())),
-        SizedBox(height: 16),
-        RecentActivityList(),
+      children: [
+        _OverviewEntrance(delayMs: 40, child: const SearchEntryCard()),
+        const SizedBox(height: 16),
+        _OverviewEntrance(delayMs: 110, child: const StorageUsageCard()),
+        const SizedBox(height: 16),
+        _OverviewEntrance(delayMs: 180, child: Card(child: Padding(
+            padding: const EdgeInsets.all(16), child: QuickAccessGrid()))),
+        const SizedBox(height: 16),
+        _OverviewEntrance(delayMs: 260, child: const RecentActivityList()),
       ],
     );
   }

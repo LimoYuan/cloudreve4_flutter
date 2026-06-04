@@ -9,14 +9,13 @@ import 'package:cloudreve4_flutter/presentation/providers/user_setting_provider.
 import 'package:cloudreve4_flutter/presentation/widgets/announcement_dialog.dart';
 import 'package:cloudreve4_flutter/presentation/widgets/gesture_handler_mixin.dart';
 import 'package:cloudreve4_flutter/presentation/widgets/glassmorphism_container.dart';
+import 'package:cloudreve4_flutter/presentation/widgets/share_clipboard_watcher.dart';
 import 'package:cloudreve4_flutter/presentation/widgets/user_avatar.dart';
 import 'package:cloudreve4_flutter/services/announcement_service.dart';
 import 'package:cloudreve4_flutter/services/dialog_queue_service.dart';
-import 'package:cloudreve4_flutter/services/share_link_service.dart';
-import 'package:cloudreve4_flutter/presentation/pages/share/share_link_page.dart';
+import 'package:cloudreve4_flutter/services/floating_upload_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:provider/provider.dart';
 import '../../../router/app_router.dart';
@@ -26,6 +25,82 @@ import '../sync/sync_page.dart';
 import '../tasks/tasks_page.dart';
 import '../store/store_page.dart';
 import '../profile/profile_page.dart';
+
+/// 桌面端侧边栏入场动画：从左侧滑入 + 淡入
+class _DesktopSidebarIntro extends StatefulWidget {
+  final Widget child;
+
+  const _DesktopSidebarIntro({required this.child});
+
+  @override
+  State<_DesktopSidebarIntro> createState() => _DesktopSidebarIntroState();
+}
+
+class _DesktopSidebarIntroState extends State<_DesktopSidebarIntro> {
+  bool _visible = false;
+
+  @override
+  void initState() {
+    super.initState();
+    Future.delayed(const Duration(milliseconds: 40), () {
+      if (mounted) setState(() => _visible = true);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedOpacity(
+      opacity: _visible ? 1 : 0,
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOut,
+      child: AnimatedSlide(
+        offset: _visible ? Offset.zero : const Offset(-0.72, 0),
+        duration: const Duration(milliseconds: 420),
+        curve: Curves.easeOutCubic,
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+/// NavigationRail 图标交错入场动画：缩放弹入 + 淡入
+class _RailIconIntro extends StatefulWidget {
+  final Widget child;
+  final int order;
+
+  const _RailIconIntro({required this.child, required this.order});
+
+  @override
+  State<_RailIconIntro> createState() => _RailIconIntroState();
+}
+
+class _RailIconIntroState extends State<_RailIconIntro> {
+  bool _visible = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final delay = Duration(milliseconds: 250 + widget.order * 58);
+    Future.delayed(delay, () {
+      if (mounted) setState(() => _visible = true);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedScale(
+      scale: _visible ? 1.0 : 0.18,
+      duration: const Duration(milliseconds: 560),
+      curve: Curves.elasticOut,
+      child: AnimatedOpacity(
+        opacity: _visible ? 1 : 0,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOut,
+        child: widget.child,
+      ),
+    );
+  }
+}
 
 class _ShellPageSlot extends StatefulWidget {
   final Widget child;
@@ -55,10 +130,9 @@ class AppShell extends StatefulWidget {
   State<AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends State<AppShell> with GestureHandlerMixin, TickerProviderStateMixin, WidgetsBindingObserver {
+class _AppShellState extends State<AppShell> with GestureHandlerMixin, TickerProviderStateMixin {
   final Set<int> _visitedPageIndexes = <int>{0};
   late AnimationController _syncSpinController;
-  String? _lastClipboardShareId;
   String? _lastUserId;
   bool _cachedShowSyncTab = false;
 
@@ -85,24 +159,14 @@ class _AppShellState extends State<AppShell> with GestureHandlerMixin, TickerPro
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _showPostLoginAnnouncement();
-      _checkClipboardShareLink();
       _lastUserId = context.read<AuthProvider>().user?.id;
     });
-    WidgetsBinding.instance.addObserver(this);
   }
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
     _syncSpinController.dispose();
     super.dispose();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      _checkClipboardShareLink();
-    }
   }
 
   /// 切换 tab 时刷新对应页面数据
@@ -182,56 +246,6 @@ class _AppShellState extends State<AppShell> with GestureHandlerMixin, TickerPro
     }
   }
 
-  Future<void> _checkClipboardShareLink() async {
-    await Future<void>.delayed(const Duration(milliseconds: 650));
-    if (!mounted) return;
-
-    try {
-      final data = await Clipboard.getData(Clipboard.kTextPlain);
-      final candidate = ShareLinkService.instance.parseShareLink(data?.text);
-
-      if (candidate == null) return;
-      if (_lastClipboardShareId == candidate.id) return;
-
-      _lastClipboardShareId = candidate.id;
-
-      await DialogQueueService.instance.enqueue<void>(() async {
-        if (!mounted) return;
-
-        final open = await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('检测到分享链接'),
-            content: Text(
-              '是否打开这个文件分享？\n\n${candidate.url}',
-              maxLines: 5,
-              overflow: TextOverflow.ellipsis,
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(false),
-                child: const Text('忽略'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.of(ctx).pop(true),
-                child: const Text('打开'),
-              ),
-            ],
-          ),
-        );
-
-        if (open == true && mounted) {
-          await Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => ShareLinkPage(candidate: candidate),
-            ),
-          );
-        }
-      });
-    } catch (_) {
-      // 读取剪贴板失败不能影响主界面
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -255,14 +269,18 @@ class _AppShellState extends State<AppShell> with GestureHandlerMixin, TickerPro
           }
         }
       },
-      child: Consumer2<AuthProvider, NavigationProvider>(
-        builder: (context, auth, navProvider, _) {
-          _checkUserChange();
-          if (isDesktop) {
-            return _buildDesktopLayout(context, navProvider);
-          }
-          return _buildMobileLayout(context, navProvider);
-        },
+      child: FloatingUploadBridge(
+        child: ShareClipboardWatcher(
+          child: Consumer2<AuthProvider, NavigationProvider>(
+            builder: (context, auth, navProvider, _) {
+              _checkUserChange();
+              if (isDesktop) {
+                return _buildDesktopLayout(context, navProvider);
+              }
+              return _buildMobileLayout(context, navProvider);
+            },
+          ),
+        ),
       ),
     );
   }
@@ -409,7 +427,8 @@ class _AppShellState extends State<AppShell> with GestureHandlerMixin, TickerPro
     return Scaffold(
       body: Row(
         children: [
-          NavigationRail(
+          _DesktopSidebarIntro(
+            child: NavigationRail(
             selectedIndex: navProvider.currentIndex,
             onDestinationSelected: _handleTabSelected,
             leading: Padding(
@@ -436,63 +455,72 @@ class _AppShellState extends State<AppShell> with GestureHandlerMixin, TickerPro
               ),
             ),
             destinations: [
-              const NavigationRailDestination(
-                icon: Icon(LucideIcons.layoutDashboard),
-                selectedIcon: Icon(LucideIcons.layoutDashboard, weight: 700),
-                label: Text('概览'),
-              ),
-              const NavigationRailDestination(
-                icon: Icon(LucideIcons.folder),
-                selectedIcon: Icon(LucideIcons.folder, weight: 700),
-                label: Text('文件'),
+              NavigationRailDestination(
+                icon: _RailIconIntro(order: 0, child: const Icon(LucideIcons.layoutDashboard)),
+                selectedIcon: _RailIconIntro(order: 0, child: const Icon(LucideIcons.layoutDashboard, weight: 700)),
+                label: const Text('概览'),
               ),
               NavigationRailDestination(
-                icon: Consumer2<UploadManagerProvider, DownloadManagerProvider>(
-                  builder: (context, uploadManager, downloadManager, _) {
-                    final activeCount = uploadManager.activeTasks.length + downloadManager.downloadingCount;
-                    return Badge(
-                      isLabelVisible: activeCount > 0,
-                      label: Text('$activeCount'),
-                      child: const Icon(LucideIcons.listChecks),
-                    );
-                  },
+                icon: _RailIconIntro(order: 1, child: const Icon(LucideIcons.folder)),
+                selectedIcon: _RailIconIntro(order: 1, child: const Icon(LucideIcons.folder, weight: 700)),
+                label: const Text('文件'),
+              ),
+              NavigationRailDestination(
+                icon: _RailIconIntro(
+                  order: 2,
+                  child: Consumer2<UploadManagerProvider, DownloadManagerProvider>(
+                    builder: (context, uploadManager, downloadManager, _) {
+                      final activeCount = uploadManager.activeTasks.length + downloadManager.downloadingCount;
+                      return Badge(
+                        isLabelVisible: activeCount > 0,
+                        label: Text('$activeCount'),
+                        child: const Icon(LucideIcons.listChecks),
+                      );
+                    },
+                  ),
                 ),
-                selectedIcon: const Icon(LucideIcons.listChecks, weight: 700),
+                selectedIcon: _RailIconIntro(order: 2, child: const Icon(LucideIcons.listChecks, weight: 700)),
                 label: const Text('任务'),
               ),
-              const NavigationRailDestination(
-                icon: Icon(Icons.storefront_outlined),
-                selectedIcon: Icon(Icons.storefront),
-                label: Text('商店'),
+              NavigationRailDestination(
+                icon: _RailIconIntro(order: 3, child: const Icon(Icons.storefront_outlined)),
+                selectedIcon: _RailIconIntro(order: 3, child: const Icon(Icons.storefront)),
+                label: const Text('商店'),
               ),
               if (_cachedShowSyncTab)
                 NavigationRailDestination(
-                  icon: Consumer<SyncProvider>(
-                    builder: (context, sync, _) {
-                      final count = sync.activeWorkerCount;
-                      return Badge(
-                        isLabelVisible: count > 0,
-                        label: Text('$count'),
-                        child: _buildSyncIcon(isSelected: false, size: 24),
-                      );
-                    },
+                  icon: _RailIconIntro(
+                    order: 4,
+                    child: Consumer<SyncProvider>(
+                      builder: (context, sync, _) {
+                        final count = sync.activeWorkerCount;
+                        return Badge(
+                          isLabelVisible: count > 0,
+                          label: Text('$count'),
+                          child: _buildSyncIcon(isSelected: false, size: 24),
+                        );
+                      },
+                    ),
                   ),
-                  selectedIcon: Consumer<SyncProvider>(
-                    builder: (context, sync, _) {
-                      final count = sync.activeWorkerCount;
-                      return Badge(
-                        isLabelVisible: count > 0,
-                        label: Text('$count'),
-                        child: _buildSyncIcon(isSelected: true, size: 24),
-                      );
-                    },
+                  selectedIcon: _RailIconIntro(
+                    order: 4,
+                    child: Consumer<SyncProvider>(
+                      builder: (context, sync, _) {
+                        final count = sync.activeWorkerCount;
+                        return Badge(
+                          isLabelVisible: count > 0,
+                          label: Text('$count'),
+                          child: _buildSyncIcon(isSelected: true, size: 24),
+                        );
+                      },
+                    ),
                   ),
                   label: const Text('同步'),
                 ),
-              const NavigationRailDestination(
-                icon: Icon(LucideIcons.user),
-                selectedIcon: Icon(LucideIcons.user, weight: 700),
-                label: Text('我的'),
+              NavigationRailDestination(
+                icon: _RailIconIntro(order: _cachedShowSyncTab ? 5 : 4, child: const Icon(LucideIcons.user)),
+                selectedIcon: _RailIconIntro(order: _cachedShowSyncTab ? 5 : 4, child: const Icon(LucideIcons.user, weight: 700)),
+                label: const Text('我的'),
               ),
             ],
             trailing: Expanded(
@@ -541,6 +569,7 @@ class _AppShellState extends State<AppShell> with GestureHandlerMixin, TickerPro
                 ],
               ),
             ),
+          ),
           ),
           const VerticalDivider(thickness: 1, width: 1),
           Expanded(

@@ -1,5 +1,8 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import '../presentation/pages/auth/login_page.dart';
+import '../presentation/pages/auth/login_page_desktop.dart';
 import '../presentation/pages/shell/app_shell.dart';
 import '../presentation/pages/splash/splash_page.dart';
 import '../presentation/pages/shares/shares_page.dart';
@@ -19,6 +22,7 @@ import '../presentation/pages/preview/markdown_preview_page.dart';
 import '../presentation/pages/files/category_files_page.dart';
 import '../presentation/pages/share/share_link_page.dart';
 import '../presentation/pages/preview/cloudreve_file_app_page.dart';
+import '../presentation/pages/files/transferred_files_page.dart';
 import '../services/share_link_service.dart';
 import '../data/models/file_model.dart';
 
@@ -46,6 +50,7 @@ class RouteNames {
   static const String syncSettings = '/sync-settings';
   static const String shareLink = '/share-link';
   static const String cloudreveFileApp = '/cloudreve-file-app';
+  static const String transferredFiles = '/transferred-files';
 }
 
 /// 应用路由
@@ -61,7 +66,9 @@ class AppRouter {
       case RouteNames.login:
         return MaterialPageRoute(
           settings: settings,
-          builder: (context) => const LoginPage(),
+          builder: (context) => (Platform.isWindows || Platform.isLinux || Platform.isMacOS)
+              ? const LoginDesktopPage()
+              : const LoginPage(),
         );
 
       case RouteNames.home:
@@ -275,6 +282,15 @@ class AppRouter {
         return MaterialPageRoute(
           settings: settings,
           builder: (context) => const SplashPage(),
+        );
+
+      case RouteNames.transferredFiles:
+        final args = settings.arguments;
+        return MaterialPageRoute(
+          settings: settings,
+          builder: (context) => TransferredFilesPage(
+            initialUri: args is String ? args : null,
+          ),
         );
 
       default:

@@ -38,6 +38,14 @@ class FileManagerProvider extends ChangeNotifier {
   String? _highlightPath;
   Timer? _highlightTimer;
 
+  /// 桌面首页"转存文件"列表（shared_with_me）
+  List<FileModel> _transferredFiles = [];
+  List<FileModel> get transferredFiles => _transferredFiles;
+
+  /// 当前桌面分类 Tab 选中项；null 表示"全部"（默认）。
+  /// 可选值: null / 'recent' / 'document' / 'image' / 'video' / 'audio'
+  String? _activeCategory;
+
   String get currentPath => _currentPath;
   List<FileModel> get files => _files;
   List<String> get selectedFiles => _selectedFiles;
@@ -51,6 +59,7 @@ class FileManagerProvider extends ChangeNotifier {
   String? get contextHint => _contextHint;
   bool get hasSelection => _selectedFiles.isNotEmpty;
   String? get highlightPath => _highlightPath;
+  String? get activeCategory => _activeCategory;
 
   /// 加载文件列表
   Future<void> loadFiles({bool refresh = false, Duration timeout = const Duration(seconds: 5)}) async {
@@ -148,6 +157,7 @@ class FileManagerProvider extends ChangeNotifier {
   /// 进入文件夹
   Future<void> enterFolder(String path) async {
     _currentPath = path;
+    _activeCategory = null; // 离开根目录时重置分类
     _selectedFiles.clear();
     _highlightPath = null;
     _highlightTimer?.cancel();
@@ -167,6 +177,9 @@ class FileManagerProvider extends ChangeNotifier {
     } else {
       _currentPath = '/';
     }
+    if (_currentPath.isEmpty) _currentPath = '/';
+    // 返回根目录时重置分类
+    _activeCategory = null;
     _selectedFiles.clear();
     _highlightPath = null;
     _highlightTimer?.cancel();
@@ -198,10 +211,24 @@ class FileManagerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 切换视图类型
-  void setViewType(FileViewType type) {
+  /// 切换视图类型并持久化
+  Future<void> setViewType(FileViewType type) async {
+    if (_viewType == type) return;
     _viewType = type;
     notifyListeners();
+    await StorageService.instance.setString(StorageKeys.fileViewType, type.name);
+  }
+
+  /// 从持久化恢复视图偏好
+  Future<void> restoreViewType() async {
+    final name = await StorageService.instance.getString(StorageKeys.fileViewType);
+    if (name != null) {
+      final type = FileViewType.values.where((v) => v.name == name).firstOrNull;
+      if (type != null && type != _viewType) {
+        _viewType = type;
+        notifyListeners();
+      }
+    }
   }
 
   /// 设置排序选项并重新加载
@@ -389,6 +416,95 @@ class FileManagerProvider extends ChangeNotifier {
     _highlightTimer?.cancel();
     await loadFiles();
     setHighlightPath(filePath);
+  }
+
+  /// 设置桌面端分类 Tab；切换后自动加载对应文件。
+  Future<void> setActiveCategory(String? category) async {
+    if (_activeCategory == category) return;
+    _activeCategory = category;
+    _selectedFiles.clear();
+    _highlightPath = null;
+    _highlightTimer?.cancel();
+    notifyListeners();
+
+    if (category == null) {
+      // "全部" → 恢复常规目录加载
+      await loadFiles();
+    } else if (category == 'recent') {
+      // "最近" → 加载根目录文件后按 updatedAt 排序
+      await loadFiles();
+      _sortRecentFiles();
+    } else {
+      // 按分类加载
+      await _loadFilesByCategory(category);
+    }
+  }
+
+  /// 按 Cloudreve V4 分类加载文件（桌面端 Tab 过滤）。
+  Future<void> _loadFilesByCategory(String category, {Duration timeout = const Duration(seconds: 5)}) async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+      _nextPageToken = null;
+    });
+
+    try {
+      final response = await FileService().listFilesByCategory(
+        category: category,
+        pageSize: 50,
+        orderBy: _sortOption.field.apiKey,
+        orderDirection: _sortOption.direction.apiKey,
+      ).timeout(timeout);
+
+      final List<dynamic> filesData = response['files'] as List<dynamic>? ?? [];
+      final pagination = response['pagination'] as Map<String, dynamic>? ?? {};
+      setState(() {
+        _files = filesData
+            .map((f) => FileModel.fromJson(f as Map<String, dynamic>))
+            .toList();
+        _nextPageToken = pagination['next_token'] as String?;
+        _hasMore = _nextPageToken != null;
+        _contextHint = response['context_hint'] as String?;
+      });
+    } on TimeoutException {
+      setState(() {
+        _errorMessage = '加载超时，请检查网络后重试';
+        _hasMore = false;
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = e.toString();
+        _hasMore = false;
+      });
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  /// 按 updatedAt 降序排列当前文件列表（用于"最近"Tab）。
+  void _sortRecentFiles() {
+    final sorted = List<FileModel>.from(_files)
+      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    setState(() {
+      _files = sorted;
+    });
+  }
+
+  /// 加载"转存文件"（shared_with_me），用于桌面首页概览右侧。
+  Future<void> loadTransferredFiles() async {
+    try {
+      final response = await FileService().listSharedWithMeFiles(pageSize: 20);
+      final List<dynamic> filesData = response['files'] as List<dynamic>? ?? [];
+      setState(() {
+        _transferredFiles = filesData
+            .map((f) => FileModel.fromJson(f as Map<String, dynamic>))
+            .toList();
+      });
+    } catch (_) {
+      // 转存文件加载失败不影响主流程
+    }
   }
 
   /// 清空文件列表

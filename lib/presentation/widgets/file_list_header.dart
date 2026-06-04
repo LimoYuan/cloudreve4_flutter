@@ -29,11 +29,10 @@ class FileListHeader extends StatelessWidget {
       child: Row(
         children: [
           if (showCheckbox) const SizedBox(width: 40),
-          // 图标占位
-          const SizedBox(width: 36 + 16),
           Expanded(flex: 5, child: _buildSortHeader(context, theme, SortField.name, '名称')),
-          Expanded(flex: 2, child: _buildSortHeader(context, theme, SortField.updatedAt, '修改日期')),
+          Expanded(flex: 1, child: Text('类型', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: theme.hintColor))),
           Expanded(flex: 1, child: _buildSortHeader(context, theme, SortField.size, '大小')),
+          Expanded(flex: 2, child: _buildSortHeader(context, theme, SortField.updatedAt, '修改日期')),
         ],
       ),
     );

@@ -37,9 +37,21 @@ class StorageKeys {
   // 文件排序
   static const String fileSortOption = 'file_sort_option';
 
+  // 文件视图
+  static const String fileViewType = 'file_view_type';
+
   // 日志级别
   static const String logLevel = 'app_log_level';
 
   // 公告
   static const String siteAnnouncementDismissedFingerprint = 'site_announcement_dismissed_fingerprint';
+
+  // 桌面系统设置
+  static const String shutdownAfterUploadsComplete = 'shutdown_after_uploads_complete';
+  static const String launchAtStartupEnabled = 'launch_at_startup_enabled';
+
+  // 概览最近活动
+  static const String recentActivityDisplayLimit = 'recent_activity_display_limit';
+  static const String localRecentFileActivities = 'local_recent_file_activities';
+  static const String localRecentShareActivities = 'local_recent_share_activities';
 }

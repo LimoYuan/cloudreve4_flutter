@@ -143,10 +143,42 @@ class _FileListItemHover extends StatefulWidget {
   State<_FileListItemHover> createState() => _FileListItemHoverState();
 }
 
-class _FileListItemHoverState extends State<_FileListItemHover> {
+class _FileListItemHoverState extends State<_FileListItemHover>
+    with SingleTickerProviderStateMixin {
   bool _isHovered = false;
   String? _folderSizeText;
   bool _isCalculatingFolder = false;
+  late final AnimationController _highlightController;
+  late final Animation<double> _highlightAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _highlightController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    _highlightAnimation = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 0.18, end: 0.30), weight: 0.5),
+      TweenSequenceItem(tween: Tween(begin: 0.30, end: 0.18), weight: 0.5),
+    ]).animate(CurvedAnimation(parent: _highlightController, curve: Curves.easeInOut));
+  }
+
+  @override
+  void didUpdateWidget(covariant _FileListItemHover oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isHighlighted && !_highlightController.isAnimating) {
+      _highlightController.repeat();
+    } else if (!widget.isHighlighted && _highlightController.isAnimating) {
+      _highlightController.stop();
+    }
+  }
+
+  @override
+  void dispose() {
+    _highlightController.dispose();
+    super.dispose();
+  }
 
   Future<void> _calculateFolderSize() async {
     setState(() => _isCalculatingFolder = true);
@@ -176,19 +208,30 @@ class _FileListItemHoverState extends State<_FileListItemHover> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
+    if (widget.isHighlighted) {
+      return ListenableBuilder(
+        listenable: _highlightController,
+        builder: (context, _) {
+          final bgColor = colorScheme.primary.withValues(alpha: _highlightAnimation.value);
+          return _buildContent(context, bgColor);
+        },
+      );
+    }
+
     Color bgColor;
     if (widget.isSelected) {
       bgColor = colorScheme.primary.withValues(alpha: 0.08);
-    } else if (widget.isHighlighted) {
-      bgColor = colorScheme.primary.withValues(alpha: 0.06);
     } else if (_isHovered) {
-      bgColor = colorScheme.primary.withValues(alpha: 0.05);
+      bgColor = colorScheme.primary.withValues(alpha: 0.20);
     } else if (widget.index.isOdd) {
       bgColor = colorScheme.surfaceContainerLow;
     } else {
       bgColor = colorScheme.surface;
     }
+    return _buildContent(context, bgColor);
+  }
 
+  Widget _buildContent(BuildContext context, Color bgColor) {
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
@@ -196,13 +239,8 @@ class _FileListItemHoverState extends State<_FileListItemHover> {
         onTap: widget.tapToShowMenu ? widget.onLongPress : widget.onTap,
         onLongPress: widget.onLongPress,
         onSecondaryTap: widget.onLongPress,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          decoration: BoxDecoration(
-            color: bgColor,
-            borderRadius: BorderRadius.circular(4),
-          ),
-          margin: const EdgeInsets.symmetric(vertical: 1, horizontal: 4),
+        child: Container(
+          decoration: BoxDecoration(color: bgColor),
           padding: EdgeInsets.symmetric(
             horizontal: widget.isDesktop ? 24 : 16,
             vertical: 8,
@@ -238,7 +276,7 @@ class _FileListItemHoverState extends State<_FileListItemHover> {
       );
     }
 
-    return _buildCalcButton(context, colorScheme);
+    return Align(alignment: Alignment.centerLeft, child: _buildCalcButton(context, colorScheme));
   }
 
   Widget _buildCalcButton(BuildContext context, ColorScheme colorScheme) {
@@ -277,11 +315,12 @@ class _FileListItemHoverState extends State<_FileListItemHover> {
     );
   }
 
-  /// 桌面端：三列对齐 Row
+  /// 桌面端：四列对齐 Row（名称→类型→大小→修改日期）
   Widget _buildDesktopRow(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final nameColor = widget.isSelected ? colorScheme.primary : colorScheme.onSurface;
+    final typeLabel = FileIconUtils.getFileTypeLabel(widget.file.name, isFolder: widget.file.isFolder);
 
     return Row(
       children: [
@@ -294,20 +333,39 @@ class _FileListItemHoverState extends State<_FileListItemHover> {
               materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
           ),
-        FileIconUtils.buildIconWidget(context: context, file: widget.file),
-        const SizedBox(width: 16),
         Expanded(
           flex: 5,
+          child: Row(
+            children: [
+              FileIconUtils.buildIconWidget(context: context, file: widget.file),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Text(
+                  widget.file.name,
+                  style: TextStyle(
+                    fontWeight: widget.isSelected ? FontWeight.w500 : FontWeight.normal,
+                    fontSize: 14,
+                    color: nameColor,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          flex: 1,
           child: Text(
-            widget.file.name,
-            style: TextStyle(
-              fontWeight: widget.isSelected ? FontWeight.w500 : FontWeight.normal,
-              fontSize: 14,
-              color: nameColor,
-            ),
+            typeLabel,
+            style: TextStyle(fontSize: 13, color: theme.hintColor),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
+        ),
+        Expanded(
+          flex: 1,
+          child: _buildSizeCell(context),
         ),
         Expanded(
           flex: 2,
@@ -317,10 +375,6 @@ class _FileListItemHoverState extends State<_FileListItemHover> {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
-        ),
-        Expanded(
-          flex: 1,
-          child: _buildSizeCell(context),
         ),
       ],
     );

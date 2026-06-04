@@ -74,15 +74,13 @@ class _SyncPageState extends State<SyncPage> {
                     );
 
                     if (isWide) {
-                      return IntrinsicHeight(
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Expanded(child: _buildStatusHeaderCard(sync, theme)),
-                            const SizedBox(width: 8),
-                            Expanded(child: statsCard),
-                          ],
-                        ),
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(child: _buildStatusHeaderCard(sync, theme)),
+                          const SizedBox(width: 8),
+                          Expanded(child: statsCard),
+                        ],
                       );
                     }
                     return Column(

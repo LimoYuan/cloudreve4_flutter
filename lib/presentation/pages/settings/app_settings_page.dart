@@ -8,7 +8,10 @@ import '../../../core/constants/storage_keys.dart';
 import '../../../core/utils/app_logger.dart';
 import '../../../data/models/cache_settings_model.dart';
 import '../../../services/cache_manager_service.dart';
+import '../../../services/desktop_system_service.dart';
 import '../../../services/download_service.dart';
+import '../../../services/floating_upload_service.dart';
+import '../../../services/local_recent_activity_service.dart';
 import '../../../services/storage_service.dart';
 import '../../providers/download_manager_provider.dart';
 import '../../providers/theme_provider.dart';
@@ -40,6 +43,11 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
   int? _logFileSize;
   String _cacheDirPath = '';
   Level _logLevel = Level.info;
+  int _recentActivityLimit = LocalRecentActivityService.defaultDisplayLimit;
+  bool _floatingUploadEnabled = false;
+  bool _shutdownAfterUploadsEnabled = false;
+  bool _launchAtStartupEnabled = false;
+  bool _desktopSystemSaving = false;
 
   @override
   void initState() {
@@ -49,6 +57,9 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
     _loadGravatarMirrorSetting();
     _loadLogInfo();
     _loadLogLevel();
+    _loadRecentActivityLimit();
+    _loadFloatingUploadSetting();
+    _loadDesktopSystemSettings();
   }
 
   Future<void> _loadCacheSettings() async {
@@ -135,6 +146,29 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
     if (saved != null && mounted) {
       setState(() {
         _logLevel = _parseLogLevel(saved);
+      });
+    }
+  }
+
+  Future<void> _loadRecentActivityLimit() async {
+    final limit = await LocalRecentActivityService.instance.getDisplayLimit();
+    if (mounted) setState(() => _recentActivityLimit = limit);
+  }
+
+  Future<void> _loadFloatingUploadSetting() async {
+    if (!Platform.isWindows) return;
+    final enabled = await FloatingUploadService.instance.isEnabled();
+    if (mounted) setState(() => _floatingUploadEnabled = enabled);
+  }
+
+  Future<void> _loadDesktopSystemSettings() async {
+    if (!(Platform.isWindows || Platform.isLinux)) return;
+    final shutdownEnabled = await DesktopSystemService.instance.isShutdownAfterUploadsEnabled();
+    final launchEnabled = await DesktopSystemService.instance.isLaunchAtStartupEnabled();
+    if (mounted) {
+      setState(() {
+        _shutdownAfterUploadsEnabled = shutdownEnabled;
+        _launchAtStartupEnabled = launchEnabled;
       });
     }
   }
@@ -236,6 +270,87 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
                       subtitle: Text(_taskRetentionDays == -1 ? '永久保留' : '保留 $_taskRetentionDays 天'),
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () => _showRetentionDaysDialog(context),
+                    ),
+                  ],
+                ),
+                _buildSection(
+                  title: '概览设置',
+                  children: [
+                    ListTile(
+                      leading: const Icon(Icons.dashboard_customize_outlined),
+                      title: const Text('最近活动每类显示条数'),
+                      subtitle: Text('当前每个小类最多显示 $_recentActivityLimit 条'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => _showRecentActivityLimitDialog(context),
+                    ),
+                  ],
+                ),
+                if (Platform.isWindows) _buildSection(
+                  title: '桌面悬浮窗',
+                  children: [
+                    SwitchListTile(
+                      secondary: const Icon(LucideIcons.uploadCloud),
+                      title: const Text('启用悬浮上传窗'),
+                      subtitle: const Text('在桌面顶层显示蓝色拖拽上传窗，文件松开后上传到网盘根目录'),
+                      value: _floatingUploadEnabled,
+                      onChanged: (value) async {
+                        await FloatingUploadService.instance.setEnabled(value);
+                        if (mounted) setState(() => _floatingUploadEnabled = value);
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(LucideIcons.messageSquare),
+                      title: const Text('测试悬浮窗提示'),
+                      subtitle: const Text('点击后在悬浮窗下方显示测试提示'),
+                      onTap: () {
+                        FloatingUploadService.instance.showStatus('悬浮窗测试提示');
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(LucideIcons.image),
+                      title: const Text('刷新站点图标'),
+                      subtitle: const Text('重新下载当前站点 favicon 并应用到悬浮窗'),
+                      onTap: () async {
+                        await FloatingUploadService.instance.refreshSiteIcon();
+                        if (mounted) {
+                          FloatingUploadService.instance.showStatus('已刷新站点图标');
+                        }
+                      },
+                    ),
+                  ],
+                ),
+                if (Platform.isWindows || Platform.isLinux) _buildSection(
+                  title: '系统设置',
+                  children: [
+                    SwitchListTile(
+                      secondary: const Icon(Icons.power_settings_new),
+                      title: const Text('上传完成后关机'),
+                      subtitle: const Text('所有上传任务成功完成后，延迟 60 秒自动关机'),
+                      value: _shutdownAfterUploadsEnabled,
+                      onChanged: _desktopSystemSaving ? null : (value) async {
+                        setState(() => _desktopSystemSaving = true);
+                        try {
+                          await DesktopSystemService.instance.setShutdownAfterUploadsEnabled(value);
+                          if (mounted) setState(() => _shutdownAfterUploadsEnabled = value);
+                        } finally {
+                          if (mounted) setState(() => _desktopSystemSaving = false);
+                        }
+                      },
+                    ),
+                    SwitchListTile(
+                      secondary: const Icon(Icons.rocket_launch_outlined),
+                      title: const Text('开机自启动'),
+                      subtitle: const Text('登录系统后自动启动 Cloudreve'),
+                      value: _launchAtStartupEnabled,
+                      onChanged: _desktopSystemSaving ? null : (value) async {
+                        setState(() => _desktopSystemSaving = true);
+                        try {
+                          await DesktopSystemService.instance.setLaunchAtStartupEnabled(value);
+                          if (mounted) setState(() => _launchAtStartupEnabled = value);
+                        } finally {
+                          if (mounted) setState(() => _desktopSystemSaving = false);
+                        }
+                      },
                     ),
                   ],
                 ),
@@ -590,6 +705,23 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
       setState(() => _taskRetentionDays = selected);
       await StorageService.instance
           .setInt(StorageKeys.taskRetentionDays, selected);
+    }
+  }
+
+  Future<void> _showRecentActivityLimitDialog(BuildContext context) async {
+    final limitOptions = [3, 5, 10, 15, 20, 30];
+
+    final selected = await _showGlassOptionDialog<int>(
+      context,
+      title: '最近活动每类显示条数',
+      icon: LucideIcons.activity,
+      subtitle: '控制概览页每个最近活动小类最多展示多少条记录',
+      options: limitOptions.map((n) => (n, '$n 条', _recentActivityLimit == n)).toList(),
+    );
+
+    if (selected != null && mounted) {
+      await LocalRecentActivityService.instance.setDisplayLimit(selected);
+      setState(() => _recentActivityLimit = selected);
     }
   }
 

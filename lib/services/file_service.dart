@@ -280,6 +280,27 @@ class FileService {
     return response;
   }
 
+  /// 列出"与我共享"文件
+  Future<Map<String, dynamic>> listSharedWithMeFiles({
+    int page = 0,
+    int? pageSize,
+    String? orderBy,
+    String? orderDirection,
+  }) async {
+    final params = <String, dynamic>{
+      'uri': 'cloudreve://shared_with_me',
+      'page': page,
+      'page_size': pageSize,
+      'order_by': orderBy,
+      'order_direction': orderDirection,
+    };
+
+    final response = await ApiService.instance
+        .get<Map<String, dynamic>>('/file', queryParameters: params);
+
+    return response;
+  }
+
   /// 搜索文件
   Future<Map<String, dynamic>> searchFiles({
     String uri = '/',

@@ -4,8 +4,67 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:provider/provider.dart';
 import 'package:cloudreve4_flutter/presentation/providers/user_setting_provider.dart';
 
-class StorageUsageCard extends StatelessWidget {
+class StorageUsageCard extends StatefulWidget {
   const StorageUsageCard({super.key});
+
+  @override
+  State<StorageUsageCard> createState() => _StorageUsageCardState();
+}
+
+class _StorageUsageCardState extends State<StorageUsageCard>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  double _targetPercentage = 0;
+  double _lastTarget = -1;
+  bool _hasRealData = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1120),
+    );
+    _controller.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  double get _animatedProgress {
+    final t = _controller.value;
+    // Phase 1 (0-0.46): easeOutCubic 0→1
+    // Phase 2 (0.46-1.0): easeOutBack 1→target
+    if (t <= 0.0) return 0;
+    if (t <= 0.46) {
+      final local = t / 0.46;
+      final eased = 1 - pow(1 - local, 3).toDouble();
+      return eased * _targetPercentage / 100;
+    }
+    final local = (t - 0.46) / 0.54;
+    // easeOutBack
+    final c1 = 1.70158;
+    final c3 = c1 + 1;
+    final eased = 1 + c3 * pow(local - 1, 3) + c1 * pow(local - 1, 2);
+    return _targetPercentage / 100 * eased;
+  }
+
+  void _restartIfNeeded(double percentage, bool hasCapacity) {
+    if (!hasCapacity && !_hasRealData) return;
+    if (hasCapacity) _hasRealData = true;
+    if (percentage != _lastTarget) {
+      _lastTarget = percentage;
+      _targetPercentage = percentage;
+      // 必须延迟到 build 完成后启动动画，否则 controller listener 中的
+      // setState() 会在 build 阶段被调用而抛异常
+      Future.microtask(() {
+        if (mounted) _controller.forward(from: 0);
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -15,9 +74,12 @@ class StorageUsageCard extends StatelessWidget {
     return Consumer<UserSettingProvider>(
       builder: (context, userSetting, _) {
         final capacity = userSetting.capacity;
-        final used = capacity?.used ?? 0;
         final total = capacity?.total ?? 0;
         final percentage = capacity?.usagePercentage ?? 0;
+
+        _restartIfNeeded(percentage, capacity != null);
+
+        final displayUsed = (total * _animatedProgress).round();
 
         return Card(
           child: Padding(
@@ -39,7 +101,7 @@ class StorageUsageCard extends StatelessWidget {
                     height: 90,
                     child: CustomPaint(
                       painter: _SemiCircleProgressPainter(
-                        progress: percentage / 100,
+                        progress: _animatedProgress.clamp(0.0, 1.0),
                         color: colorScheme.primary,
                         backgroundColor: colorScheme.primary.withValues(alpha: 0.12),
                       ),
@@ -49,7 +111,7 @@ class StorageUsageCard extends StatelessWidget {
                 const SizedBox(height: 16),
                 Center(
                   child: Text(
-                    '${_formatBytes(used)} / ${_formatBytes(total)}',
+                    '${_formatBytes(displayUsed)} / ${_formatBytes(total)}',
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: theme.hintColor,
                     ),
@@ -58,7 +120,7 @@ class StorageUsageCard extends StatelessWidget {
                 const SizedBox(height: 4),
                 Center(
                   child: Text(
-                    '已使用 ${percentage.toStringAsFixed(1)}%',
+                    '已使用 ${(_animatedProgress * 100).toStringAsFixed(1)}%',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.hintColor,
                     ),

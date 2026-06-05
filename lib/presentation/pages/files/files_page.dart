@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:cross_file/cross_file.dart';
 import 'package:cloudreve4_flutter/data/models/file_model.dart';
+import 'package:cloudreve4_flutter/services/download_service.dart';
 import 'package:cloudreve4_flutter/services/file_service.dart';
 import 'package:cloudreve4_flutter/services/storage_service.dart';
 import 'package:cloudreve4_flutter/services/upload_service.dart';
@@ -354,6 +355,10 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
   /// Inline selection action buttons for the desktop action bar.
   Widget _buildDesktopSelectionActions(FileManagerProvider fileManager) {
     final colorScheme = Theme.of(context).colorScheme;
+    final selectedFiles = fileManager.files
+        .where((file) => fileManager.selectedFiles.contains(file.path))
+        .toList();
+    final hasFolder = selectedFiles.any((file) => file.isFolder);
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -387,6 +392,22 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
             backgroundColor: colorScheme.primary.withValues(alpha: 0.08),
           ),
         ),
+        if (hasFolder)
+          IconButton(
+            icon: Icon(
+              Icons.drive_folder_upload_outlined,
+              size: 18,
+              color: colorScheme.primary,
+            ),
+            onPressed: () => _exportSelectedDirectories(
+              fileManager,
+              selectedFiles,
+            ),
+            tooltip: '导出目录',
+            style: IconButton.styleFrom(
+              backgroundColor: colorScheme.primary.withValues(alpha: 0.08),
+            ),
+          ),
         IconButton(
           icon: Icon(LucideIcons.trash2, size: 18, color: colorScheme.error),
           onPressed: () => FileOperationDialogs.showDeleteConfirmation(
@@ -1122,6 +1143,22 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
     }
   }
 
+  Future<void> _exportSelectedDirectories(
+    FileManagerProvider fileManager,
+    List<FileModel> selectedFiles,
+  ) async {
+    final folders = selectedFiles.where((file) => file.isFolder).toList();
+    if (folders.isEmpty) {
+      ToastHelper.info('请选择文件夹后再导出目录');
+      return;
+    }
+    await FileOperationDialogs.showExportDirectoryDialog(
+      context,
+      fileManager,
+      folders,
+    );
+  }
+
   /// 下载为压缩包（移动端 & 通用路径）
   Future<void> _downloadAsArchive(
     FileManagerProvider fileManager,
@@ -1181,103 +1218,240 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
       listen: false,
     );
 
-    final defaultDir = await StorageService.instance.getString(
+    final storedDir = await StorageService.instance.getString(
       StorageKeys.downloadDefaultDirectory,
     );
+    final defaultDirectory = await DownloadService().getDownloadDirectory();
     if (!mounted) return;
 
-    final theme = Theme.of(context);
-    String? selectedDirectory = defaultDir;
+    String selectedDirectory = storedDir?.trim().isNotEmpty == true
+        ? storedDir!.trim()
+        : defaultDirectory.path;
     bool setAsDefault = false;
+    final title = shouldArchive ? '下载为压缩包' : '下载文件';
+    final displayName = shouldArchive
+        ? '已选择 ${files.length} 项，将打包为 ZIP 压缩包下载'
+        : files.first.name;
+    final isFolder = files.length == 1 && files.first.isFolder;
 
     final result = await showDialog<bool>(
       context: context,
+      barrierDismissible: false,
       builder: (dialogContext) {
+        final theme = Theme.of(dialogContext);
+        final colorScheme = theme.colorScheme;
+
         return StatefulBuilder(
           builder: (dialogContext, setDialogState) {
-            return AlertDialog(
-              title: Text(shouldArchive ? '下载为压缩包' : '下载文件'),
-              content: SizedBox(
-                width: 420,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (shouldArchive) ...[
-                      Text(
-                        '已选择 ${files.length} 项，将打包为 ZIP 压缩包下载。',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.hintColor,
+            Future<void> pickDirectory() async {
+              final picked = await FilePicker.platform.getDirectoryPath(
+                dialogTitle: '选择下载保存位置',
+                initialDirectory: Directory(selectedDirectory).existsSync()
+                    ? selectedDirectory
+                    : defaultDirectory.path,
+              );
+              if (picked != null && picked.trim().isNotEmpty) {
+                setDialogState(() => selectedDirectory = picked.trim());
+              }
+            }
+
+            return Dialog(
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 32,
+                vertical: 28,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 560),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(26, 22, 26, 24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              title,
+                              style: const TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: '关闭',
+                            onPressed: () => Navigator.of(
+                              dialogContext,
+                            ).pop(false),
+                            icon: const Icon(Icons.close),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Icon(
+                            isFolder
+                                ? Icons.folder_rounded
+                                : Icons.insert_drive_file_outlined,
+                            size: 28,
+                            color: isFolder
+                                ? const Color(0xFFFFB923)
+                                : colorScheme.primary,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              displayName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (!shouldArchive) ...[
+                        const SizedBox(height: 6),
+                        Padding(
+                          padding: const EdgeInsets.only(left: 40),
+                          child: Text(
+                            '${app_date_utils.DateUtils.formatFileSize(files.first.size)}  |  '
+                            '${app_date_utils.DateUtils.formatDateTime(files.first.updatedAt)}',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.hintColor,
+                            ),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 22),
+                      InkWell(
+                        onTap: pickDirectory,
+                        borderRadius: BorderRadius.circular(24),
+                        child: Container(
+                          height: 46,
+                          decoration: BoxDecoration(
+                            color: colorScheme.surfaceContainerHighest
+                                .withValues(alpha: 0.72),
+                            borderRadius: BorderRadius.circular(24),
+                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 18),
+                          child: Row(
+                            children: [
+                              Text(
+                                '下载到：',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  color: colorScheme.onSurfaceVariant,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  selectedDirectory,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    color: colorScheme.onSurface,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Icon(
+                                Icons.folder_open_outlined,
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                       const SizedBox(height: 12),
-                    ] else ...[
-                      Text(
-                        files.first.name,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
+                      InkWell(
+                        onTap: () => setDialogState(
+                          () => setAsDefault = !setAsDefault,
+                        ),
+                        borderRadius: BorderRadius.circular(8),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Checkbox(
+                                value: setAsDefault,
+                                onChanged: (value) => setDialogState(
+                                  () => setAsDefault = value ?? false,
+                                ),
+                              ),
+                              Text(
+                                '设为默认路径',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  color: colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${app_date_utils.DateUtils.formatFileSize(files.first.size)}  |  '
-                        '${app_date_utils.DateUtils.formatDateTime(files.first.updatedAt)}',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.hintColor,
-                        ),
+                      const SizedBox(height: 24),
+                      const Divider(height: 1),
+                      const SizedBox(height: 18),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          SizedBox(
+                            width: 150,
+                            height: 44,
+                            child: TextButton(
+                              style: TextButton.styleFrom(
+                                backgroundColor: colorScheme.primary
+                                    .withValues(alpha: 0.08),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(22),
+                                ),
+                              ),
+                              onPressed: () => Navigator.of(
+                                dialogContext,
+                              ).pop(false),
+                              child: const Text(
+                                '取消',
+                                style: TextStyle(fontSize: 16),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 18),
+                          SizedBox(
+                            width: 150,
+                            height: 44,
+                            child: FilledButton(
+                              style: FilledButton.styleFrom(
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(22),
+                                ),
+                              ),
+                              onPressed: () => Navigator.of(
+                                dialogContext,
+                              ).pop(true),
+                              child: const Text(
+                                '下载',
+                                style: TextStyle(fontSize: 16),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 12),
                     ],
-                    // Directory picker
-                    OutlinedButton.icon(
-                      onPressed: () async {
-                        final dir = await FilePicker.platform.getDirectoryPath(
-                          dialogTitle: '选择下载目录',
-                        );
-                        if (dir != null) {
-                          setDialogState(() => selectedDirectory = dir);
-                        }
-                      },
-                      icon: Icon(
-                        selectedDirectory != null
-                            ? LucideIcons.folderCheck
-                            : LucideIcons.folderOpen,
-                        size: 18,
-                      ),
-                      label: Text(
-                        selectedDirectory != null
-                            ? selectedDirectory!
-                            : '选择保存目录',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    // Set as default checkbox
-                    CheckboxListTile(
-                      value: setAsDefault,
-                      onChanged: (v) => setDialogState(() => setAsDefault = v ?? false),
-                      title: const Text('设为默认路径'),
-                      contentPadding: EdgeInsets.zero,
-                      controlAffinity: ListTileControlAffinity.leading,
-                      dense: true,
-                    ),
-                  ],
+                  ),
                 ),
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(false),
-                  child: const Text('取消'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(true),
-                  child: const Text('下载'),
-                ),
-              ],
             );
           },
         );
@@ -1286,10 +1460,10 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
 
     if (result != true || !mounted) return;
 
-    if (setAsDefault && selectedDirectory != null) {
+    if (setAsDefault) {
       await StorageService.instance.setString(
         StorageKeys.downloadDefaultDirectory,
-        selectedDirectory!,
+        selectedDirectory,
       );
     }
 
@@ -1305,9 +1479,7 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
         fileName: file.name,
         fileUri: file.relativePath,
         fileSize: file.size,
-        savePath: selectedDirectory == null
-            ? null
-            : '$selectedDirectory${Platform.pathSeparator}${file.name}',
+        savePath: '$selectedDirectory${Platform.pathSeparator}${file.name}',
       );
       if (!mounted) return;
       if (task != null) {

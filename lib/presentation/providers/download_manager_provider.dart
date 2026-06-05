@@ -413,16 +413,17 @@ class DownloadManagerProvider extends ChangeNotifier {
     }
   }
 
-  /// 删除下载任务（包括文件）
-  Future<void> deleteDownloadTask(String taskId) async {
+  /// 删除下载任务
+  Future<void> deleteDownloadTask(
+    String taskId, {
+    bool deleteLocalFile = false,
+  }) async {
     final task = _tasks[taskId];
     if (task != null) {
-      // 删除已下载的文件
-      if (task.status == DownloadStatus.completed) {
+      if (deleteLocalFile) {
         await _downloadService.deleteDownloadedFile(task.savePath);
       }
 
-      // 移除任务
       _resumeBaseBytes.remove(taskId);
       _tasks.remove(taskId);
       _downloadService.disposeTask(taskId);

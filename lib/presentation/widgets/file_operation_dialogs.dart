@@ -1,5 +1,10 @@
+import 'dart:io';
+
 import 'package:cloudreve4_flutter/data/models/file_model.dart';
+import 'package:cloudreve4_flutter/services/file_service.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import '../providers/file_manager_provider.dart';
 import 'folder_picker.dart';
@@ -307,6 +312,546 @@ class FileOperationDialogs {
   ) {
     // 委托给 share/share_dialog.dart 中的顶层函数
     return showShareCreationDialog(context, file);
+  }
+
+  static Future<void> showExportDirectoryDialog(
+    BuildContext context,
+    FileManagerProvider fileManager,
+    List<FileModel> folders,
+  ) async {
+    if (folders.isEmpty) {
+      ToastHelper.info('请选择文件夹后再导出目录');
+      return;
+    }
+
+    final defaultExportDir = await _defaultExportDir();
+    if (!context.mounted) return;
+
+    final theme = Theme.of(context);
+    final firstFolder = folders.first;
+    final exportDirController = TextEditingController(text: defaultExportDir);
+    final fileNameController = TextEditingController(
+      text: folders.length == 1
+          ? '${_sanitizeFileName(firstFolder.name)}_文件目录'
+          : '选中文件夹_文件目录',
+    );
+    var treeStyle = true;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (dialogContext, setState) {
+            final colorScheme = Theme.of(dialogContext).colorScheme;
+            return Dialog(
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 24,
+                vertical: 24,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 820),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(26, 18, 18, 14),
+                      child: Row(
+                        children: [
+                          Text(
+                            '导出文件目录',
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const Spacer(),
+                          IconButton(
+                            icon: const Icon(Icons.close),
+                            onPressed: () => Navigator.of(
+                              dialogContext,
+                            ).pop(false),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Divider(
+                      height: 1,
+                      color: theme.dividerColor.withValues(alpha: 0.45),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(26, 22, 26, 16),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _buildExportDialogRow(
+                            context: dialogContext,
+                            label: '导出文件夹',
+                            help: true,
+                            child: _buildReadonlyExportField(
+                              dialogContext,
+                              value: folders.length == 1
+                                  ? _formatExportCloudPath(firstFolder)
+                                  : '已选择 ${folders.length} 个文件夹',
+                              leading: const Icon(
+                                Icons.folder,
+                                color: Color(0xFFFFB923),
+                              ),
+                              trailing: const Icon(Icons.folder_open_outlined),
+                            ),
+                          ),
+                          const SizedBox(height: 18),
+                          _buildExportDialogRow(
+                            context: dialogContext,
+                            label: '存储为',
+                            child: TextField(
+                              controller: fileNameController,
+                              decoration: InputDecoration(
+                                isDense: true,
+                                suffixText: '.txt',
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 14,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 18),
+                          _buildExportDialogRow(
+                            context: dialogContext,
+                            label: '存储位置',
+                            child: TextField(
+                              controller: exportDirController,
+                              readOnly: true,
+                              decoration: InputDecoration(
+                                isDense: true,
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 14,
+                                ),
+                                suffixIcon: IconButton(
+                                  icon: const Icon(Icons.folder_outlined),
+                                  onPressed: () async {
+                                    final selected = await FilePicker.platform
+                                        .getDirectoryPath();
+                                    if (selected != null &&
+                                        selected.isNotEmpty) {
+                                      setState(
+                                        () => exportDirController.text = selected,
+                                      );
+                                    }
+                                  },
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                          Text(
+                            '导出目录样式',
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _buildExportStyleCard(
+                                  context: dialogContext,
+                                  selected: treeStyle,
+                                  title: '目录树',
+                                  lines: const [
+                                    '我的网盘',
+                                    '├  文件夹名称 1',
+                                    '│  ├  文件夹名称 1-1',
+                                    '│  └  文件夹名称 1-2',
+                                    '└  文件夹名称 2',
+                                  ],
+                                  onTap: () => setState(() => treeStyle = true),
+                                ),
+                              ),
+                              const SizedBox(width: 20),
+                              Expanded(
+                                child: _buildExportStyleCard(
+                                  context: dialogContext,
+                                  selected: !treeStyle,
+                                  title: '目录列表',
+                                  lines: const [
+                                    '我的网盘/文件夹名称/文件夹名称 1',
+                                    '我的网盘/文件夹名称/文件夹名称 1-1',
+                                    '我的网盘/文件夹名称/文件夹名称 1-2',
+                                    '我的网盘/文件夹名称 2/文件夹名称 1',
+                                    '我的网盘/文件夹名称 3/文件夹名称 1',
+                                  ],
+                                  onTap: () => setState(() => treeStyle = false),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    Divider(
+                      height: 1,
+                      color: theme.dividerColor.withValues(alpha: 0.45),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(26, 16, 26, 20),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          FilledButton.tonal(
+                            onPressed: () => Navigator.of(
+                              dialogContext,
+                            ).pop(false),
+                            style: FilledButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 42,
+                                vertical: 14,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(22),
+                              ),
+                            ),
+                            child: const Text('取消'),
+                          ),
+                          const SizedBox(width: 18),
+                          FilledButton(
+                            onPressed: () => Navigator.of(
+                              dialogContext,
+                            ).pop(true),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: colorScheme.primary,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 46,
+                                vertical: 14,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(22),
+                              ),
+                            ),
+                            child: const Text('导出'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (confirmed != true) return;
+
+    final exportDir = exportDirController.text.trim();
+    final rawName = fileNameController.text.trim().isEmpty
+        ? '文件目录'
+        : fileNameController.text.trim();
+    final outputName = '${_sanitizeFileName(rawName)}.txt';
+    final outputPath =
+        '${exportDir.replaceAll(RegExp(r'[\\/]+$'), '')}'
+        '${Platform.pathSeparator}$outputName';
+
+    try {
+      ToastHelper.info('正在导出目录...');
+      final content = await _buildDirectoryExportContent(
+        folders,
+        treeStyle: treeStyle,
+      );
+      final outputFile = File(outputPath);
+      await outputFile.parent.create(recursive: true);
+      await outputFile.writeAsString(content);
+      if (context.mounted) {
+        ToastHelper.success('目录已导出：$outputPath');
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ToastHelper.failure('导出目录失败：$e');
+      }
+    }
+  }
+
+  static Widget _buildExportDialogRow({
+    required BuildContext context,
+    required String label,
+    required Widget child,
+    bool help = false,
+  }) {
+    final theme = Theme.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        SizedBox(
+          width: 132,
+          child: Row(
+            children: [
+              Text(
+                label,
+                style: theme.textTheme.bodyLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              if (help) ...[
+                const SizedBox(width: 6),
+                Icon(
+                  Icons.help_outline,
+                  size: 16,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ],
+            ],
+          ),
+        ),
+        Expanded(child: child),
+      ],
+    );
+  }
+
+  static Widget _buildReadonlyExportField(
+    BuildContext context, {
+    required String value,
+    Widget? leading,
+    Widget? trailing,
+  }) {
+    final theme = Theme.of(context);
+    return Container(
+      height: 48,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        border: Border.all(color: theme.dividerColor.withValues(alpha: 0.55)),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          if (leading != null) ...[leading, const SizedBox(width: 8)],
+          Expanded(
+            child: Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodyLarge,
+            ),
+          ),
+          if (trailing != null) ...[const SizedBox(width: 8), trailing],
+        ],
+      ),
+    );
+  }
+
+  static Widget _buildExportStyleCard({
+    required BuildContext context,
+    required bool selected,
+    required String title,
+    required List<String> lines,
+    required VoidCallback onTap,
+  }) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        height: 160,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: selected
+              ? colorScheme.primary.withValues(alpha: 0.06)
+              : colorScheme.surface,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: selected
+                ? colorScheme.primary
+                : theme.dividerColor.withValues(alpha: 0.55),
+            width: selected ? 2 : 1,
+          ),
+        ),
+        child: Stack(
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: selected ? colorScheme.primary : theme.hintColor,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: ClipRect(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        for (final line in lines)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Text(
+                              line,
+                              style: TextStyle(
+                                fontSize: 11,
+                                height: 1.15,
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (selected)
+              Positioned(
+                top: 0,
+                right: 0,
+                child: Container(
+                  width: 30,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: colorScheme.primary,
+                    borderRadius: const BorderRadius.only(
+                      bottomLeft: Radius.circular(10),
+                      topRight: Radius.circular(8),
+                    ),
+                  ),
+                  child: const Icon(Icons.check, color: Colors.white, size: 18),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static Future<String> _buildDirectoryExportContent(
+    List<FileModel> folders, {
+    required bool treeStyle,
+  }) async {
+    final buffer = StringBuffer();
+    buffer.writeln('Cloudreve 文件目录导出');
+    buffer.writeln('导出时间：${DateTime.now().toIso8601String()}');
+    buffer.writeln();
+
+    for (var i = 0; i < folders.length; i++) {
+      final folder = folders[i];
+      if (treeStyle) {
+        buffer.writeln(folder.name);
+        await _appendDirectoryTree(buffer, folder.path, '');
+      } else {
+        await _appendDirectoryList(
+          buffer,
+          folder.path,
+          _formatExportCloudPath(folder),
+        );
+      }
+      if (i != folders.length - 1) buffer.writeln();
+    }
+
+    return buffer.toString();
+  }
+
+  static Future<void> _appendDirectoryTree(
+    StringBuffer buffer,
+    String uri,
+    String prefix, {
+    int depth = 0,
+  }) async {
+    if (depth > 20) return;
+    final children = await _listChildren(uri);
+    for (var i = 0; i < children.length; i++) {
+      final child = children[i];
+      final last = i == children.length - 1;
+      final connector = last ? '└── ' : '├── ';
+      buffer.writeln('$prefix$connector${child.name}${child.isFolder ? '/' : ''}');
+      if (child.isFolder) {
+        await _appendDirectoryTree(
+          buffer,
+          child.path,
+          '$prefix${last ? '    ' : '│   '}',
+          depth: depth + 1,
+        );
+      }
+    }
+  }
+
+  static Future<void> _appendDirectoryList(
+    StringBuffer buffer,
+    String uri,
+    String displayPath, {
+    int depth = 0,
+  }) async {
+    if (depth > 20) return;
+    final children = await _listChildren(uri);
+    for (final child in children) {
+      final childPath = '$displayPath/${child.name}';
+      buffer.writeln(childPath);
+      if (child.isFolder) {
+        await _appendDirectoryList(
+          buffer,
+          child.path,
+          childPath,
+          depth: depth + 1,
+        );
+      }
+    }
+  }
+
+  static Future<List<FileModel>> _listChildren(String uri) async {
+    final response = await FileService().listFiles(
+      uri: uri,
+      pageSize: 500,
+      orderBy: 'name',
+      orderDirection: 'asc',
+    );
+    final files = response['files'] as List<dynamic>? ?? const [];
+    final models = files
+        .whereType<Map<String, dynamic>>()
+        .map(FileModel.fromJson)
+        .toList();
+    models.sort((a, b) {
+      if (a.isFolder != b.isFolder) return a.isFolder ? -1 : 1;
+      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    });
+    return models;
+  }
+
+  static String _formatExportCloudPath(FileModel folder) {
+    final rel = folder.relativePath;
+    if (rel == '/' || rel.isEmpty) return '我的网盘/全部文件';
+    final parts = rel.split('/').where((p) => p.isNotEmpty).toList();
+    return '我的网盘/全部文件/${parts.join('/')}';
+  }
+
+  static Future<String> _defaultExportDir() async {
+    final downloads = await getDownloadsDirectory();
+    if (downloads != null) return downloads.path;
+    final profile = Platform.environment['USERPROFILE'];
+    if (profile != null && profile.isNotEmpty) {
+      return '$profile${Platform.pathSeparator}Downloads';
+    }
+    return Directory.current.path;
+  }
+
+  static String _sanitizeFileName(String name) {
+    final sanitized = name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
+    return sanitized.isEmpty ? '文件目录' : sanitized;
   }
 
   // ─── 内部工具方法 ───

@@ -654,47 +654,78 @@ class DownloadTasksTab extends StatelessWidget {
     DownloadTaskModel task,
     DownloadManagerProvider downloadManager,
   ) async {
+    var deleteLocalFile = false;
+
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('删除下载任务'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('确定要删除该任务吗？'),
-            const SizedBox(height: 8),
-            Text(
-              task.fileName,
-              style: const TextStyle(fontWeight: FontWeight.w500),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setState) => AlertDialog(
+          title: const Text('删除下载任务'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('确定要删除该任务吗？'),
+              const SizedBox(height: 8),
+              Text(
+                task.fileName,
+                style: const TextStyle(fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '下载时间: ${_formatDateTime(task.createdAt)}',
+                style: TextStyle(fontSize: 12, color: Theme.of(ctx).hintColor),
+              ),
+              Text(
+                '文件大小: ${date_utils.DateUtils.formatFileSize(task.fileSize)}',
+                style: TextStyle(fontSize: 12, color: Theme.of(ctx).hintColor),
+              ),
+              if (task.savePath.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                CheckboxListTile(
+                  value: deleteLocalFile,
+                  onChanged: (value) => setState(
+                    () => deleteLocalFile = value ?? false,
+                  ),
+                  controlAffinity: ListTileControlAffinity.leading,
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  title: const Text('是否删除本地文件'),
+                  subtitle: Text(
+                    task.savePath,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(ctx).hintColor,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('取消'),
             ),
-            const SizedBox(height: 4),
-            Text(
-              '下载时间: ${_formatDateTime(task.createdAt)}',
-              style: TextStyle(fontSize: 12, color: Theme.of(ctx).hintColor),
-            ),
-            Text(
-              '文件大小: ${date_utils.DateUtils.formatFileSize(task.fileSize)}',
-              style: TextStyle(fontSize: 12, color: Theme.of(ctx).hintColor),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(ctx).colorScheme.error,
+              ),
+              child: const Text('删除'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(ctx).colorScheme.error,
-            ),
-            child: const Text('删除'),
-          ),
-        ],
       ),
     );
-    if (confirmed == true) downloadManager.deleteDownloadTask(task.id);
+    if (confirmed == true) {
+      await downloadManager.deleteDownloadTask(
+        task.id,
+        deleteLocalFile: deleteLocalFile,
+      );
+    }
   }
 
   String _formatDateTime(DateTime dateTime) {

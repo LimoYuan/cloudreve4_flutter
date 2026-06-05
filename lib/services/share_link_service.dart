@@ -164,7 +164,7 @@ class ShareLinkService {
         LogInterceptor(
           requestBody: false,
           responseBody: false,
-          logPrint: (line) => AppLogger.d('[ShareDio] $line'),
+          logPrint: (line) => AppLogger.t('[ShareDio] $line'),
         ),
       );
   }

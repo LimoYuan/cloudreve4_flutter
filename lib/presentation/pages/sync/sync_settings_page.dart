@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:lucide_icons/lucide_icons.dart';
 import 'package:provider/provider.dart';
 import 'package:external_path/external_path.dart';
 import 'package:file_picker/file_picker.dart';
@@ -14,6 +15,7 @@ import '../../providers/sync_provider.dart';
 import '../../../services/sync_service.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../../widgets/desktop_constrained.dart';
+import '../../widgets/settings/settings_shared.dart';
 import '../../widgets/folder_picker.dart';
 import '../../widgets/sync_stats_card.dart';
 import '../../widgets/toast_helper.dart';
@@ -97,7 +99,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
           children: [
             _buildSyncStatus(sync),
             if (_isDesktop) ...[
-              _buildSection(
+              SettingsSection(
                 title: '同步目录',
                 children: [
                   ListTile(
@@ -116,7 +118,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
                   ),
                 ],
               ),
-              _buildSection(
+              SettingsSection(
                 title: '同步模式',
                 children: [
                   if (sync.isActive || sync.isPaused)
@@ -184,7 +186,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
                 ],
               ),
               if (_syncMode == 'full')
-                _buildSection(
+                SettingsSection(
                   title: '冲突处理',
                   children: [
                     ListTile(
@@ -199,7 +201,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
                   ],
                 ),
               if (_syncMode == 'mirror_wcf')
-                _buildSection(
+                SettingsSection(
                   title: '镜像删除模式',
                   children: [
                     ListTile(
@@ -215,7 +217,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
                 ),
             ],
             if (Platform.isAndroid)
-              _buildSection(
+              SettingsSection(
                 title: '相册同步',
                 children: [
                   if (sync.isActive || sync.isPaused)
@@ -250,7 +252,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
                   ),
                 ],
               ),
-            _buildSection(
+            SettingsSection(
               title: '性能',
               children: [
                 if (_isDesktop)
@@ -281,7 +283,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
                 ),
               ],
             ),
-            _buildSection(
+            SettingsSection(
               title: '同步控制',
               children: [
                 if (!sync.isActive && !sync.isPaused)
@@ -360,7 +362,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
                   ),
               ],
             ),
-            _buildSection(
+            SettingsSection(
               title: '同步日志',
               children: [
                 ListTile(
@@ -381,7 +383,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
                 ),
                 ListTile(
                   title: const Text('日志文件大小'),
-                  subtitle: Text(_formatBytes(_syncLogFileSize)),
+                  subtitle: Text(formatBytes(_syncLogFileSize)),
                 ),
                 if (!Platform.isAndroid)
                   ListTile(
@@ -525,7 +527,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
   }
 
   Widget _buildSyncStatus(SyncProvider sync) {
-    return _buildSection(
+    return SettingsSection(
       title: '同步状态',
       children: [
         ListTile(
@@ -641,34 +643,6 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     };
   }
 
-  Widget _buildSection({
-    required String title,
-    required List<Widget> children,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Text(
-              title,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-            ),
-          ),
-          Card(
-            margin: const EdgeInsets.symmetric(horizontal: 16),
-            child: Column(children: children),
-          ),
-        ],
-      ),
-    );
-  }
 
   Future<void> _pickLocalFolder() async {
     final result = await FilePicker.platform.getDirectoryPath(
@@ -719,30 +693,11 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       ('manual', '手动处理'),
     ];
 
-    final result = await showDialog<String>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: const Text('冲突解决策略'),
-        children: strategies
-            .map(
-              (e) => SimpleDialogOption(
-                onPressed: () => Navigator.pop(ctx, e.$1),
-                child: Row(
-                  children: [
-                    Icon(
-                      e.$1 == _conflictStrategy
-                          ? Icons.radio_button_checked
-                          : Icons.radio_button_unchecked,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(e.$2),
-                  ],
-                ),
-              ),
-            )
-            .toList(),
-      ),
+    final result = await showGlassOptionDialog<String>(
+      context,
+      title: '冲突解决策略',
+      icon: LucideIcons.gitMerge,
+      options: strategies.map((e) => (e.$1, e.$2, e.$1 == _conflictStrategy)).toList(),
     );
 
     if (result != null) {
@@ -757,30 +712,11 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       ('wcf_delete_sync_remote', '同步删除远程'),
     ];
 
-    final result = await showDialog<String>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: const Text('镜像删除模式'),
-        children: modes
-            .map(
-              (e) => SimpleDialogOption(
-                onPressed: () => Navigator.pop(ctx, e.$1),
-                child: Row(
-                  children: [
-                    Icon(
-                      e.$1 == _wcfDeleteMode
-                          ? Icons.radio_button_checked
-                          : Icons.radio_button_unchecked,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(e.$2),
-                  ],
-                ),
-              ),
-            )
-            .toList(),
-      ),
+    final result = await showGlassOptionDialog<String>(
+      context,
+      title: '镜像删除模式',
+      icon: LucideIcons.trash2,
+      options: modes.map((e) => (e.$1, e.$2, e.$1 == _wcfDeleteMode)).toList(),
     );
 
     if (result != null) {
@@ -791,30 +727,11 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
 
   Future<void> _pickConcurrency() async {
     final values = [1, 2, 3, 5, 8];
-    final result = await showDialog<int>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: const Text('最大并发传输数'),
-        children: values
-            .map(
-              (v) => SimpleDialogOption(
-                onPressed: () => Navigator.pop(ctx, v),
-                child: Row(
-                  children: [
-                    Icon(
-                      v == _maxConcurrent
-                          ? Icons.radio_button_checked
-                          : Icons.radio_button_unchecked,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 8),
-                    Text('$v'),
-                  ],
-                ),
-              ),
-            )
-            .toList(),
-      ),
+    final result = await showGlassOptionDialog<int>(
+      context,
+      title: '最大并发传输数',
+      icon: LucideIcons.refreshCw,
+      options: values.map((v) => (v, '$v', v == _maxConcurrent)).toList(),
     );
     if (result != null) {
       setState(() => _maxConcurrent = result);
@@ -878,30 +795,11 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       (10240, '10 MB/s'),
     ];
 
-    final result = await showDialog<int>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: const Text('带宽限制'),
-        children: options
-            .map(
-              (e) => SimpleDialogOption(
-                onPressed: () => Navigator.pop(ctx, e.$1),
-                child: Row(
-                  children: [
-                    Icon(
-                      e.$1 == _bandwidthLimitKbps
-                          ? Icons.radio_button_checked
-                          : Icons.radio_button_unchecked,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(e.$2),
-                  ],
-                ),
-              ),
-            )
-            .toList(),
-      ),
+    final result = await showGlassOptionDialog<int>(
+      context,
+      title: '带宽限制',
+      icon: LucideIcons.gauge,
+      options: options.map((e) => (e.$1, e.$2, e.$1 == _bandwidthLimitKbps)).toList(),
     );
     if (result != null) {
       setState(() => _bandwidthLimitKbps = result);
@@ -1125,12 +1023,6 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     }
   }
 
-  String _formatBytes(int? bytes) {
-    if (bytes == null) return '未知';
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
-  }
 
   String _logLevelLabel(String level) {
     return switch (level) {
@@ -1152,30 +1044,11 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       ('trace', 'Trace — 全量追踪'),
     ];
 
-    final result = await showDialog<String>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: const Text('日志级别'),
-        children: levels
-            .map(
-              (e) => SimpleDialogOption(
-                onPressed: () => Navigator.pop(ctx, e.$1),
-                child: Row(
-                  children: [
-                    Icon(
-                      e.$1 == _logLevel
-                          ? Icons.radio_button_checked
-                          : Icons.radio_button_unchecked,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(e.$2),
-                  ],
-                ),
-              ),
-            )
-            .toList(),
-      ),
+    final result = await showGlassOptionDialog<String>(
+      context,
+      title: '日志级别',
+      icon: LucideIcons.settings2,
+      options: levels.map((e) => (e.$1, e.$2, e.$1 == _logLevel)).toList(),
     );
 
     if (result != null && result != _logLevel) {

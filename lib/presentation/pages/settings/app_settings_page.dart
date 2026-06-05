@@ -16,7 +16,7 @@ import '../../../services/storage_service.dart';
 import '../../providers/download_manager_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../providers/user_setting_provider.dart';
-import '../../widgets/glassmorphism_container.dart';
+import '../../widgets/settings/settings_shared.dart';
 import '../../widgets/toast_helper.dart';
 import '../../widgets/desktop_constrained.dart';
 import 'log_viewer_page.dart';
@@ -182,7 +182,7 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
           : DesktopConstrained(
               child: ListView(
               children: [
-                _buildSection(
+                SettingsSection(
                   title: '外观',
                   children: [
                     ListTile(
@@ -217,7 +217,7 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
                     ),
                   ],
                 ),
-                _buildSection(
+                SettingsSection(
                   title: 'Gravatar 镜像',
                   children: [
                     SwitchListTile(
@@ -240,7 +240,7 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
                       ),
                   ],
                 ),
-                _buildSection(
+                SettingsSection(
                   title: '下载设置',
                   children: [
                     SwitchListTile(
@@ -273,7 +273,7 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
                     ),
                   ],
                 ),
-                _buildSection(
+                SettingsSection(
                   title: '概览设置',
                   children: [
                     ListTile(
@@ -285,7 +285,7 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
                     ),
                   ],
                 ),
-                if (Platform.isWindows) _buildSection(
+                if (Platform.isWindows) SettingsSection(
                   title: '桌面悬浮窗',
                   children: [
                     SwitchListTile(
@@ -319,7 +319,7 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
                     ),
                   ],
                 ),
-                if (Platform.isWindows || Platform.isLinux) _buildSection(
+                if (Platform.isWindows || Platform.isLinux) SettingsSection(
                   title: '系统设置',
                   children: [
                     SwitchListTile(
@@ -354,7 +354,7 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
                     ),
                   ],
                 ),
-                _buildSection(
+                SettingsSection(
                   title: '缓存设置',
                   children: [
                     ListTile(
@@ -382,7 +382,7 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
                     ),
                   ],
                 ),
-                _buildSection(
+                SettingsSection(
                   title: '缓存信息',
                   children: [
                     if (_cacheDirPath.isNotEmpty)
@@ -403,7 +403,7 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
                       ),
                     ListTile(
                       title: const Text('当前缓存大小'),
-                      subtitle: Text(_formatBytes(_currentCacheSize)),
+                      subtitle: Text(formatBytes(_currentCacheSize)),
                     ),
                     ListTile(
                       title: const Text('清空缓存'),
@@ -419,7 +419,7 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
                     ),
                   ],
                 ),
-                _buildSection(
+                SettingsSection(
                   title: '日志管理',
                   children: [
                     ListTile(
@@ -440,7 +440,7 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
                     ),
                     ListTile(
                       title: const Text('日志文件大小'),
-                      subtitle: Text(_formatBytes(_logFileSize)),
+                      subtitle: Text(formatBytes(_logFileSize)),
                     ),
                     if (!Platform.isAndroid)
                       ListTile(
@@ -476,31 +476,6 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
     );
   }
 
-  Widget _buildSection({required String title, required List<Widget> children}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Text(
-              title,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-            ),
-          ),
-          Card(
-            margin: const EdgeInsets.symmetric(horizontal: 16),
-            child: Column(children: children),
-          ),
-        ],
-      ),
-    );
-  }
 
   Future<void> _showThemeColorPicker(BuildContext context) async {
     final colors = [
@@ -636,7 +611,7 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
     final availableSizes = CacheSettingsModel.availableSizes;
     final currentValue = _cacheSettings.maxCacheSize ~/ (1024 * 1024);
 
-    final selected = await _showGlassOptionDialog<int>(
+    final selected = await showGlassOptionDialog<int>(
       context,
       title: '最大缓存大小',
       icon: LucideIcons.hardDrive,
@@ -653,7 +628,7 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
     final availableDurations = CacheSettingsModel.availableDurations;
     final currentValue = _cacheSettings.cacheExpireDuration ~/ (24 * 60 * 60 * 1000);
 
-    final selected = await _showGlassOptionDialog<int>(
+    final selected = await showGlassOptionDialog<int>(
       context,
       title: '缓存过期时间',
       icon: LucideIcons.timer,
@@ -669,7 +644,7 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
   Future<void> _showRetriesDialog(BuildContext context) async {
     final retriesOptions = [0, 1, 2, 3, 5, 10];
 
-    final selected = await _showGlassOptionDialog<int>(
+    final selected = await showGlassOptionDialog<int>(
       context,
       title: '重试次数',
       icon: LucideIcons.refreshCw,
@@ -693,7 +668,7 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
       (-1, '永久保留'),
     ];
 
-    final selected = await _showGlassOptionDialog<int>(
+    final selected = await showGlassOptionDialog<int>(
       context,
       title: '任务记录保留时间',
       icon: LucideIcons.clock,
@@ -711,7 +686,7 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
   Future<void> _showRecentActivityLimitDialog(BuildContext context) async {
     final limitOptions = [3, 5, 10, 15, 20, 30];
 
-    final selected = await _showGlassOptionDialog<int>(
+    final selected = await showGlassOptionDialog<int>(
       context,
       title: '最近活动每类显示条数',
       icon: LucideIcons.activity,
@@ -725,128 +700,6 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
     }
   }
 
-  /// 通用毛玻璃选项选择对话框
-  Future<T?> _showGlassOptionDialog<T>(
-    BuildContext context, {
-    required String title,
-    required IconData icon,
-    String? subtitle,
-    required List<(T, String, bool)> options,
-  }) {
-    return showGeneralDialog<T>(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: title,
-      barrierColor: Colors.black38,
-      transitionDuration: const Duration(milliseconds: 250),
-      transitionBuilder: (context, animation, secondaryAnimation, child) {
-        final scaleAnim = CurvedAnimation(
-          parent: animation,
-          curve: Curves.easeOutCubic,
-        ).drive(Tween(begin: 0.92, end: 1.0));
-        final fadeAnim = CurvedAnimation(
-          parent: animation,
-          curve: Curves.easeOut,
-        ).drive(Tween(begin: 0.0, end: 1.0));
-        return ScaleTransition(
-          scale: scaleAnim,
-          child: FadeTransition(opacity: fadeAnim, child: child),
-        );
-      },
-      pageBuilder: (context, animation, secondaryAnimation) {
-        final screenWidth = MediaQuery.of(context).size.width;
-        final dialogWidth = screenWidth >= 600 ? 380.0 : screenWidth - 48.0;
-        final colorScheme = Theme.of(context).colorScheme;
-        final theme = Theme.of(context);
-
-        return Center(
-          child: SizedBox(
-            width: dialogWidth,
-            child: GlassmorphismContainer(
-              borderRadius: 16,
-              sigmaX: 20,
-              sigmaY: 20,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(16),
-                child: Material(
-                  color: Colors.transparent,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Header
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 16, 8, 12),
-                        child: Row(
-                          children: [
-                            Icon(icon, size: 20, color: colorScheme.primary),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                title,
-                                style: theme.textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                            IconButton(
-                              icon: const Icon(LucideIcons.x, size: 20),
-                              onPressed: () => Navigator.of(context).pop(),
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                            ),
-                          ],
-                        ),
-                      ),
-                      if (subtitle != null)
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              subtitle,
-                              style: TextStyle(fontSize: 13, color: theme.hintColor),
-                            ),
-                          ),
-                        ),
-                      const Divider(height: 1),
-                      // Options
-                      ConstrainedBox(
-                        constraints: BoxConstraints(
-                          maxHeight: MediaQuery.of(context).size.height * 0.5,
-                        ),
-                        child: ListView.builder(
-                          shrinkWrap: true,
-                          padding: const EdgeInsets.symmetric(vertical: 4),
-                          itemCount: options.length,
-                          itemBuilder: (context, index) {
-                            final (value, label, isSelected) = options[index];
-                            return ListTile(
-                              leading: Icon(
-                                isSelected
-                                    ? LucideIcons.checkCircle2
-                                    : LucideIcons.circle,
-                                size: 20,
-                                color: isSelected
-                                    ? colorScheme.primary
-                                    : theme.hintColor,
-                              ),
-                              title: Text(label),
-                              selected: isSelected,
-                              onTap: () => Navigator.of(context).pop(value),
-                            );
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
 
   Future<void> _showGravatarMirrorUrlDialog(BuildContext context) async {
     final controller = TextEditingController(text: _gravatarMirrorUrl);
@@ -948,13 +801,6 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
     }
   }
 
-  String _formatBytes(int? bytes) {
-    if (bytes == null) return '未知';
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
-    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
-  }
 
   Future<void> _openLogFolder() async {
     try {

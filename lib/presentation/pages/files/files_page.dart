@@ -1,17 +1,13 @@
-import 'dart:async';
 import 'dart:io';
-import 'dart:ui';
 
 import 'package:cross_file/cross_file.dart';
-import 'package:desktop_drop/desktop_drop.dart';
-import 'package:flutter/services.dart';
 import 'package:cloudreve4_flutter/data/models/file_model.dart';
 import 'package:cloudreve4_flutter/services/file_service.dart';
 import 'package:cloudreve4_flutter/services/upload_service.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/services.dart';
 import '../../../core/utils/file_utils.dart';
 import '../../../core/constants/sort_options.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:provider/provider.dart';
@@ -31,10 +27,13 @@ import '../../widgets/file_operation_dialogs.dart';
 import '../../widgets/file_info_dialog.dart';
 import '../../widgets/search_dialog.dart';
 import '../../widgets/toast_helper.dart';
-import '../../widgets/thumbnail_image.dart';
 import '../../../router/app_router.dart';
 import '../../../core/utils/file_type_utils.dart';
 import '../../../core/utils/date_utils.dart' as app_date_utils;
+import 'widgets/file_drop_target.dart';
+import 'widgets/speed_dial_fab.dart';
+import 'widgets/desktop_summary_panel.dart';
+import 'widgets/desktop_action_buttons.dart';
 
 // ---------------------------------------------------------------------------
 // Desktop category tab definition
@@ -80,16 +79,9 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
   bool _isFirstLoad = true;
   FileModel? _infoFile;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  final GlobalKey<SpeedDialFabState> _fabKey = GlobalKey<SpeedDialFabState>();
   final ScrollController _scrollController = ScrollController();
   final ScrollController _breadcrumbController = ScrollController();
-
-  // FAB 状态
-  bool _isFabVisible = true;
-  bool _isFabExpanded = false;
-  Timer? _fabShowTimer;
-
-  // 桌面端拖拽状态
-  bool _isDraggingOver = false;
 
   // 滑动手势追踪
   Offset? _swipeStartPos;
@@ -151,7 +143,6 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
     _scrollController.removeListener(_onScrollForSummaryCollapse);
     _scrollController.dispose();
     _breadcrumbController.dispose();
-    _fabShowTimer?.cancel();
     _tabUnderlineController.dispose();
     HardwareKeyboard.instance.removeHandler(_handleKeyEvent);
     UploadService.instance.onUploadCompleted = null;
@@ -253,46 +244,6 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
     );
   }
 
-  // ---- FAB 显隐控制 ----
-
-  void _hideFab() {
-    _fabShowTimer?.cancel();
-    if (_isFabVisible) {
-      setState(() {
-        _isFabVisible = false;
-        _isFabExpanded = false;
-      });
-    }
-  }
-
-  void _scheduleShowFab() {
-    _fabShowTimer?.cancel();
-    _fabShowTimer = Timer(const Duration(seconds: 1), () {
-      if (mounted && !_isFabVisible) {
-        setState(() => _isFabVisible = true);
-      }
-    });
-  }
-
-  bool _onScrollNotification(ScrollNotification notification) {
-    if (notification is ScrollStartNotification ||
-        notification is ScrollUpdateNotification) {
-      _hideFab();
-    } else if (notification is ScrollEndNotification) {
-      _scheduleShowFab();
-    }
-    return false;
-  }
-
-  void _toggleFabExpanded() {
-    setState(() => _isFabExpanded = !_isFabExpanded);
-  }
-
-  void _onFabSubAction(VoidCallback action) {
-    setState(() => _isFabExpanded = false);
-    action();
-  }
-
   // ---- Desktop category tab handling ----
 
   void _onDesktopCategoryTap(int index) {
@@ -335,7 +286,7 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
         body: isDesktop ? _buildDesktopBody(context) : _buildBody(context),
         bottomNavigationBar: _buildBottomBar(context),
         endDrawer: _infoFile != null ? FileInfoPanel(file: _infoFile!) : null,
-        floatingActionButton: isDesktop ? null : _buildSpeedDialFAB(context),
+        floatingActionButton: isDesktop ? null : _buildSpeedDialFAB(),
       ),
     );
   }
@@ -373,7 +324,15 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
             alignment: Alignment.topCenter,
             child: _isSummaryCollapsed
                 ? const SizedBox.shrink()
-                : _buildDesktopSummaryPanel(context, fileManager),
+                : DesktopSummaryPanel(
+                    onRecentMore: fileManager.activeCategory == null
+                        ? () {
+                            setState(() => _desktopCategoryIndex = 1);
+                            fileManager.setActiveCategory('recent');
+                          }
+                        : null,
+                    onOpenFile: (file) => _openFile(context, file),
+                  ),
           ),
         // Category Tabs（仅根目录）
         if (isAtRoot) _buildDesktopCategoryTabs(context, Theme.of(context).colorScheme, fileManager),
@@ -382,78 +341,10 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
       ],
     );
 
-    if (!Platform.isWindows && !Platform.isLinux && !Platform.isMacOS) {
-      return column;
-    }
-
-    return DropTarget(
-      onDragEntered: (_) => setState(() => _isDraggingOver = true),
-      onDragExited: (_) => setState(() => _isDraggingOver = false),
-      onDragDone: (details) {
-        setState(() => _isDraggingOver = false);
-        _handleDroppedFiles(details.files);
-      },
-      child: Stack(
-        children: [
-          column,
-          if (_isDraggingOver)
-            IgnorePointer(
-              child: Container(
-                margin: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  border: Border.all(
-                    color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
-                    width: 2,
-                    strokeAlign: BorderSide.strokeAlignOutside,
-                  ),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Center(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 28),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.7),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 64,
-                          height: 64,
-                          decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(LucideIcons.upload, size: 28, color: Theme.of(context).colorScheme.primary),
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          '释放文件以上传到当前目录',
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.primary,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          fileManager.currentPath,
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.7),
-                            fontSize: 13,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
+    return FileDropTarget(
+      currentPath: fileManager.currentPath,
+      onDragDone: _handleDroppedFiles,
+      child: column,
     );
   }
 
@@ -549,63 +440,11 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
             const VerticalDivider(width: 1, indent: 14, endIndent: 14),
             const SizedBox(width: 4),
           ],
-          IconButton(
-            icon: const Icon(LucideIcons.search, size: 20),
-            onPressed: () => SearchDialog.show(context),
-            tooltip: '搜索',
-            visualDensity: VisualDensity.compact,
+          DesktopActionButtons(
+            fileManager: fileManager,
+            hasSelection: hasSelection,
+            onShowCreateTextFile: () => _showCreateTextFileDialog(context, fileManager),
           ),
-          if (!hasSelection) ...[
-            IconButton(
-              icon: Icon(fileManager.isLoading ? Icons.hourglass_empty : Icons.refresh, size: 20),
-              onPressed: () => fileManager.refreshFiles(),
-              tooltip: '刷新',
-              visualDensity: VisualDensity.compact,
-            ),
-            _buildSortMenu(fileManager),
-            Consumer<FileManagerProvider>(
-              builder: (context, fm, _) {
-                final icon = fm.viewType == FileViewType.list
-                    ? Icons.grid_view
-                    : Icons.view_list;
-                return IconButton(
-                  icon: Icon(icon, size: 20),
-                  onPressed: () {
-                    fm.setViewType(
-                      fm.viewType == FileViewType.list
-                          ? FileViewType.grid
-                          : FileViewType.list,
-                    );
-                  },
-                  tooltip: fm.viewType == FileViewType.list ? '网格视图' : '列表视图',
-                  visualDensity: VisualDensity.compact,
-                );
-              },
-            ),
-            IconButton(
-              icon: const Icon(LucideIcons.upload, size: 20),
-              onPressed: () => showUploadDialog(context),
-              tooltip: '上传',
-              visualDensity: VisualDensity.compact,
-            ),
-            PopupMenuButton<String>(
-              icon: const Icon(LucideIcons.folderPlus, size: 20),
-              tooltip: '新建',
-              padding: const EdgeInsets.all(8),
-              position: PopupMenuPosition.under,
-              onSelected: (value) {
-                if (value == 'folder') {
-                  FileOperationDialogs.showCreateDialog(context, fileManager);
-                } else if (value == 'file') {
-                  _showCreateTextFileDialog(context, fileManager);
-                }
-              },
-              itemBuilder: (context) => [
-                const PopupMenuItem(value: 'folder', child: Row(children: [Icon(LucideIcons.folderPlus, size: 18), SizedBox(width: 10), Text('新建文件夹')])),
-                const PopupMenuItem(value: 'file', child: Row(children: [Icon(Icons.note_add_outlined, size: 18), SizedBox(width: 10), Text('新建文件')])),
-              ],
-            ),
-          ],
         ],
       ),
     );
@@ -824,300 +663,36 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
 
   // ---- SpeedDial FAB ----
 
-  Widget _buildSpeedDialFAB(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final isDark = theme.brightness == Brightness.dark;
-
-    return AnimatedSlide(
-      offset: _isFabVisible ? Offset.zero : const Offset(0, 2),
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeInOut,
-      child: AnimatedOpacity(
-        opacity: _isFabVisible ? 1.0 : 0.0,
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeInOut,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            _buildFabSubItem(
-              context: context,
-              index: 0,
-              icon: LucideIcons.search,
-              label: '搜索',
-              isDark: isDark,
-              colorScheme: colorScheme,
-              onTap: () => _onFabSubAction(() => SearchDialog.show(context)),
-            ),
-            _buildFabSubItem(
-              context: context,
-              index: 1,
-              icon: LucideIcons.upload,
-              label: '上传',
-              isDark: isDark,
-              colorScheme: colorScheme,
-              onTap: () => _onFabSubAction(() => showUploadDialog(context)),
-            ),
-            _buildFabSubItem(
-              context: context,
-              index: 2,
-              icon: LucideIcons.folderPlus,
-              label: '新建文件夹',
-              isDark: isDark,
-              colorScheme: colorScheme,
-              onTap: () {
-                final fileManager = Provider.of<FileManagerProvider>(context, listen: false);
-                _onFabSubAction(() => FileOperationDialogs.showCreateDialog(context, fileManager));
-              },
-            ),
-            _buildFabSubItem(
-              context: context,
-              index: 3,
-              icon: LucideIcons.download,
-              label: '离线下载',
-              isDark: isDark,
-              colorScheme: colorScheme,
-              onTap: () => _onFabSubAction(() => Navigator.of(context).pushNamed(RouteNames.remoteDownload)),
-            ),
-            Consumer<FileManagerProvider>(
-              builder: (context, fileManager, _) {
-                final isListView = fileManager.viewType == FileViewType.list;
-                return _buildFabSubItem(
-                  context: context,
-                  index: 4,
-                  icon: isListView ? LucideIcons.layoutGrid : LucideIcons.list,
-                  label: isListView ? '网格视图' : '列表视图',
-                  isDark: isDark,
-                  colorScheme: colorScheme,
-                  onTap: () {
-                    _onFabSubAction(() {
-                      fileManager.setViewType(
-                        isListView ? FileViewType.grid : FileViewType.list,
-                      );
-                    });
-                  },
-                );
-              },
-            ),
-
-            // 主按钮：与子按钮同风格同尺寸
-            Padding(
-              padding: const EdgeInsets.only(bottom: 4, right: 4),
-              child: AnimatedScale(
-                scale: _isFabExpanded ? 1.0 : 1.08,
-                duration: const Duration(milliseconds: 250),
-                curve: Curves.easeInOut,
-                child: _buildFabButton(
-                  isDark: isDark,
-                  colorScheme: colorScheme,
-                  onTap: _toggleFabExpanded,
-                  child: AnimatedRotation(
-                    turns: _isFabExpanded ? 0.125 : 0,
-                    duration: const Duration(milliseconds: 250),
-                    curve: Curves.easeInOut,
-                    child: Icon(
-                      LucideIcons.plus,
-                      color: colorScheme.primary,
-                      size: 22,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFabSubItem({
-    required BuildContext context,
-    required int index,
-    required IconData icon,
-    required String label,
-    required bool isDark,
-    required ColorScheme colorScheme,
-    required VoidCallback onTap,
-  }) {
-    final staggerDelay = Duration(milliseconds: 50 * index);
-
-    return AnimatedSlide(
-      offset: _isFabExpanded ? Offset.zero : const Offset(0, 1.2),
-      duration: const Duration(milliseconds: 250) + staggerDelay,
-      curve: Curves.easeOutCubic,
-      child: AnimatedOpacity(
-        opacity: _isFabExpanded ? 1.0 : 0.0,
-        duration: const Duration(milliseconds: 200) + staggerDelay,
-        curve: Curves.easeOut,
-        child: AnimatedScale(
-          scale: _isFabExpanded ? 1.0 : 0.4,
-          duration: const Duration(milliseconds: 250) + staggerDelay,
-          curve: Curves.easeOutCubic,
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: 14, right: 4),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                      decoration: BoxDecoration(
-                        color: isDark
-                            ? Colors.white.withValues(alpha: 0.12)
-                            : Colors.white.withValues(alpha: 0.75),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: isDark
-                              ? Colors.white.withValues(alpha: 0.1)
-                              : Colors.white.withValues(alpha: 0.4),
-                        ),
-                      ),
-                      child: Text(
-                        label,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                          color: isDark ? Colors.white : Colors.grey.shade800,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                _buildFabButton(
-                  isDark: isDark,
-                  colorScheme: colorScheme,
-                  onTap: onTap,
-                  child: Icon(icon, size: 20, color: colorScheme.primary),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// 统一的毛玻璃圆形按钮
-  Widget _buildFabButton({
-    required bool isDark,
-    required ColorScheme colorScheme,
-    required VoidCallback onTap,
-    required Widget child,
-  }) {
-    const size = 44.0;
-    const radius = 22.0;
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(radius),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: Container(
-          width: size,
-          height: size,
-          decoration: BoxDecoration(
-            color: colorScheme.primary.withValues(alpha: isDark ? 0.2 : 0.12),
-            borderRadius: BorderRadius.circular(radius),
-            border: Border.all(
-              color: colorScheme.primary.withValues(alpha: isDark ? 0.25 : 0.2),
-            ),
-          ),
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(radius),
-              onTap: onTap,
-              child: Center(child: child),
-            ),
-          ),
-        ),
-      ),
+  Widget _buildSpeedDialFAB() {
+    return Consumer<FileManagerProvider>(
+      builder: (context, fileManager, _) {
+        return SpeedDialFab(
+          key: _fabKey,
+          isListView: fileManager.viewType == FileViewType.list,
+          onSearch: () => SearchDialog.show(context),
+          onUpload: () => showUploadDialog(context),
+          onCreateFolder: () => FileOperationDialogs.showCreateDialog(context, fileManager),
+          onRemoteDownload: () => Navigator.of(context).pushNamed(RouteNames.remoteDownload),
+          onToggleViewType: () {
+            fileManager.setViewType(
+              fileManager.viewType == FileViewType.list ? FileViewType.grid : FileViewType.list,
+            );
+          },
+        );
+      },
     );
   }
 
   // ---- Body ----
 
   Widget _buildBody(BuildContext context) {
-    final isDesktop = MediaQuery.of(context).size.width >= 1000;
     final fileManager = Provider.of<FileManagerProvider>(context);
     final child = _buildFileList(context);
 
-    if (!isDesktop || !Platform.isWindows && !Platform.isLinux && !Platform.isMacOS) {
-      return child;
-    }
-
-    return DropTarget(
-      onDragEntered: (_) => setState(() => _isDraggingOver = true),
-      onDragExited: (_) => setState(() => _isDraggingOver = false),
-      onDragDone: (details) {
-        setState(() => _isDraggingOver = false);
-        _handleDroppedFiles(details.files);
-      },
-      child: Stack(
-        children: [
-          child,
-          if (_isDraggingOver)
-            IgnorePointer(
-              child: Container(
-                margin: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  border: Border.all(
-                    color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
-                    width: 2,
-                    strokeAlign: BorderSide.strokeAlignOutside,
-                  ),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Center(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 28),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.7),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 64,
-                          height: 64,
-                          decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(LucideIcons.upload, size: 28, color: Theme.of(context).colorScheme.primary),
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          '释放文件以上传到当前目录',
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.primary,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          fileManager.currentPath,
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.7),
-                            fontSize: 13,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
+    return FileDropTarget(
+      currentPath: fileManager.currentPath,
+      onDragDone: _handleDroppedFiles,
+      child: child,
     );
   }
 
@@ -1160,187 +735,6 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
 
         return _buildGridView(context, fileManager);
       },
-    );
-  }
-
-  // ---- Desktop Home Summary Panel ----
-
-  Widget _buildDesktopSummaryPanel(BuildContext context, FileManagerProvider fileManager) {
-    final theme = Theme.of(context);
-
-    final recentFiles = List<FileModel>.from(fileManager.files)
-      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-    final displayFiles = recentFiles.take(20).toList();
-    final transferFiles = fileManager.transferredFiles.take(20).toList();
-
-    final dividerColor = theme.dividerColor.withValues(alpha: 0.28);
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 18, 24, 16),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final compact = constraints.maxWidth < 1180;
-          final gap = compact ? 16.0 : 24.0;
-
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 左侧：最近文件
-              Expanded(
-                flex: compact ? 5 : 7,
-                child: _buildSummarySection(
-                  context,
-                  title: '最近文件',
-                  files: displayFiles,
-                  onMore: fileManager.activeCategory == null
-                      ? () {
-                          setState(() => _desktopCategoryIndex = 1);
-                          fileManager.setActiveCategory('recent');
-                        }
-                      : null,
-                ),
-              ),
-              SizedBox(width: gap),
-              Container(
-                width: 1,
-                height: 118,
-                margin: const EdgeInsets.only(top: 34),
-                color: dividerColor,
-              ),
-              SizedBox(width: gap),
-              // 右侧：转存文件
-              Expanded(
-                flex: compact ? 4 : 3,
-                child: _buildSummarySection(
-                  context,
-                  title: '转存文件',
-                  files: transferFiles,
-                  onMore: () => Navigator.of(context).pushNamed(RouteNames.transferredFiles),
-                ),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildSummarySection(
-    BuildContext context, {
-    required String title,
-    required List<FileModel> files,
-    VoidCallback? onMore,
-  }) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Text(
-              title,
-              style: theme.textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w700,
-                color: colorScheme.onSurface,
-              ),
-            ),
-            const Spacer(),
-            if (onMore != null)
-              TextButton.icon(
-                onPressed: onMore,
-                icon: const Icon(LucideIcons.arrowRight, size: 18),
-                label: const Text('查看更多'),
-                style: TextButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                ),
-              ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        if (files.isEmpty)
-          SizedBox(
-            height: 110,
-            child: Center(
-              child: Text('暂无文件', style: TextStyle(color: theme.hintColor)),
-            ),
-          )
-        else
-          SizedBox(
-            height: 110,
-            child: _HorizontalScrollListView(
-              itemCount: files.length,
-              itemBuilder: (context, index) {
-                return _buildRecentFileCard(context, files[index], colorScheme);
-              },
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildRecentFileCard(BuildContext context, FileModel file, ColorScheme colorScheme) {
-    final theme = Theme.of(context);
-    final isThumbnailable = !file.isFolder && FileUtils.isThumbnailableFile(file.name);
-
-    return Tooltip(
-      message: '${file.name}\n'
-          '${app_date_utils.DateUtils.formatFileSize(file.size)}  |  '
-          '${app_date_utils.DateUtils.formatDateTime(file.updatedAt)}',
-      preferBelow: true,
-      child: Material(
-        color: colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(10),
-        child: InkWell(
-          onTap: () {
-            if (file.isFolder) {
-              Provider.of<FileManagerProvider>(context, listen: false).enterFolder(file.relativePath);
-            } else {
-              _openFile(context, file);
-            }
-          },
-          borderRadius: BorderRadius.circular(10),
-          child: Container(
-            width: 120,
-            padding: const EdgeInsets.all(8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Thumbnail / icon
-                Expanded(
-                  child: isThumbnailable
-                      ? ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: ThumbnailImage(
-                            file: file,
-                            contextHint: Provider.of<FileManagerProvider>(context, listen: false).contextHint,
-                            borderRadius: 8,
-                          ),
-                        )
-                      : Center(
-                          child: Icon(
-                            file.isFolder ? LucideIcons.folder : LucideIcons.file,
-                            size: 32,
-                            color: colorScheme.primary.withValues(alpha: 0.6),
-                          ),
-                        ),
-                ),
-                const SizedBox(height: 6),
-                // File name
-                Text(
-                  file.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 
@@ -1414,7 +808,7 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
           child: RefreshIndicator(
             onRefresh: () => _onRefresh(fileManager),
             child: NotificationListener<ScrollNotification>(
-              onNotification: _onScrollNotification,
+              onNotification: _fabKey.currentState?.onScrollNotification ?? ((_) => false),
               child: ListView.builder(
                 controller: _scrollController,
                 key: PageStorageKey('files_list_${fileManager.currentPath}'),
@@ -1437,8 +831,8 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
                     index: index,
                     isDesktop: isDesktop,
                     onTap: () {
-                      _hideFab();
-                      _scheduleShowFab();
+                      _fabKey.currentState?.hide();
+                      _fabKey.currentState?.scheduleShow();
                       if (showCheckbox) {
                         fileManager.toggleSelection(file.path);
                       } else if (file.isFolder) {
@@ -1507,7 +901,7 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
     return RefreshIndicator(
       onRefresh: () => _onRefresh(fileManager),
       child: NotificationListener<ScrollNotification>(
-        onNotification: _onScrollNotification,
+        onNotification: _fabKey.currentState?.onScrollNotification ?? ((_) => false),
         child: GridView.builder(
           controller: _scrollController,
           key: PageStorageKey('files_grid_${fileManager.currentPath}'),
@@ -1536,8 +930,8 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
               showCheckbox: showCheckbox,
               contextHint: fileManager.contextHint,
               onTap: () {
-                _hideFab();
-                _scheduleShowFab();
+                _fabKey.currentState?.hide();
+                _fabKey.currentState?.scheduleShow();
                 if (showCheckbox) {
                   fileManager.toggleSelection(file.path);
                 } else if (file.isFolder) {
@@ -1999,60 +1393,9 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
             const VerticalDivider(width: 1, indent: 14, endIndent: 14),
             const SizedBox(width: 4),
           ],
-          IconButton(
-            icon: const Icon(LucideIcons.search, size: 20),
-            onPressed: () => SearchDialog.show(context),
-            tooltip: '搜索',
-            visualDensity: VisualDensity.compact,
-          ),
-          IconButton(
-            icon: Icon(fileManager.isLoading ? Icons.hourglass_empty : Icons.refresh, size: 20),
-            onPressed: () => fileManager.refreshFiles(),
-            tooltip: '刷新',
-            visualDensity: VisualDensity.compact,
-          ),
-          _buildSortMenu(fileManager),
-          Consumer<FileManagerProvider>(
-            builder: (context, fm, _) {
-              final icon = fm.viewType == FileViewType.list
-                  ? Icons.grid_view
-                  : Icons.view_list;
-              return IconButton(
-                icon: Icon(icon, size: 20),
-                onPressed: () {
-                  fm.setViewType(
-                    fm.viewType == FileViewType.list
-                        ? FileViewType.grid
-                        : FileViewType.list,
-                  );
-                },
-                tooltip: fm.viewType == FileViewType.list ? '网格视图' : '列表视图',
-                visualDensity: VisualDensity.compact,
-              );
-            },
-          ),
-          IconButton(
-            icon: const Icon(LucideIcons.upload, size: 20),
-            onPressed: () => showUploadDialog(context),
-            tooltip: '上传',
-            visualDensity: VisualDensity.compact,
-          ),
-          PopupMenuButton<String>(
-            icon: const Icon(LucideIcons.folderPlus, size: 20),
-            tooltip: '新建',
-            padding: const EdgeInsets.all(8),
-            position: PopupMenuPosition.under,
-            onSelected: (value) {
-              if (value == 'folder') {
-                FileOperationDialogs.showCreateDialog(context, fileManager);
-              } else if (value == 'file') {
-                _showCreateTextFileDialog(context, fileManager);
-              }
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(value: 'folder', child: Row(children: [Icon(LucideIcons.folderPlus, size: 18), SizedBox(width: 10), Text('新建文件夹')])),
-              const PopupMenuItem(value: 'file', child: Row(children: [Icon(Icons.note_add_outlined, size: 18), SizedBox(width: 10), Text('新建文件')])),
-            ],
+          DesktopActionButtons(
+            fileManager: fileManager,
+            onShowCreateTextFile: () => _showCreateTextFileDialog(context, fileManager),
           ),
         ],
       ),
@@ -2122,49 +1465,3 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
   }
 }
 
-/// 水平 ListView，桌面端响应鼠标滚轮横向滚动。
-class _HorizontalScrollListView extends StatefulWidget {
-  final int itemCount;
-  final Widget Function(BuildContext, int) itemBuilder;
-
-  const _HorizontalScrollListView({
-    required this.itemCount,
-    required this.itemBuilder,
-  });
-
-  @override
-  State<_HorizontalScrollListView> createState() => _HorizontalScrollListViewState();
-}
-
-class _HorizontalScrollListViewState extends State<_HorizontalScrollListView> {
-  final ScrollController _controller = ScrollController();
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Listener(
-      onPointerSignal: (event) {
-        if (event is PointerScrollEvent && _controller.hasClients) {
-          final maxExt = _controller.position.maxScrollExtent;
-          if (maxExt > 0) {
-            _controller.jumpTo(
-              (_controller.offset + event.scrollDelta.dy).clamp(0.0, maxExt),
-            );
-          }
-        }
-      },
-      child: ListView.separated(
-        controller: _controller,
-        scrollDirection: Axis.horizontal,
-        itemCount: widget.itemCount,
-        separatorBuilder: (_, _) => const SizedBox(width: 12),
-        itemBuilder: widget.itemBuilder,
-      ),
-    );
-  }
-}

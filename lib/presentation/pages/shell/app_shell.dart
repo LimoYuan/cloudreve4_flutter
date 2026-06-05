@@ -123,6 +123,73 @@ class _ShellPageSlotState extends State<_ShellPageSlot>
   }
 }
 
+/// Tab 切换过渡动画：监听 index 变化，每次切换时对内容做一次淡入 + 轻微方向性滑入。
+///
+/// 包裹在 IndexedStack 外层，不破坏内部 AutomaticKeepAliveClient 的状态保留机制。
+class _TabSwitchTransition extends StatefulWidget {
+  final int index;
+  final Widget child;
+
+  const _TabSwitchTransition({required this.index, required this.child});
+
+  @override
+  State<_TabSwitchTransition> createState() => _TabSwitchTransitionState();
+}
+
+class _TabSwitchTransitionState extends State<_TabSwitchTransition>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _fade;
+  late Animation<Offset> _slide;
+  int _lastIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _lastIndex = widget.index;
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 320),
+      value: 1.0,
+    );
+    _fade = CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
+    _slide = Tween<Offset>(
+      begin: const Offset(0.04, 0),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
+  }
+
+  @override
+  void didUpdateWidget(covariant _TabSwitchTransition oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.index != oldWidget.index) {
+      final delta = widget.index - _lastIndex;
+      _lastIndex = widget.index;
+      _slide = Tween<Offset>(
+        begin: Offset(delta >= 0 ? 0.04 : -0.04, 0),
+        end: Offset.zero,
+      ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
+      _controller
+        ..value = 0
+        ..forward();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _fade,
+      child: SlideTransition(position: _slide, child: widget.child),
+    );
+  }
+}
+
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
 
@@ -290,14 +357,17 @@ class _AppShellState extends State<AppShell> with GestureHandlerMixin, TickerPro
     final pages = _pages(_cachedShowSyncTab);
 
     return RepaintBoundary(
-      child: IndexedStack(
+      child: _TabSwitchTransition(
         index: currentIndex,
-        children: List.generate(pages.length, (index) {
-          if (!_visitedPageIndexes.contains(index)) {
-            return const SizedBox.shrink();
-          }
-          return _ShellPageSlot(child: pages[index]);
-        }),
+        child: IndexedStack(
+          index: currentIndex,
+          children: List.generate(pages.length, (index) {
+            if (!_visitedPageIndexes.contains(index)) {
+              return const SizedBox.shrink();
+            }
+            return _ShellPageSlot(child: pages[index]);
+          }),
+        ),
       ),
     );
   }

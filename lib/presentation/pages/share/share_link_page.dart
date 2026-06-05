@@ -1,31 +1,24 @@
-import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
+import 'dart:ui';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:flutter/services.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:webview_flutter/webview_flutter.dart' as mobile;
 
-import '../../../core/utils/app_logger.dart';
-import '../../../services/api_service.dart';
+import '../../../data/models/share_model.dart';
+import '../../../router/app_router.dart';
 import '../../../services/share_link_service.dart';
 import '../../providers/download_manager_provider.dart';
 import '../../widgets/folder_picker.dart';
+import '../../widgets/toast_helper.dart';
 import '../../widgets/user_avatar.dart';
-
-bool get _isDesktop => !kIsWeb && (Platform.isWindows || Platform.isLinux);
 
 class ShareLinkPage extends StatefulWidget {
   final ShareLinkCandidate candidate;
 
-  const ShareLinkPage({
-    super.key,
-    required this.candidate,
-  });
+  const ShareLinkPage({super.key, required this.candidate});
 
   @override
   State<ShareLinkPage> createState() => _ShareLinkPageState();
@@ -33,36 +26,27 @@ class ShareLinkPage extends StatefulWidget {
 
 class _ShareLinkPageState extends State<ShareLinkPage> {
   final TextEditingController _passwordController = TextEditingController();
-  final List<_ShareBreadcrumb> _breadcrumbs = <_ShareBreadcrumb>[];
+  final List<_Crumb> _crumbs = <_Crumb>[];
 
-  ShareLinkInfo? _info;
-  ShareLinkFile? _singleFile;
+  late ShareContext _context;
+  ShareModel? _info;
   List<ShareLinkFile> _files = const [];
+  String? _currentUri;
   Object? _error;
   Object? _fileError;
-  String? _contextHint;
-  String? _currentUri;
   bool _loadingInfo = true;
   bool _loadingFiles = false;
-  bool _openingDownload = false;
-  bool _saving = false;
-
-  String get _displayUrl => _info?.url ?? widget.candidate.url;
-
-  bool get _isSameOrigin {
-    final shareUri = Uri.tryParse(widget.candidate.url);
-    final baseUri = Uri.tryParse(ApiService.instance.dio.options.baseUrl);
-    if (shareUri == null || baseUri == null) return false;
-    final same = shareUri.host == baseUri.host;
-    AppLogger.d('ShareLinkPage _isSameOrigin: shareHost=${shareUri.host}, baseHost=${baseUri.host}, result=$same');
-    return same;
-  }
+  bool _busyDownload = false;
+  bool _busySave = false;
 
   @override
   void initState() {
     super.initState();
+    _context = ShareLinkService.instance.createContext(widget.candidate);
     _passwordController.text = widget.candidate.password ?? '';
-    _loadShare(password: widget.candidate.password);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadInfo(password: widget.candidate.password);
+    });
   }
 
   @override
@@ -71,139 +55,123 @@ class _ShareLinkPageState extends State<ShareLinkPage> {
     super.dispose();
   }
 
-  Future<void> _loadShare({String? password}) async {
+  // ─────────────── 数据 ───────────────
+
+  Future<void> _loadInfo({String? password}) async {
     setState(() {
       _loadingInfo = true;
       _error = null;
       _fileError = null;
       _files = const [];
-      _singleFile = null;
-      _contextHint = null;
       _currentUri = null;
-      _breadcrumbs.clear();
+      _crumbs.clear();
     });
 
+    _context = ShareLinkService.instance.createContext(
+      ShareLinkCandidate(
+        id: widget.candidate.id,
+        url: widget.candidate.url,
+        password: password?.trim().isEmpty == true ? null : password?.trim(),
+      ),
+    );
+
+    ShareModel info;
     try {
-      final info = await ShareLinkService.instance.getShareInfo(
-        widget.candidate,
-        password: password?.trim().isEmpty == true ? null : password,
-      );
-
-      if (!mounted) return;
-
-      setState(() {
-        _info = info;
-        _contextHint = info.contextHint ?? _contextHint;
-        _loadingInfo = false;
-      });
-
-      final sourceUri = info.sourceUri;
-      if (info.expired || !info.unlocked || sourceUri == null) return;
-
-      if (info.isFolder) {
-        await _loadFolder(sourceUri, resetBreadcrumbs: true, title: info.name);
-      } else {
-        await _loadSingleFile(sourceUri);
-      }
+      info = await ShareLinkService.instance.fetchShareInfo(_context);
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _error = e;
         _loadingInfo = false;
       });
+      return;
     }
-  }
 
-  Future<void> _loadSingleFile(String uri) async {
-    setState(() {
-      _loadingFiles = true;
-      _fileError = null;
-      _currentUri = uri;
-    });
+    if (!mounted) return;
 
-    // Cloudreve 官方分享页会把 /s/{id} 重定向到
-    // /home?path=cloudreve://{id}@share，然后按普通文件列表读取 share 文件系统。
-    // 单文件分享也要先读取 share 根目录，拿到服务端返回的真实文件 path/context_hint，
-    // 再用这个 path 调 /file/url。直接拿 share 根 URI 下载会得到 40081。
-    try {
-      final list = await ShareLinkService.instance.listSharedFiles(
-        uri: uri,
-        contextHint: _contextHint,
+    // 密码鉴权：弹对话框输入密码直到 unlocked / 用户取消
+    // 弹窗期间停掉背景的加载动画，避免进度条 / 刷新指示器在背后转。
+    if (info.passwordProtected == true && !info.unlocked) {
+      setState(() {
+        _loadingInfo = false;
+      });
+    }
+    while (info.passwordProtected == true && !info.unlocked) {
+      final entered = await _promptPasswordDialog(
+        retry: password != null && password.trim().isNotEmpty,
       );
-      if (list.files.isNotEmpty) {
-        final file = list.files.first;
+      if (!mounted) return;
+      if (entered == null) {
+        // 用户取消 → 退出页面
+        if (Navigator.of(context).canPop()) {
+          Navigator.of(context).pop();
+        }
+        return;
+      }
+      password = entered;
+      _passwordController.text = entered;
+      _context = ShareLinkService.instance.createContext(
+        ShareLinkCandidate(
+          id: widget.candidate.id,
+          url: widget.candidate.url,
+          password: entered.isEmpty ? null : entered,
+        ),
+      );
+      try {
+        info = await ShareLinkService.instance.fetchShareInfo(_context);
+      } catch (e) {
         if (!mounted) return;
         setState(() {
-          _singleFile = file;
-          _contextHint = file.contextHint ?? list.contextHint ?? _contextHint;
-          _currentUri = file.path.isNotEmpty ? file.path : uri;
-          _loadingFiles = false;
+          _error = e;
+          _loadingInfo = false;
         });
         return;
       }
-      if (list.contextHint != null && list.contextHint!.isNotEmpty) {
-        _contextHint = list.contextHint;
-      }
-    } catch (_) {
-      // 某些服务端不允许对单文件分享根目录执行 /file，继续走 /file/info 降级。
+      if (!mounted) return;
     }
 
-    try {
-      final file = await ShareLinkService.instance.getSharedFileInfo(
-        uri: uri,
-        contextHint: _contextHint,
-        shareId: widget.candidate.id,
-        password: widget.candidate.password,
-      );
+    setState(() {
+      _info = info;
+      _loadingInfo = false;
+    });
 
-      if (!mounted) return;
-      setState(() {
-        _singleFile = file;
-        _contextHint = file.contextHint ?? _contextHint;
-        _currentUri = file.path.isNotEmpty ? file.path : uri;
-        _loadingFiles = false;
-      });
-    } catch (e) {
-      // 部分服务端在公开分享上下文中不允许读取 /file/info，
-      // 但仍允许通过 /file/url 下载或 /file/move 转存。这里降级为分享信息卡片，
-      // 避免页面出现大块错误提示。
-      final info = _info;
-      if (!mounted) return;
-      setState(() {
-        _singleFile = info == null ? null : ShareLinkService.instance.fileFromShareInfo(info);
-        _contextHint = _singleFile?.contextHint ?? _contextHint ?? info?.contextHint;
-        _fileError = null;
-        _loadingFiles = false;
-      });
+    if (info.expired) return;
+
+    if (info.isFolder) {
+      final rootUri = _context.buildShareUri(trailingSlash: true);
+      _crumbs.add(_Crumb(title: info.name, uri: rootUri));
+      await _loadFolder(rootUri);
     }
   }
 
-  Future<void> _loadFolder(
-    String uri, {
-    bool resetBreadcrumbs = false,
-    String? title,
-  }) async {
+  /// 弹出密码输入对话框。返回 null 表示用户取消。
+  Future<String?> _promptPasswordDialog({bool retry = false}) {
+    return showDialog<String?>(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black.withValues(alpha: 0.45),
+      builder: (ctx) => _SharePasswordDialog(
+        initialPassword: _passwordController.text,
+        retry: retry,
+      ),
+    );
+  }
+
+  Future<void> _loadFolder(String uri) async {
     setState(() {
       _loadingFiles = true;
       _fileError = null;
       _currentUri = uri;
-      if (resetBreadcrumbs) {
-        _breadcrumbs
-          ..clear()
-          ..add(_ShareBreadcrumb(title: title ?? '分享目录', uri: uri));
-      }
     });
 
     try {
       final result = await ShareLinkService.instance.listSharedFiles(
+        context: _context,
         uri: uri,
-        contextHint: _contextHint,
       );
-
       if (!mounted) return;
       setState(() {
         _files = result.files;
-        _contextHint = result.contextHint ?? _contextHint;
         _loadingFiles = false;
       });
     } catch (e) {
@@ -217,602 +185,166 @@ class _ShareLinkPageState extends State<ShareLinkPage> {
 
   Future<void> _refresh() async {
     final info = _info;
-    if (info == null) {
-      await _loadShare(password: _passwordController.text.trim());
+    if (info == null || _crumbs.isEmpty) {
+      await _loadInfo(password: _passwordController.text.trim());
       return;
     }
-
-    final uri = _currentUri ?? info.sourceUri;
-    if (uri == null || !info.unlocked || info.expired) {
-      await _loadShare(password: _passwordController.text.trim());
-      return;
-    }
-
     if (info.isFolder) {
-      await _loadFolder(uri);
+      await _loadFolder(_crumbs.last.uri);
     } else {
-      await _loadSingleFile(uri);
+      await _loadInfo(password: _passwordController.text.trim());
     }
   }
 
-  Future<void> _openExternal() async {
-    final uri = Uri.tryParse(_displayUrl);
+  // ─────────────── 操作 ───────────────
+
+  Future<void> _openInBrowser() async {
+    final uri = Uri.tryParse(widget.candidate.url);
     if (uri == null) return;
     await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
-  Future<void> _openDownloadUrl(
-    String uri, {
+  /// 下载（同源/异源均直接走预签名 URL，绕过 token 鉴权）
+  Future<void> _download({
     required String fileName,
     required int fileSize,
-    String? entity,
+    String? candidateUri,
     bool archive = false,
   }) async {
-    if (_openingDownload) return;
-
-    setState(() => _openingDownload = true);
+    if (_busyDownload) return;
+    setState(() => _busyDownload = true);
     try {
-      final result = await ShareLinkService.instance.createShareDownloadUrl(
-        uri: uri,
-        contextHint: _contextHint,
-        shareId: widget.candidate.id,
-        password: widget.candidate.password,
-        entity: entity,
+      final result = await ShareLinkService.instance.resolveDownloadUrl(
+        context: _context,
+        candidateUri: candidateUri,
         fileName: fileName,
         archive: archive,
       );
 
-      await _enqueueInAppDownload(
-        result.url,
-        fileName: fileName,
+      if (!mounted) return;
+      final downloadManager = context.read<DownloadManagerProvider>();
+      final pseudoUri = 'share://${_context.id}/${Uri.encodeComponent(fileName)}'
+          '${archive ? '?archive=1' : ''}';
+      final task = await downloadManager.addDownloadTask(
+        fileName: archive ? '$fileName.zip' : fileName,
+        fileUri: pseudoUri,
         fileSize: fileSize,
-        fileUri: uri,
+        downloadUrl: result.url,
       );
+
+      if (!mounted) return;
+      ToastHelper.success(task == null ? '该文件已在下载队列中' : '已添加到下载队列');
     } catch (e) {
       if (!mounted) return;
-
-      final fallbackUrl = await _obtainDownloadUrlFromOfficialPage(
-        fileName: fileName,
-      );
-      if (fallbackUrl != null && fallbackUrl.isNotEmpty) {
-        try {
-          await _enqueueInAppDownload(
-            fallbackUrl,
-            fileName: fileName,
-            fileSize: fileSize,
-            fileUri: uri,
-          );
-          return;
-        } catch (downloadError) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('创建下载任务失败：$downloadError')),
-          );
-          return;
-        }
+      if (_isGroupForbidden(e)) {
+        ToastHelper.failure(
+          archive
+              ? '所在用户组不允许打包下载，请联系管理员开通'
+              : '所在用户组不允许下载，请联系管理员开通',
+        );
+      } else {
+        ToastHelper.failure('下载失败：$e');
       }
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('获取下载链接失败：$e'),
-          action: SnackBarAction(label: '浏览器打开', onPressed: _openExternal),
-        ),
-      );
     } finally {
-      if (mounted) setState(() => _openingDownload = false);
+      if (mounted) setState(() => _busyDownload = false);
     }
   }
 
-  Future<void> _enqueueInAppDownload(
-    String rawUrl, {
-    required String fileName,
-    required int fileSize,
-    required String fileUri,
+  /// 转存（仅同源）
+  Future<void> _saveToCloud({
+    required String name,
+    String? candidateUri,
+    bool isFolder = false,
   }) async {
-    final downloadUri = Uri.tryParse(rawUrl);
-    if (downloadUri == null || !downloadUri.hasScheme) {
-      throw Exception('下载链接格式错误');
-    }
-
-    final task = await context.read<DownloadManagerProvider>().addDownloadTask(
-          fileName: fileName,
-          fileUri: fileUri,
-          fileSize: fileSize,
-        );
-
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(task == null ? '该文件已在下载队列中' : '已添加到下载队列，正在下载'),
-      ),
-    );
-  }
-
-
-  Future<String?> _obtainDownloadUrlFromOfficialPage({
-    required String fileName,
-  }) async {
-    final shareUri = Uri.tryParse(widget.candidate.url);
-    if (shareUri == null) return null;
-
-    final completer = Completer<String?>();
-    BuildContext? dialogContext;
-    Timer? timeoutTimer;
-    InAppWebViewController? desktopCtrl;
-
-    void complete(String? url) {
-      if (completer.isCompleted) return;
-      completer.complete(url);
-    }
-
-    timeoutTimer = Timer(const Duration(seconds: 24), () => complete(null));
-
-    completer.future.then((url) {
-      final ctx = dialogContext;
-      if (!mounted && !context.mounted) return;
-      if (ctx != null && Navigator.of(ctx, rootNavigator: true).canPop()) {
-        Navigator.of(ctx, rootNavigator: true).pop(url);
-      }
-    });
-
-    Widget webViewWidget;
-
-    if (!_isDesktop) {
-      // ── 移动端：webview_flutter ──
-      late mobile.WebViewController controller;
-      controller = mobile.WebViewController()
-        ..setJavaScriptMode(mobile.JavaScriptMode.unrestricted)
-        ..addJavaScriptChannel(
-          'CloudreveDownloadBridge',
-          onMessageReceived: (message) {
-            final url = _extractOfficialDownloadUrl(
-              message.message,
-              shareUri: shareUri,
-            );
-            if (url != null && url.isNotEmpty) {
-              complete(url);
-            }
-          },
-        )
-        ..setNavigationDelegate(
-          mobile.NavigationDelegate(
-            onPageFinished: (_) async {
-              await _installOfficialDownloadHook(
-                controller.runJavaScript,
-              );
-            },
-            onNavigationRequest: (request) {
-              final url = request.url;
-              if (_looksLikeDirectDownloadUrl(url, shareUri: shareUri)) {
-                complete(url);
-                return mobile.NavigationDecision.prevent;
-              }
-              return mobile.NavigationDecision.navigate;
-            },
-            onUrlChange: (change) {
-              final url = change.url;
-              if (url != null && _looksLikeDirectDownloadUrl(url, shareUri: shareUri)) {
-                complete(url);
-              }
-            },
-          ),
-        )
-        ..loadRequest(shareUri);
-
-      webViewWidget = mobile.WebViewWidget(controller: controller);
-    } else {
-      // ── 桌面端：flutter_inappwebview ──
-      webViewWidget = SizedBox(
-        width: 1,
-        height: 1,
-        child: InAppWebView(
-          initialSettings: InAppWebViewSettings(
-            javaScriptEnabled: true,
-            domStorageEnabled: true,
-            isInspectable: true,
-            cacheMode: CacheMode.LOAD_DEFAULT,
-            supportMultipleWindows: false,
-            useHybridComposition: true,
-          ),
-          onWebViewCreated: (controller) {
-            desktopCtrl = controller;
-            controller.addJavaScriptHandler(
-              handlerName: 'CloudreveDownloadBridge',
-              callback: (args) {
-                final text = args.isNotEmpty ? args[0].toString() : '';
-                final url = _extractOfficialDownloadUrl(
-                  text,
-                  shareUri: shareUri,
-                );
-                if (url != null && url.isNotEmpty) {
-                  complete(url);
-                }
-              },
-            );
-            controller.loadUrl(
-              urlRequest: URLRequest(url: WebUri(shareUri.toString())),
-            );
-          },
-          onLoadStop: (controller, url) async {
-            await _installOfficialDownloadHook(
-              (script) => controller.evaluateJavascript(source: script),
-            );
-          },
-          shouldInterceptRequest: (controller, request) async {
-            final url = request.url.toString();
-            if (_looksLikeDirectDownloadUrl(url, shareUri: shareUri)) {
-              complete(url);
-            }
-            return null;
-          },
-          onLoadStart: (controller, url) {
-            if (url != null && _looksLikeDirectDownloadUrl(url.toString(), shareUri: shareUri)) {
-              complete(url.toString());
-            }
-          },
-          onReceivedError: (controller, request, error) {
-            // 忽略子资源错误
-          },
-        ),
+    if (_busySave) return;
+    if (!_context.isSameOrigin) {
+      await _confirmCrossOriginAndJump(
+        name: name,
+        candidateUri: candidateUri,
+        isFolder: isFolder,
       );
+      return;
     }
-
-    final result = await showDialog<String?>(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) {
-        dialogContext = context;
-        final theme = Theme.of(context);
-        return AlertDialog(
-          title: const Text('正在获取下载链接'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                '正在按 Cloudreve 官方分享页面流程获取「$fileName」的真实下载地址，获取成功后会加入应用内下载任务。',
-                style: theme.textTheme.bodyMedium,
-              ),
-              const SizedBox(height: 14),
-              const LinearProgressIndicator(),
-              const SizedBox(height: 10),
-              Text(
-                '不会自动跳转浏览器；浏览器入口只作为手动备用方案。',
-                style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor),
-              ),
-              const SizedBox(height: 1),
-              SizedBox(
-                width: 1,
-                height: 1,
-                child: Opacity(
-                  opacity: 0.01,
-                  child: webViewWidget,
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => complete(null),
-              child: const Text('取消'),
-            ),
-            TextButton(
-              onPressed: _openExternal,
-              child: const Text('浏览器打开'),
-            ),
-          ],
-        );
-      },
-    );
-
-    timeoutTimer.cancel();
-    desktopCtrl?.dispose();
-    return result;
-  }
-
-  Future<void> _installOfficialDownloadHook(Future<void> Function(String) runJS) async {
-    const hookScript = r"""
-(function () {
-  if (window.__cloudreveAppDownloadHookInstalled) return;
-  window.__cloudreveAppDownloadHookInstalled = true;
-
-  function post(value) {
-    try {
-      if (typeof value !== 'string') value = JSON.stringify(value);
-      if (typeof CloudreveDownloadBridge !== 'undefined' && CloudreveDownloadBridge.postMessage) {
-        CloudreveDownloadBridge.postMessage(value);
-      } else if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
-        window.flutter_inappwebview.callHandler('CloudreveDownloadBridge', value);
-      }
-    } catch (e) {}
-  }
-
-  function inspectText(text) {
-    if (!text) return;
-    try {
-      post(text);
-    } catch (e) {}
-  }
-
-  var rawFetch = window.fetch;
-  if (rawFetch) {
-    window.fetch = function () {
-      var req = arguments[0];
-      var reqUrl = '';
-      try { reqUrl = String((req && req.url) || req || ''); } catch (e) {}
-      return rawFetch.apply(this, arguments).then(function (resp) {
-        try {
-          var respUrl = String(resp && resp.url ? resp.url : reqUrl);
-          if (respUrl.indexOf('/api/v4/file/url') >= 0 || reqUrl.indexOf('/api/v4/file/url') >= 0) {
-            resp.clone().text().then(inspectText).catch(function () {});
-          }
-        } catch (e) {}
-        return resp;
-      });
-    };
-  }
-
-  var RawXHR = window.XMLHttpRequest;
-  if (RawXHR) {
-    var rawXHROpen = RawXHR.prototype.open;
-    var rawXHRSend = RawXHR.prototype.send;
-    RawXHR.prototype.open = function (method, url) {
-      this.__cloudreveRequestUrl = String(url || '');
-      return rawXHROpen.apply(this, arguments);
-    };
-    RawXHR.prototype.send = function () {
-      try {
-        this.addEventListener('load', function () {
-          try {
-            var url = String(this.responseURL || this.__cloudreveRequestUrl || '');
-            if (url.indexOf('/api/v4/file/url') >= 0) {
-              inspectText(String(this.responseText || ''));
-            }
-          } catch (e) {}
-        });
-      } catch (e) {}
-      return rawXHRSend.apply(this, arguments);
-    };
-  }
-
-  var rawOpen = window.open;
-  window.open = function (url) {
-    try { post({ __navigation_url: String(url || '') }); } catch (e) {}
-    return rawOpen ? rawOpen.apply(this, arguments) : null;
-  };
-
-  document.addEventListener('click', function (event) {
-    try {
-      var target = event.target;
-      var href = '';
-      while (target && !href) {
-        href = target.href || target.getAttribute && target.getAttribute('href') || '';
-        target = target.parentElement;
-      }
-      if (href) post({ __navigation_url: String(href) });
-    } catch (e) {}
-  }, true);
-})();
-""";
-
-    const clickScript = r"""
-(function () {
-  function visible(el) {
-    if (!el) return false;
-    var style = window.getComputedStyle(el);
-    if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
-    var rect = el.getBoundingClientRect();
-    return rect.width > 0 && rect.height > 0;
-  }
-
-  function clickDownload() {
-    var nodes = Array.prototype.slice.call(document.querySelectorAll('button,a,[role="button"],div,span'));
-    var best = null;
-    for (var i = 0; i < nodes.length; i++) {
-      var el = nodes[i];
-      var text = [
-        el.innerText || '',
-        el.textContent || '',
-        el.getAttribute && el.getAttribute('aria-label') || '',
-        el.getAttribute && el.getAttribute('title') || '',
-        el.className || ''
-      ].join(' ').trim();
-      if (!text || (text.indexOf('下载') < 0 && text.toLowerCase().indexOf('download') < 0)) continue;
-      if (el.disabled || el.getAttribute('aria-disabled') === 'true') continue;
-      best = el;
-      break;
-    }
-    if (best) {
-      try {
-        best.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-        best.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
-        best.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-      } catch (e) {
-        best.click();
-      }
-      return true;
-    }
-    return false;
-  }
-
-  var tries = 0;
-  var timer = setInterval(function () {
-    tries++;
-    if (clickDownload() || tries > 30) {
-      clearInterval(timer);
-    }
-  }, 500);
-})();
-""";
-
-    try {
-      await runJS(hookScript);
-      await runJS(clickScript);
-    } catch (_) {
-      // 官方页面脚本注入失败时，外层会超时并保留“浏览器打开”。
-    }
-  }
-
-  String? _extractOfficialDownloadUrl(String message, {required Uri shareUri}) {
-    final text = message.trim();
-    if (text.isEmpty) return null;
-
-    final direct = _normalizeOfficialUrl(text, shareUri: shareUri);
-    if (direct != null && _looksLikeDirectDownloadUrl(direct, shareUri: shareUri)) {
-      return direct;
-    }
-
-    try {
-      final decoded = jsonDecode(text);
-      return _walkOfficialPayloadForUrl(decoded, shareUri: shareUri);
-    } catch (_) {
-      return null;
-    }
-  }
-
-  String? _walkOfficialPayloadForUrl(dynamic value, {required Uri shareUri}) {
-    if (value == null) return null;
-
-    if (value is String) {
-      final normalized = _normalizeOfficialUrl(value, shareUri: shareUri);
-      if (normalized != null && _looksLikeDirectDownloadUrl(normalized, shareUri: shareUri)) {
-        return normalized;
-      }
-      return null;
-    }
-
-    if (value is List) {
-      for (final item in value) {
-        final url = _walkOfficialPayloadForUrl(item, shareUri: shareUri);
-        if (url != null) return url;
-      }
-      return null;
-    }
-
-    if (value is Map) {
-      final navigationUrl = value['__navigation_url'];
-      if (navigationUrl is String) {
-        final normalized = _normalizeOfficialUrl(navigationUrl, shareUri: shareUri);
-        if (normalized != null && _looksLikeDirectDownloadUrl(normalized, shareUri: shareUri)) {
-          return normalized;
-        }
-      }
-
-      const priorityKeys = [
-        'url',
-        'download_url',
-        'downloadUrl',
-        'href',
-        'src',
-        'signed_url',
-        'signedUrl',
-        'link',
-        'urls',
-        'data',
-      ];
-
-      for (final key in priorityKeys) {
-        if (!value.containsKey(key)) continue;
-        final url = _walkOfficialPayloadForUrl(value[key], shareUri: shareUri);
-        if (url != null) return url;
-      }
-
-      for (final item in value.values) {
-        final url = _walkOfficialPayloadForUrl(item, shareUri: shareUri);
-        if (url != null) return url;
-      }
-    }
-
-    return null;
-  }
-
-  String? _normalizeOfficialUrl(String value, {required Uri shareUri}) {
-    final text = value.trim();
-    if (text.isEmpty) return null;
-    final uri = Uri.tryParse(text);
-    if (uri == null) return null;
-
-    if (uri.hasScheme && (uri.scheme == 'http' || uri.scheme == 'https')) {
-      return uri.toString();
-    }
-
-    if (text.startsWith('/')) {
-      return shareUri.replace(path: text, query: '', fragment: '').toString();
-    }
-
-    return null;
-  }
-
-  bool _looksLikeDirectDownloadUrl(String value, {required Uri shareUri}) {
-    final uri = Uri.tryParse(value);
-    if (uri == null || !uri.hasScheme) return false;
-    if (uri.scheme != 'http' && uri.scheme != 'https') return false;
-
-    final sameHost = uri.host == shareUri.host;
-    final path = uri.path.toLowerCase();
-
-    if (sameHost) {
-      if (path.startsWith('/s/') || path == '/home' || path.startsWith('/home/')) {
-        return false;
-      }
-      if (path.contains('/api/v4/file/url')) return false;
-      if (path.contains('/api/v4/share/info')) return false;
-    }
-
-    final url = uri.toString().toLowerCase();
-    return !sameHost ||
-        path.contains('/download') ||
-        path.contains('/api/v4/file/download') ||
-        path.contains('/api/v4/file/source') ||
-        url.contains('response-content-disposition') ||
-        url.contains('x-amz-signature') ||
-        url.contains('x-oss-signature') ||
-        url.contains('signature=') ||
-        url.contains('sign=') ||
-        url.contains('token=');
-  }
-
-  Future<void> _saveSharedUri(String uri, {required String name}) async {
-    if (_saving) return;
 
     final destination = await _pickDestination();
-    if (destination == null) return;
+    if (destination == null || !mounted) return;
+    setState(() => _busySave = true);
 
-    setState(() => _saving = true);
     try {
-      final isRootShareFolder = ShareLinkService.isShareRootUri(
-            uri,
-            shareId: widget.candidate.id,
-          ) &&
-          _files.isNotEmpty;
-      final urisToSave = isRootShareFolder
-          ? _files
-              .map((file) => file.path)
-              .where((path) => path.trim().isNotEmpty)
-              .toList()
-          : <String>[uri];
-
+      final uri = candidateUri ?? _context.buildShareUri(subPath: name);
       await ShareLinkService.instance.saveSharedFiles(
-        uris: urisToSave,
+        context: _context,
+        uris: [uri],
         destination: destination,
-        contextHint: _contextHint,
-        shareId: widget.candidate.id,
-        password: widget.candidate.password,
-        fileName: name,
       );
-
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已转存「$name」到 $destination')),
+      ToastHelper.success('已转存「$name」到 $destination');
+    } catch (e) {
+      if (!mounted) return;
+      ToastHelper.failure('转存失败：$e');
+    } finally {
+      if (mounted) setState(() => _busySave = false);
+    }
+  }
+
+  /// 异源场景：弹确认对话框 → 拿下载链接 → 跳离线下载页自动弹新建框
+  ///
+  /// 目录场景下必须走 archive 打包，否则后端无法为目录生成下载链接（40081）。
+  Future<void> _confirmCrossOriginAndJump({
+    required String name,
+    String? candidateUri,
+    bool isFolder = false,
+  }) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(
+          isFolder ? '异源文件夹转存需先打包' : '异源分享不支持直接转存',
+        ),
+        content: Text(
+          isFolder
+              ? '该分享来自其他 Cloudreve 站点，文件夹无法直接转存。\n\n'
+                  '将先把「$name」打包成 zip，再通过「离线下载」由服务器拉取后保存到你的网盘。是否继续？'
+              : '该分享来自其他 Cloudreve 站点，无法直接转存到当前账号。\n\n'
+                  '可以使用「离线下载」由服务器下载该文件，再保存到你的网盘。是否继续？',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('前往离线下载'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    try {
+      final result = await ShareLinkService.instance.resolveDownloadUrl(
+        context: _context,
+        candidateUri: candidateUri,
+        fileName: name,
+        archive: isFolder,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pushNamed(
+        RouteNames.remoteDownload,
+        arguments: <String, dynamic>{'prefillUrl': result.url},
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('转存失败：$e')),
-      );
-    } finally {
-      if (mounted) setState(() => _saving = false);
+      if (_isGroupForbidden(e)) {
+        ToastHelper.failure(
+          isFolder
+              ? '所在用户组不允许打包下载，请联系管理员开通'
+              : '所在用户组不允许下载，请联系管理员开通',
+        );
+      } else {
+        ToastHelper.failure('获取下载链接失败：$e');
+      }
     }
   }
 
@@ -853,36 +385,41 @@ class _ShareLinkPageState extends State<ShareLinkPage> {
   }
 
   Future<void> _enterFolder(ShareLinkFile file) async {
-    if (!file.isFolder || file.path.isEmpty) return;
-    _breadcrumbs.add(_ShareBreadcrumb(title: file.name, uri: file.path));
-    await _loadFolder(file.path);
+    if (!file.isFolder) return;
+    final uri = file.path.isNotEmpty
+        ? file.path
+        : _context.buildShareUri(
+            subPath: _crumbs.length > 1
+                ? '${_crumbs.skip(1).map((c) => c.title).join('/')}/${file.name}'
+                : file.name,
+          );
+    _crumbs.add(_Crumb(title: file.name, uri: uri));
+    await _loadFolder(uri);
   }
 
-  Future<void> _jumpToBreadcrumb(int index) async {
-    if (index < 0 || index >= _breadcrumbs.length) return;
-    final crumb = _breadcrumbs[index];
-    _breadcrumbs.removeRange(index + 1, _breadcrumbs.length);
-    await _loadFolder(crumb.uri);
+  Future<void> _jumpCrumb(int index) async {
+    if (index < 0 || index >= _crumbs.length) return;
+    _crumbs.removeRange(index + 1, _crumbs.length);
+    await _loadFolder(_crumbs[index].uri);
   }
 
   Future<bool> _handleBack() async {
-    if (_breadcrumbs.length > 1) {
-      final target = _breadcrumbs[_breadcrumbs.length - 2];
-      _breadcrumbs.removeLast();
-      await _loadFolder(target.uri);
+    if (_crumbs.length > 1) {
+      _crumbs.removeLast();
+      await _loadFolder(_crumbs.last.uri);
       return false;
     }
     return true;
   }
 
+  // ─────────────── 构建 ───────────────
+
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: _breadcrumbs.length <= 1,
-      onPopInvokedWithResult: (didPop, result) async {
-        if (!didPop) {
-          await _handleBack();
-        }
+      canPop: _crumbs.length <= 1,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (!didPop) await _handleBack();
       },
       child: Scaffold(
         appBar: AppBar(
@@ -891,7 +428,7 @@ class _ShareLinkPageState extends State<ShareLinkPage> {
             IconButton(
               tooltip: '浏览器打开',
               icon: const Icon(LucideIcons.externalLink),
-              onPressed: _openExternal,
+              onPressed: _openInBrowser,
             ),
             IconButton(
               tooltip: '刷新',
@@ -906,9 +443,9 @@ class _ShareLinkPageState extends State<ShareLinkPage> {
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
             children: [
-              _buildHeader(context),
+              _buildInfoCard(),
               const SizedBox(height: 14),
-              _buildContent(context),
+              _buildBody(),
             ],
           ),
         ),
@@ -916,10 +453,9 @@ class _ShareLinkPageState extends State<ShareLinkPage> {
     );
   }
 
-  Widget _buildHeader(BuildContext context) {
+  Widget _buildInfoCard() {
     final theme = Theme.of(context);
     final info = _info;
-
     return Card(
       elevation: 0,
       color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.55),
@@ -932,44 +468,19 @@ class _ShareLinkPageState extends State<ShareLinkPage> {
             if (_loadingInfo && info == null)
               const LinearProgressIndicator()
             else if (info != null)
-              _buildOwnerBlock(context, info)
+              _buildOwnerRow(info)
             else
-              _buildLoadingOwnerFallback(context),
+              _buildLoadingOwnerFallback(),
             if (info != null) ...[
               const SizedBox(height: 14),
-              _buildShareInfoBlock(context, info),
+              _buildSummaryBlock(info),
             ],
             if (_error != null) ...[
               const SizedBox(height: 12),
-              _ErrorBox(text: '分享信息读取失败：$_error'),
-            ],
-            if (_shouldShowPasswordInput(info)) ...[
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _passwordController,
-                      decoration: const InputDecoration(
-                        labelText: '分享密码',
-                        isDense: true,
-                        border: OutlineInputBorder(),
-                      ),
-                      onSubmitted: (_) => _loadShare(
-                        password: _passwordController.text.trim(),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  FilledButton(
-                    onPressed: _loadingInfo
-                        ? null
-                        : () => _loadShare(
-                              password: _passwordController.text.trim(),
-                            ),
-                    child: const Text('解锁'),
-                  ),
-                ],
+              _ErrorBox(
+                text: _isExpiredError(_error)
+                    ? '分享链接已过期或不存在'
+                    : '分享信息读取失败：$_error',
               ),
             ],
           ],
@@ -978,7 +489,7 @@ class _ShareLinkPageState extends State<ShareLinkPage> {
     );
   }
 
-  Widget _buildLoadingOwnerFallback(BuildContext context) {
+  Widget _buildLoadingOwnerFallback() {
     final theme = Theme.of(context);
     return Row(
       children: [
@@ -998,21 +509,18 @@ class _ShareLinkPageState extends State<ShareLinkPage> {
     );
   }
 
-  Widget _buildOwnerBlock(BuildContext context, ShareLinkInfo info) {
+  Widget _buildOwnerRow(ShareModel info) {
     final theme = Theme.of(context);
-    final ownerName = info.ownerName?.trim().isNotEmpty == true
-        ? info.ownerName!.trim()
+    final ownerName = info.owner?.nickname.trim().isNotEmpty == true
+        ? info.owner!.nickname.trim()
         : '匿名用户';
-    final ownerId = info.ownerId ?? '';
+    final ownerId = info.owner?.id ?? '';
+    final showSameOriginAvatar = _context.isSameOrigin && ownerId.isNotEmpty;
 
     return Row(
       children: [
-        _isSameOrigin
-            ? UserAvatar(
-                userId: ownerId,
-                displayName: ownerName,
-                radius: 29,
-              )
+        showSameOriginAvatar
+            ? UserAvatar(userId: ownerId, displayName: ownerName, radius: 29)
             : CircleAvatar(
                 radius: 29,
                 backgroundColor: theme.colorScheme.primaryContainer,
@@ -1040,7 +548,8 @@ class _ShareLinkPageState extends State<ShareLinkPage> {
               ),
               const SizedBox(height: 4),
               Text(
-                '向您分享了 ${info.isFolder ? '一个文件夹' : '一个文件'}',
+                '向您分享了 ${info.isFolder ? '一个文件夹' : '一个文件'}'
+                '${_context.isSameOrigin ? '' : ' · 异源'}',
                 style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor),
               ),
             ],
@@ -1055,11 +564,10 @@ class _ShareLinkPageState extends State<ShareLinkPage> {
     );
   }
 
-  Widget _buildShareInfoBlock(BuildContext context, ShareLinkInfo info) {
+  Widget _buildSummaryBlock(ShareModel info) {
     final theme = Theme.of(context);
-    final file = _singleFile;
-    final sizeText = file != null && file.isFile && file.size > 0
-        ? _ShareFileTile.formatSize(file.size)
+    final sizeText = info.size != null && info.size! > 0
+        ? _formatSize(info.size!)
         : null;
 
     return Container(
@@ -1080,11 +588,10 @@ class _ShareLinkPageState extends State<ShareLinkPage> {
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: Text(
-                  info.name,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+                child: _ScrollableFileName(
+                  name: info.name,
                   style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w900),
+                  onTap: () => _showInfoDetailDialog(info),
                 ),
               ),
             ],
@@ -1095,12 +602,17 @@ class _ShareLinkPageState extends State<ShareLinkPage> {
             runSpacing: 8,
             children: [
               _MetaChip(icon: LucideIcons.eye, text: '${info.visited} 次访问'),
+              if ((info.downloaded ?? 0) > 0)
+                _MetaChip(icon: LucideIcons.download, text: '${info.downloaded} 次下载'),
               if (sizeText != null) _MetaChip(icon: Icons.sd_storage_outlined, text: sizeText),
-              if (info.createdAt != null)
-                _MetaChip(icon: LucideIcons.calendar, text: '${_formatDate(info.createdAt!)} 创建'),
+              _MetaChip(icon: LucideIcons.calendar, text: '${_formatDate(info.createdAt)} 创建'),
               if (info.expires != null)
-                _MetaChip(icon: LucideIcons.clock, text: '${_formatDate(info.expires!)} 过期'),
-              if (info.isPrivate) const _MetaChip(icon: LucideIcons.lock, text: '私密分享'),
+                _MetaChip(
+                  icon: LucideIcons.clock,
+                  text: _expireChipText(info.expires!),
+                ),
+              if (info.passwordProtected == true) const _MetaChip(icon: LucideIcons.lock, text: '私密分享'),
+              if (!_context.isSameOrigin) const _MetaChip(icon: LucideIcons.globe, text: '异源分享'),
             ],
           ),
         ],
@@ -1108,31 +620,48 @@ class _ShareLinkPageState extends State<ShareLinkPage> {
     );
   }
 
-  bool _shouldShowPasswordInput(ShareLinkInfo? info) {
-    if (info == null) return _error != null;
-    return info.isPrivate && !info.unlocked;
+  /// 判断错误是否为「分享链接过期」类的服务端错误。
+  bool _isExpiredError(Object? error) {
+    if (error is ShareException) {
+      if (error.code == 404) return true;
+      final msg = error.message.trim().toLowerCase();
+      if (msg == 'share link expired') return true;
+      if (msg.contains('share link expired')) return true;
+    }
+    return false;
   }
 
-  Widget _buildContent(BuildContext context) {
-    final info = _info;
+  /// 判断错误是否为「用户组无权打包/下载」(40007)。
+  bool _isGroupForbidden(Object? error) {
+    if (error is ShareException && error.code == 40007) return true;
+    final msg = error?.toString().toLowerCase() ?? '';
+    return msg.contains('group not allowed');
+  }
 
+  Widget _buildBody() {
+    final info = _info;
     if (_loadingInfo && info == null) {
       return const Padding(
         padding: EdgeInsets.only(top: 80),
         child: Center(child: CircularProgressIndicator()),
       );
     }
-
     if (info == null) {
+      if (_isExpiredError(_error)) {
+        return const _EmptyState(
+          icon: LucideIcons.clock,
+          title: '分享已过期',
+          subtitle: '这个分享链接已经失效或不存在。',
+        );
+      }
       return _EmptyState(
         icon: LucideIcons.link,
         title: '无法打开分享',
         subtitle: '请检查链接是否正确，或输入分享密码后重试。',
         actionText: '浏览器打开',
-        onAction: _openExternal,
+        onAction: _openInBrowser,
       );
     }
-
     if (info.expired) {
       return const _EmptyState(
         icon: LucideIcons.clock,
@@ -1140,28 +669,25 @@ class _ShareLinkPageState extends State<ShareLinkPage> {
         subtitle: '这个分享链接已经失效。',
       );
     }
-
-    if (info.isPrivate && !info.unlocked) {
+    if (info.passwordProtected == true && !info.unlocked) {
       return const _EmptyState(
         icon: LucideIcons.lock,
         title: '需要分享密码',
         subtitle: '输入正确的分享密码后即可查看文件。',
       );
     }
-
     if (info.isFile) {
-      return _buildSingleFileCard(context, info);
+      return _buildSingleFileCard(info);
     }
-
-    return _buildFolderList(context, info);
+    return _buildFolderList(info);
   }
 
-  Widget _buildSingleFileCard(BuildContext context, ShareLinkInfo info) {
-    final file = _singleFile ?? ShareLinkService.instance.fileFromShareInfo(info);
-    final sourceUri = (info.sourceUri?.trim().isNotEmpty == true)
-        ? info.sourceUri
-        : (file.path.trim().isNotEmpty ? file.path : null);
-    final primaryEntity = file.primaryEntity;
+  Widget _buildSingleFileCard(ShareModel info) {
+    final theme = Theme.of(context);
+    final sizeText = info.size != null && info.size! > 0
+        ? _formatSize(info.size!)
+        : null;
+    final iconData = _ShareFileTile._iconForFile(info.name);
 
     return Card(
       elevation: 0,
@@ -1173,52 +699,53 @@ class _ShareLinkPageState extends State<ShareLinkPage> {
           children: [
             Row(
               children: [
-                const Icon(LucideIcons.file, size: 34),
+                Container(
+                  width: 50,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primaryContainer.withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(iconData, size: 26, color: theme.colorScheme.primary),
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        info.name,
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w900,
-                            ),
+                      _ScrollableFileName(
+                        name: info.name,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w900,
+                        ),
+                        onTap: () => _showInfoDetailDialog(info),
                       ),
-                      ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        '${file.size > 0 ? _ShareFileTile.formatSize(file.size) : '分享文件'}${file.updatedAt == null ? '' : ' · ${_formatDate(file.updatedAt!)}'}',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Theme.of(context).hintColor,
-                            ),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: [
+                          if (sizeText != null)
+                            _MetaChip(icon: Icons.sd_storage_outlined, text: sizeText),
+                          _MetaChip(
+                            icon: LucideIcons.calendar,
+                            text: _formatDate(info.createdAt),
+                          ),
+                          _MetaChip(
+                            icon: LucideIcons.eye,
+                            text: '${info.visited}',
+                          ),
+                        ],
                       ),
-                    ],
                     ],
                   ),
                 ),
               ],
             ),
-            if (_loadingFiles) ...[
-              const SizedBox(height: 14),
-              const LinearProgressIndicator(),
-            ],
-            if (_fileError != null) ...[
-              const SizedBox(height: 14),
-              _ErrorBox(
-                text: '文件详情读取失败，仍可尝试下载或转存：$_fileError',
-                actionText: sourceUri == null ? null : '重试',
-                onAction: sourceUri == null ? null : () => _loadSingleFile(sourceUri),
-              ),
-            ],
             const SizedBox(height: 18),
             _buildActionButtons(
-              uri: sourceUri,
               name: info.name,
-              fileSize: file.size,
-              entity: primaryEntity,
+              fileSize: info.size ?? 0,
               archive: false,
             ),
           ],
@@ -1227,64 +754,11 @@ class _ShareLinkPageState extends State<ShareLinkPage> {
     );
   }
 
-  Widget _buildActionButtons({
-    required String? uri,
-    required String name,
-    required int fileSize,
-    String? entity,
-    bool archive = false,
-  }) {
-    return Row(
-      children: [
-        Expanded(
-          child: FilledButton.tonalIcon(
-            onPressed: uri == null || uri.isEmpty || _saving || !_isSameOrigin
-                ? null
-                : () => _saveSharedUri(uri, name: name),
-            icon: _saving
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.drive_folder_upload_outlined, size: 18),
-            label: const Text('转存'),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: FilledButton.icon(
-            onPressed: uri == null || uri.isEmpty || _openingDownload
-                ? null
-                : () => _openDownloadUrl(
-                      uri,
-                      fileName: name,
-                      fileSize: fileSize,
-                      entity: entity,
-                      archive: archive,
-                    ),
-            icon: _openingDownload
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(LucideIcons.download, size: 18),
-            label: const Text('下载'),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildFolderList(BuildContext context, ShareLinkInfo info) {
+  Widget _buildFolderList(ShareModel info) {
     final theme = Theme.of(context);
-    final sourceUri = _currentUri ?? info.sourceUri;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (_breadcrumbs.isNotEmpty) _buildBreadcrumbs(context),
         Row(
           children: [
             Expanded(
@@ -1298,12 +772,17 @@ class _ShareLinkPageState extends State<ShareLinkPage> {
           ],
         ),
         const SizedBox(height: 10),
+        // 目录可整体打包下载
         _buildActionButtons(
-          uri: sourceUri,
           name: info.name,
-          fileSize: 0,
+          fileSize: info.size ?? 0,
           archive: true,
+          candidateUri: _crumbs.isNotEmpty ? _crumbs.last.uri : null,
         ),
+        if (_crumbs.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _buildCrumbs(),
+        ],
         const SizedBox(height: 12),
         if (_loadingFiles)
           const Padding(
@@ -1314,7 +793,7 @@ class _ShareLinkPageState extends State<ShareLinkPage> {
           _ErrorBox(
             text: '文件列表读取失败：$_fileError',
             actionText: '重试',
-            onAction: sourceUri == null ? null : () => _loadFolder(sourceUri),
+            onAction: _currentUri == null ? null : () => _loadFolder(_currentUri!),
           )
         else if (_files.isEmpty)
           const _EmptyState(
@@ -1323,24 +802,96 @@ class _ShareLinkPageState extends State<ShareLinkPage> {
             subtitle: '这个分享目录下没有文件。',
           )
         else
-          ..._files.map((file) => _ShareFileTile(
-                file: file,
-                onTap: file.isFolder ? () => _enterFolder(file) : null,
-                onDownload: file.isFile
-                    ? () => _openDownloadUrl(
-                          file.path,
-                          fileName: file.name,
-                          fileSize: file.size,
-                          entity: file.primaryEntity,
-                        )
-                    : null,
-                onSave: _isSameOrigin ? () => _saveSharedUri(file.path, name: file.name) : null,
-              )),
+          ..._files.map(
+            (file) => _ShareFileTile(
+              file: file,
+              onTap: file.isFolder ? () => _enterFolder(file) : null,
+              onDownload: file.isFile
+                  ? () => _download(
+                        fileName: file.name,
+                        fileSize: file.size,
+                        candidateUri: file.path.isNotEmpty ? file.path : null,
+                      )
+                  : null,
+              // 转存按钮：同源直接转，异源也显示但点了走异源确认流程
+              onSave: () => _saveToCloud(
+                name: file.name,
+                candidateUri: file.path.isNotEmpty ? file.path : null,
+                isFolder: file.isFolder,
+              ),
+              showCrossOriginHint: !_context.isSameOrigin,
+            ),
+          ),
       ],
     );
   }
 
-  Widget _buildBreadcrumbs(BuildContext context) {
+  Widget _buildActionButtons({
+    required String name,
+    required int fileSize,
+    String? candidateUri,
+    bool archive = false,
+  }) {
+    final saveBtn = FilledButton.tonalIcon(
+      onPressed: _busySave
+          ? null
+          : () => _saveToCloud(
+                name: name,
+                candidateUri: candidateUri,
+                isFolder: archive,
+              ),
+      icon: _busySave
+          ? const SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.drive_folder_upload_outlined, size: 16),
+      label: const Text('转存'),
+    );
+    final downloadBtn = FilledButton.icon(
+      onPressed: _busyDownload
+          ? null
+          : () => _download(
+                fileName: name,
+                fileSize: fileSize,
+                candidateUri: candidateUri,
+                archive: archive,
+              ),
+      icon: _busyDownload
+          ? const SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(LucideIcons.download, size: 16),
+      label: const Text('下载'),
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final narrow = constraints.maxWidth < 360;
+        if (narrow) {
+          // 窄屏：一左一右，两端对齐
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [saveBtn, downloadBtn],
+          );
+        }
+        // 宽屏：内容宽度 + 整体靠右
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            saveBtn,
+            const SizedBox(width: 10),
+            downloadBtn,
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildCrumbs() {
     final theme = Theme.of(context);
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -1352,14 +903,14 @@ class _ShareLinkPageState extends State<ShareLinkPage> {
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: Row(
-          children: List.generate(_breadcrumbs.length, (index) {
-            final item = _breadcrumbs[index];
-            final isLast = index == _breadcrumbs.length - 1;
+          children: List.generate(_crumbs.length, (index) {
+            final item = _crumbs[index];
+            final isLast = index == _crumbs.length - 1;
             return Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 InkWell(
-                  onTap: isLast ? null : () => _jumpToBreadcrumb(index),
+                  onTap: isLast ? null : () => _jumpCrumb(index),
                   borderRadius: BorderRadius.circular(999),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
@@ -1382,17 +933,51 @@ class _ShareLinkPageState extends State<ShareLinkPage> {
     );
   }
 
+  void _showInfoDetailDialog(ShareModel info) {
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.45),
+      builder: (ctx) => _ShareInfoDetailDialog(
+        info: info,
+        context_: _context,
+        candidateUrl: widget.candidate.url,
+      ),
+    );
+  }
+
   static String _formatDate(DateTime value) {
     final local = value.toLocal();
     return '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')}';
   }
+
+  /// 友好的过期提示：今天前 → "已过期"；今天后 → "N 天后过期" 或具体日期
+  static String _expireChipText(DateTime value) {
+    final now = DateTime.now();
+    final diff = value.toLocal().difference(now);
+    if (diff.isNegative) return '已过期';
+    if (diff.inDays <= 0) return '今天过期';
+    if (diff.inDays <= 30) return '${diff.inDays} 天后过期';
+    return '${_formatDate(value)} 过期';
+  }
+
+  static String _formatSize(int bytes) {
+    if (bytes <= 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    var size = bytes.toDouble();
+    var unitIndex = 0;
+    while (size >= 1024 && unitIndex < units.length - 1) {
+      size /= 1024;
+      unitIndex++;
+    }
+    final text = unitIndex == 0 ? size.toStringAsFixed(0) : size.toStringAsFixed(1);
+    return '$text ${units[unitIndex]}';
+  }
 }
 
-class _ShareBreadcrumb {
+class _Crumb {
   final String title;
   final String uri;
-
-  const _ShareBreadcrumb({required this.title, required this.uri});
+  const _Crumb({required this.title, required this.uri});
 }
 
 class _ShareFileTile extends StatelessWidget {
@@ -1400,12 +985,14 @@ class _ShareFileTile extends StatelessWidget {
   final VoidCallback? onTap;
   final VoidCallback? onDownload;
   final VoidCallback? onSave;
+  final bool showCrossOriginHint;
 
   const _ShareFileTile({
     required this.file,
     this.onTap,
     this.onDownload,
     this.onSave,
+    this.showCrossOriginHint = false,
   });
 
   @override
@@ -1444,9 +1031,7 @@ class _ShareFileTile extends StatelessWidget {
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 4),
           child: Text(
-            file.isFolder
-                ? '文件夹'
-                : '${formatSize(file.size)}${file.updatedAt == null ? '' : ' · ${_formatDate(file.updatedAt!)}'}',
+            file.isFolder ? '文件夹' : _ShareLinkPageState._formatSize(file.size),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
@@ -1456,16 +1041,18 @@ class _ShareFileTile extends StatelessWidget {
             : Wrap(
                 spacing: 2,
                 children: [
-                  IconButton(
-                    tooltip: '转存',
-                    icon: const Icon(Icons.drive_folder_upload_outlined),
-                    onPressed: onSave,
-                  ),
-                  IconButton(
-                    tooltip: '下载',
-                    icon: const Icon(LucideIcons.download),
-                    onPressed: onDownload,
-                  ),
+                  if (onSave != null)
+                    IconButton(
+                      tooltip: showCrossOriginHint ? '通过离线下载转存' : '转存',
+                      icon: const Icon(Icons.drive_folder_upload_outlined),
+                      onPressed: onSave,
+                    ),
+                  if (onDownload != null)
+                    IconButton(
+                      tooltip: '下载',
+                      icon: const Icon(LucideIcons.download),
+                      onPressed: onDownload,
+                    ),
                 ],
               ),
       ),
@@ -1491,39 +1078,17 @@ class _ShareFileTile extends StatelessWidget {
     }
     return LucideIcons.file;
   }
-
-  static String formatSize(int bytes) {
-    if (bytes <= 0) return '0 B';
-    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-    var size = bytes.toDouble();
-    var unitIndex = 0;
-    while (size >= 1024 && unitIndex < units.length - 1) {
-      size /= 1024;
-      unitIndex++;
-    }
-    final text = unitIndex == 0 ? size.toStringAsFixed(0) : size.toStringAsFixed(1);
-    return '$text ${units[unitIndex]}';
-  }
-
-  static String _formatDate(DateTime value) {
-    final local = value.toLocal();
-    return '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')}';
-  }
 }
 
 class _MetaChip extends StatelessWidget {
   final IconData icon;
   final String text;
 
-  const _MetaChip({
-    required this.icon,
-    required this.text,
-  });
+  const _MetaChip({required this.icon, required this.text});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
@@ -1558,11 +1123,7 @@ class _StatusBadge extends StatelessWidget {
       ),
       child: Text(
         text,
-        style: TextStyle(
-          color: color,
-          fontWeight: FontWeight.w800,
-          fontSize: 12,
-        ),
+        style: TextStyle(color: color, fontWeight: FontWeight.w800, fontSize: 12),
       ),
     );
   }
@@ -1573,16 +1134,11 @@ class _ErrorBox extends StatelessWidget {
   final String? actionText;
   final VoidCallback? onAction;
 
-  const _ErrorBox({
-    required this.text,
-    this.actionText,
-    this.onAction,
-  });
+  const _ErrorBox({required this.text, this.actionText, this.onAction});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -1592,18 +1148,12 @@ class _ErrorBox extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            text,
-            style: TextStyle(color: theme.colorScheme.onErrorContainer),
-          ),
+          Text(text, style: TextStyle(color: theme.colorScheme.onErrorContainer)),
           if (actionText != null && onAction != null) ...[
             const SizedBox(height: 8),
             Align(
               alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: onAction,
-                child: Text(actionText!),
-              ),
+              child: TextButton(onPressed: onAction, child: Text(actionText!)),
             ),
           ],
         ],
@@ -1630,7 +1180,6 @@ class _EmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 56),
       child: Column(
@@ -1638,27 +1187,495 @@ class _EmptyState extends StatelessWidget {
         children: [
           Icon(icon, size: 46, color: theme.hintColor),
           const SizedBox(height: 12),
-          Text(
-            title,
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w800,
-            ),
-          ),
+          Text(title, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
           const SizedBox(height: 6),
           Text(
             subtitle,
             textAlign: TextAlign.center,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.hintColor,
-            ),
+            style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor),
           ),
           if (actionText != null && onAction != null) ...[
             const SizedBox(height: 14),
-            OutlinedButton(
-              onPressed: onAction,
-              child: Text(actionText!),
-            ),
+            OutlinedButton(onPressed: onAction, child: Text(actionText!)),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+/// 可横向滚动的文件名：长文件名不换行，鼠标滚轮或手势拖动查看；点击触发回调。
+class _ScrollableFileName extends StatefulWidget {
+  final String name;
+  final TextStyle? style;
+  final VoidCallback? onTap;
+
+  const _ScrollableFileName({
+    required this.name,
+    this.style,
+    this.onTap,
+  });
+
+  @override
+  State<_ScrollableFileName> createState() => _ScrollableFileNameState();
+}
+
+class _ScrollableFileNameState extends State<_ScrollableFileName> {
+  final ScrollController _controller = ScrollController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onPointerSignal(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent) return;
+    if (!_controller.hasClients) return;
+    final delta = event.scrollDelta.dy != 0
+        ? event.scrollDelta.dy
+        : event.scrollDelta.dx;
+    final target = (_controller.offset + delta).clamp(
+      _controller.position.minScrollExtent,
+      _controller.position.maxScrollExtent,
+    );
+    _controller.jumpTo(target);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: widget.onTap == null ? MouseCursor.defer : SystemMouseCursors.click,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onTap,
+        child: Listener(
+          onPointerSignal: _onPointerSignal,
+          child: SingleChildScrollView(
+            controller: _controller,
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            child: Text(
+              widget.name,
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.visible,
+              style: widget.style,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 磨砂玻璃风格的分享详情对话框。点击文件名/info 行后展开，展示所有接口字段。
+class _ShareInfoDetailDialog extends StatelessWidget {
+  final ShareModel info;
+  // 用尾部下划线避免与 BuildContext 同名
+  final ShareContext context_;
+  final String candidateUrl;
+
+  const _ShareInfoDetailDialog({
+    required this.info,
+    required this.context_,
+    required this.candidateUrl,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final size = MediaQuery.of(context).size;
+    final maxWidth = (size.width - 10).clamp(0.0, 520.0);
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: maxWidth, maxHeight: size.height * 0.8),
+          child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+            child: Container(
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surface.withValues(alpha: 0.78),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(
+                  color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
+                ),
+              ),
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        info.isFolder ? LucideIcons.folder : LucideIcons.fileText,
+                        size: 22,
+                        color: theme.colorScheme.primary,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '分享详情',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: '关闭',
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.of(context).pop(),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Flexible(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: _buildRows(context, theme),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildRows(BuildContext context, ThemeData theme) {
+    final rows = <Widget>[
+      _DetailRow(label: '名称', value: info.name, selectable: true),
+      _DetailRow(label: '类型', value: info.isFolder ? '文件夹' : '文件'),
+      _DetailRow(label: '分享 ID', value: info.id, selectable: true, mono: true),
+      _DetailRow(
+        label: '大小',
+        value: info.size != null && info.size! > 0
+            ? '${_ShareLinkPageState._formatSize(info.size!)} (${info.size} 字节)'
+            : '—',
+      ),
+      _DetailRow(label: '访问次数', value: '${info.visited}'),
+      if (info.downloaded != null)
+        _DetailRow(label: '下载次数', value: '${info.downloaded}'),
+      if (info.price != null && info.price! > 0)
+        _DetailRow(label: '价格', value: '${info.price}'),
+      _DetailRow(label: '创建时间', value: _formatDateTime(info.createdAt)),
+      _DetailRow(
+        label: '过期时间',
+        value: info.expires == null ? '永久有效' : _formatDateTime(info.expires!),
+      ),
+      _DetailRow(
+        label: '状态',
+        value: info.expired
+            ? '已过期'
+            : (info.passwordProtected == true && !info.unlocked ? '需密码' : '可用'),
+        valueColor: info.expired
+            ? theme.colorScheme.error
+            : (info.passwordProtected == true && !info.unlocked
+                ? theme.colorScheme.tertiary
+                : theme.colorScheme.primary),
+      ),
+      _DetailRow(label: '密码保护', value: (info.passwordProtected ?? false) ? '是' : '否'),
+      _DetailRow(label: '已解锁', value: info.unlocked ? '是' : '否'),
+      if (info.password != null && info.password!.isNotEmpty)
+        _DetailRow(label: '分享密码', value: info.password!, selectable: true, mono: true),
+      if (info.isPrivate != null)
+        _DetailRow(label: '私密分享', value: info.isPrivate! ? '是' : '否'),
+      if (info.shareView != null)
+        _DetailRow(label: '允许预览', value: info.shareView! ? '是' : '否'),
+      if (info.showReadme != null)
+        _DetailRow(label: '显示 README', value: info.showReadme! ? '是' : '否'),
+      _DetailRow(
+        label: '同源',
+        value: context_.isSameOrigin ? '是（同站点分享）' : '否（异源分享）',
+      ),
+      _DetailRow(label: '分享链接', value: candidateUrl, selectable: true, mono: true),
+      if (info.url.isNotEmpty && info.url != candidateUrl)
+        _DetailRow(label: '服务端 URL', value: info.url, selectable: true, mono: true),
+      if (info.sourceUri != null && info.sourceUri!.isNotEmpty)
+        _DetailRow(label: '源 URI', value: info.sourceUri!, selectable: true, mono: true),
+      if (info.owner != null) ...[
+        const SizedBox(height: 4),
+        _SectionTitle(text: '分享者'),
+        _DetailRow(label: '昵称', value: info.owner!.nickname),
+        _DetailRow(label: '用户 ID', value: info.owner!.id, selectable: true, mono: true),
+        if ((info.owner!.email ?? '').isNotEmpty)
+          _DetailRow(label: '邮箱', value: info.owner!.email!, selectable: true),
+        _DetailRow(label: '注册时间', value: _formatDateTime(info.owner!.createdAt)),
+        if (info.owner!.group != null)
+          _DetailRow(label: '用户组', value: info.owner!.group!.name),
+      ],
+    ];
+    return rows;
+  }
+
+  static String _formatDateTime(DateTime value) {
+    final l = value.toLocal();
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${l.year}-${two(l.month)}-${two(l.day)} ${two(l.hour)}:${two(l.minute)}:${two(l.second)}';
+  }
+}
+
+class _SectionTitle extends StatelessWidget {
+  final String text;
+  const _SectionTitle({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 6, bottom: 6),
+      child: Text(
+        text,
+        style: theme.textTheme.labelLarge?.copyWith(
+          color: theme.colorScheme.primary,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
+class _SharePasswordDialog extends StatefulWidget {
+  final String initialPassword;
+  final bool retry;
+
+  const _SharePasswordDialog({
+    required this.initialPassword,
+    this.retry = false,
+  });
+
+  @override
+  State<_SharePasswordDialog> createState() => _SharePasswordDialogState();
+}
+
+class _SharePasswordDialogState extends State<_SharePasswordDialog> {
+  late final TextEditingController _controller;
+  final FocusNode _focusNode = FocusNode();
+  bool _obscure = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialPassword);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focusNode.requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final value = _controller.text.trim();
+    if (value.isEmpty) return;
+    Navigator.of(context).pop(value);
+  }
+
+  void _cancel() {
+    Navigator.of(context).pop(null);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final size = MediaQuery.of(context).size;
+    final maxWidth = (size.width - 10).clamp(0.0, 420.0);
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 5),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: maxWidth),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surface.withValues(alpha: 0.78),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(
+                    color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
+                  ),
+                ),
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          LucideIcons.lock,
+                          size: 22,
+                          color: theme.colorScheme.primary,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            '请输入分享密码',
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: '取消',
+                          icon: const Icon(Icons.close),
+                          onPressed: _cancel,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      widget.retry
+                          ? '密码错误，请重新输入'
+                          : '该分享受密码保护，输入正确密码后才能查看',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: widget.retry
+                            ? theme.colorScheme.error
+                            : theme.hintColor,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: _controller,
+                      focusNode: _focusNode,
+                      obscureText: _obscure,
+                      autofocus: true,
+                      onSubmitted: (_) => _submit(),
+                      decoration: InputDecoration(
+                        hintText: '分享密码',
+                        prefixIcon: const Icon(LucideIcons.key, size: 18),
+                        suffixIcon: IconButton(
+                          tooltip: _obscure ? '显示密码' : '隐藏密码',
+                          icon: Icon(
+                            _obscure ? LucideIcons.eye : LucideIcons.eyeOff,
+                            size: 18,
+                          ),
+                          onPressed: () =>
+                              setState(() => _obscure = !_obscure),
+                        ),
+                        filled: true,
+                        fillColor: theme.colorScheme.surfaceContainerHighest
+                            .withValues(alpha: 0.6),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: _cancel,
+                          child: const Text('取消'),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton.icon(
+                          onPressed: _submit,
+                          icon: const Icon(LucideIcons.check, size: 16),
+                          label: const Text('确认'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DetailRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final bool selectable;
+  final bool mono;
+  final Color? valueColor;
+
+  const _DetailRow({
+    required this.label,
+    required this.value,
+    this.selectable = false,
+    this.mono = false,
+    this.valueColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final valueStyle = theme.textTheme.bodyMedium?.copyWith(
+      color: valueColor ?? theme.colorScheme.onSurface,
+      fontFamily: mono ? 'monospace' : null,
+      fontWeight: FontWeight.w500,
+    );
+    final valueWidget = selectable
+        ? SelectableText(value, style: valueStyle)
+        : Text(value, style: valueStyle);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 88,
+            child: Text(
+              label,
+              style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: valueWidget),
+                if (selectable)
+                  InkWell(
+                    onTap: () async {
+                      await Clipboard.setData(ClipboardData(text: value));
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('已复制'),
+                          duration: Duration(seconds: 1),
+                        ),
+                      );
+                    },
+                    borderRadius: BorderRadius.circular(8),
+                    child: Padding(
+                      padding: const EdgeInsets.all(4),
+                      child: Icon(
+                        LucideIcons.copy,
+                        size: 14,
+                        color: theme.hintColor,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ],
       ),
     );

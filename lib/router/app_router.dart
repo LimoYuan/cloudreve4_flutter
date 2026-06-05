@@ -102,9 +102,16 @@ class AppRouter {
         );
 
       case RouteNames.remoteDownload:
+        final args = settings.arguments;
+        String? prefillUrl;
+        if (args is Map<String, dynamic>) {
+          prefillUrl = args['prefillUrl'] as String?;
+        } else if (args is String) {
+          prefillUrl = args;
+        }
         return MaterialPageRoute(
           settings: settings,
-          builder: (context) => const RemoteDownloadPage(),
+          builder: (context) => RemoteDownloadPage(prefillUrl: prefillUrl),
         );
 
       case RouteNames.settings:

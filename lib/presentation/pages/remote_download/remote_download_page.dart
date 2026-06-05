@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:ui';
+import 'package:cloudreve4_flutter/core/exceptions/app_exception.dart';
 import 'package:cloudreve4_flutter/core/utils/app_logger.dart';
 import 'package:cloudreve4_flutter/presentation/widgets/folder_picker.dart';
 import 'package:flutter/material.dart';
@@ -25,7 +26,11 @@ class _StatusColors {
 
 /// 离线下载页面
 class RemoteDownloadPage extends StatefulWidget {
-  const RemoteDownloadPage({super.key});
+  /// 进入页面时若提供则自动弹出新建对话框，并填充到下载链接输入框。
+  /// 主要用于异源分享场景：分享页跳转过来时自动准备好下载链接。
+  final String? prefillUrl;
+
+  const RemoteDownloadPage({super.key, this.prefillUrl});
 
   @override
   State<RemoteDownloadPage> createState() => _RemoteDownloadPageState();
@@ -52,7 +57,14 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     _tabController.addListener(_onTabChanged);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadTasks());
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _loadTasks();
+      if (!mounted) return;
+      final prefill = widget.prefillUrl?.trim();
+      if (prefill != null && prefill.isNotEmpty) {
+        _showCreateDialog(context, prefillUrl: prefill);
+      }
+    });
   }
 
   @override
@@ -1267,11 +1279,11 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
   // ─── 对话框 ───
 
   /// 创建任务对话框
-  Future<void> _showCreateDialog(BuildContext context) async {
+  Future<void> _showCreateDialog(BuildContext context, {String? prefillUrl}) async {
     final isDesktop = MediaQuery.of(context).size.width > _desktopBreakpoint;
     String selectedDst = '/';
     bool folderSelected = false;
-    final srcController = TextEditingController();
+    final srcController = TextEditingController(text: prefillUrl ?? '');
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -1412,7 +1424,11 @@ class _RemoteDownloadPageState extends State<RemoteDownloadPage>
     } catch (e) {
       if (!mounted) return;
       AppLogger.e('创建失败: $e');
-      ToastHelper.failure('创建失败: $e');
+      if (e is AppException && e.code == 40007) {
+        ToastHelper.failure('所在用户组不允许使用离线下载，请联系管理员开通');
+      } else {
+        ToastHelper.failure('创建失败: $e');
+      }
     }
   }
 

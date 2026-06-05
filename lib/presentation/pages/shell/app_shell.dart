@@ -428,10 +428,13 @@ class _AppShellState extends State<AppShell> with GestureHandlerMixin, TickerPro
       body: Row(
         children: [
           _DesktopSidebarIntro(
-            child: NavigationRail(
-            selectedIndex: navProvider.currentIndex,
-            onDestinationSelected: _handleTabSelected,
-            leading: Padding(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return NavigationRail(
+              selectedIndex: navProvider.currentIndex,
+              onDestinationSelected: _handleTabSelected,
+              labelType: NavigationRailLabelType.none,
+              leading: Padding(
               padding: const EdgeInsets.symmetric(vertical: 16),
               child: GestureDetector(
                 onTap: () => navProvider.setIndex(_pages(_cachedShowSyncTab).length - 1),
@@ -524,52 +527,59 @@ class _AppShellState extends State<AppShell> with GestureHandlerMixin, TickerPro
               ),
             ],
             trailing: Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  const Divider(indent: 12, endIndent: 12),
-                  _buildSecondaryNavItem(
-                    context,
-                    icon: LucideIcons.share2,
-                    label: '我的分享',
-                    onTap: () => Navigator.of(context).pushNamed(RouteNames.share),
-                  ),
-                  _buildSecondaryNavItem(
-                    context,
-                    icon: LucideIcons.cloud,
-                    label: 'WebDAV',
-                    onTap: () => Navigator.of(context).pushNamed(RouteNames.webdav),
-                  ),
-                  _buildSecondaryNavItem(
-                    context,
-                    icon: LucideIcons.download,
-                    label: '离线下载',
-                    onTap: () => Navigator.of(context).pushNamed(RouteNames.remoteDownload),
-                  ),
-                  _buildSecondaryNavItem(
-                    context,
-                    icon: LucideIcons.trash2,
-                    label: '回收站',
-                    onTap: () => Navigator.of(context).pushNamed(RouteNames.recycleBin),
-                  ),
-                  const Divider(indent: 12, endIndent: 12),
-                  _buildSecondaryNavItem(
-                    context,
-                    icon: LucideIcons.settings,
-                    label: '设置',
-                    onTap: () => Navigator.of(context).pushNamed(RouteNames.settings),
-                  ),
-                  _buildSecondaryNavItem(
-                    context,
-                    icon: LucideIcons.logOut,
-                    label: '退出登录',
-                    onTap: () => _handleLogout(context),
-                  ),
-                  const SizedBox(height: 12),
-                ],
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final items = [
+                    const Divider(indent: 12, endIndent: 12),
+                    _buildSecondaryNavItem(
+                      context,
+                      icon: LucideIcons.share2,
+                      label: '我的分享',
+                      onTap: () => Navigator.of(context).pushNamed(RouteNames.share),
+                    ),
+                    _buildSecondaryNavItem(
+                      context,
+                      icon: LucideIcons.cloud,
+                      label: 'WebDAV',
+                      onTap: () => Navigator.of(context).pushNamed(RouteNames.webdav),
+                    ),
+                    _buildSecondaryNavItem(
+                      context,
+                      icon: LucideIcons.download,
+                      label: '离线下载',
+                      onTap: () => Navigator.of(context).pushNamed(RouteNames.remoteDownload),
+                    ),
+                    _buildSecondaryNavItem(
+                      context,
+                      icon: LucideIcons.trash2,
+                      label: '回收站',
+                      onTap: () => Navigator.of(context).pushNamed(RouteNames.recycleBin),
+                    ),
+                    const Divider(indent: 12, endIndent: 12),
+                    _buildSecondaryNavItem(
+                      context,
+                      icon: LucideIcons.settings,
+                      label: '设置',
+                      onTap: () => Navigator.of(context).pushNamed(RouteNames.settings),
+                    ),
+                    _buildSecondaryNavItem(
+                      context,
+                      icon: LucideIcons.logOut,
+                      label: '退出登录',
+                      onTap: () => _handleLogout(context),
+                    ),
+                    const SizedBox(height: 12),
+                  ];
+                  return Column(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: items,
+                  );
+                },
               ),
             ),
-          ),
+              );
+              },
+            ),
           ),
           const VerticalDivider(thickness: 1, width: 1),
           Expanded(

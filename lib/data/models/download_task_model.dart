@@ -1,20 +1,21 @@
 /// 下载状态
 enum DownloadStatus {
-  waiting,    // 等待中
+  waiting, // 等待中
   downloading, // 下载中
-  completed,   // 已完成
-  paused,      // 已暂停
-  failed,      // 失败
-  cancelled,    // 已取消
+  completed, // 已完成
+  paused, // 已暂停
+  failed, // 失败
+  cancelled, // 已取消
+  archiving, // 服务端打包中
 }
 
 /// 下载任务模型
 class DownloadTaskModel {
   final String id;
   final String fileName;
-  final String fileUri;       // cloudreve URI
-  final String? downloadUrl;   // 实际下载URL
-  final int fileSize;
+  final String fileUri; // cloudreve URI
+  final String? downloadUrl; // 实际下载URL
+  int fileSize;
   final String savePath;
   String? backgroundTaskId; // background_downloader 的 task ID（可变，用于重启后恢复映射）
   DownloadStatus status;
@@ -33,17 +34,35 @@ class DownloadTaskModel {
     if (value < 1024 * 1024) return '${(value / 1024).toStringAsFixed(1)} KB/s';
     return '${(value / (1024 * 1024)).toStringAsFixed(1)} MB/s';
   }
+
   String get progressText {
-    if (status == DownloadStatus.completed) {
+    if (status == DownloadStatus.completed && fileSize > 0) {
       return '100%';
+    }
+    if (fileSize <= 0) {
+      return downloadedBytes > 0
+          ? '${DownloadTaskModel.readableFileSize(downloadedBytes)} / 未知'
+          : '未知大小';
     }
     final percent = (progress * 100).clamp(0.0, 100.0).toStringAsFixed(1);
     return '$percent%';
   }
+
+  static String readableFileSize(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    if (bytes < 1024 * 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+  }
+
   String get statusText {
     switch (status) {
       case DownloadStatus.waiting:
         return waitingForWifi ? '等待WiFi' : '等待中';
+      case DownloadStatus.archiving:
+        return '服务端打包中';
       case DownloadStatus.downloading:
         return '下载中';
       case DownloadStatus.completed:

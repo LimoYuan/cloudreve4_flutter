@@ -23,18 +23,36 @@ class DownloadTasksTab extends StatelessWidget {
     return Consumer<DownloadManagerProvider>(
       builder: (context, downloadManager, _) {
         final allTasks = downloadManager.tasks;
-        final activeTasks = allTasks.where((t) =>
-            t.status == DownloadStatus.downloading || t.status == DownloadStatus.waiting || t.status == DownloadStatus.paused).toList();
-        final completedTasks = allTasks.where((t) => t.status == DownloadStatus.completed).toList();
-        final failedTasks = allTasks.where((t) =>
-            t.status == DownloadStatus.failed || t.status == DownloadStatus.cancelled).toList();
+        final activeTasks = allTasks
+            .where(
+              (t) =>
+                  t.status == DownloadStatus.archiving ||
+                  t.status == DownloadStatus.downloading ||
+                  t.status == DownloadStatus.waiting ||
+                  t.status == DownloadStatus.paused,
+            )
+            .toList();
+        final completedTasks = allTasks
+            .where((t) => t.status == DownloadStatus.completed)
+            .toList();
+        final failedTasks = allTasks
+            .where(
+              (t) =>
+                  t.status == DownloadStatus.failed ||
+                  t.status == DownloadStatus.cancelled,
+            )
+            .toList();
 
         if (allTasks.isEmpty) {
           return Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(LucideIcons.download, size: 48, color: theme.hintColor.withValues(alpha: 0.4)),
+                Icon(
+                  LucideIcons.download,
+                  size: 48,
+                  color: theme.hintColor.withValues(alpha: 0.4),
+                ),
                 const SizedBox(height: 16),
                 Text('暂无下载任务', style: TextStyle(color: theme.hintColor)),
               ],
@@ -82,31 +100,57 @@ class DownloadTasksTab extends StatelessWidget {
       children: [
         if (activeTasks.isNotEmpty) ...[
           _buildSectionHeader(context, '进行中', activeTasks.length),
-          ...activeTasks.map((task) => DownloadProgressItem(
-            task: task,
-            onPause: () => downloadManager.pauseDownload(task.id),
-            onResume: () => downloadManager.resumeDownload(task.id),
-            onCancel: () => downloadManager.cancelDownload(task.id),
-          )),
+          ...activeTasks.map(
+            (task) => DownloadProgressItem(
+              task: task,
+              onPause: () => downloadManager.pauseDownload(task.id),
+              onResume: () => downloadManager.resumeDownload(task.id),
+              onCancel: () => downloadManager.cancelDownload(task.id),
+            ),
+          ),
         ],
         if (failedTasks.isNotEmpty) ...[
-          _buildSectionHeader(context, '失败', failedTasks.length,
-              actionLabel: '清除失败',
-              onAction: () => _confirmClear(context, '失败', failedTasks.length, () => downloadManager.clearFailedTasks())),
-          ...failedTasks.map((task) => DownloadProgressItem(
-            task: task,
-            onRetry: () => downloadManager.retryDownload(task.id),
-            onDelete: () => _confirmDeleteDownloadTask(context, task, downloadManager),
-          )),
+          _buildSectionHeader(
+            context,
+            '失败',
+            failedTasks.length,
+            actionLabel: '清除失败',
+            onAction: () => _confirmClear(
+              context,
+              '失败',
+              failedTasks.length,
+              () => downloadManager.clearFailedTasks(),
+            ),
+          ),
+          ...failedTasks.map(
+            (task) => DownloadProgressItem(
+              task: task,
+              onRetry: () => downloadManager.retryDownload(task.id),
+              onDelete: () =>
+                  _confirmDeleteDownloadTask(context, task, downloadManager),
+            ),
+          ),
         ],
         if (completedTasks.isNotEmpty) ...[
-          _buildSectionHeader(context, '已完成', completedTasks.length,
-              actionLabel: '清除已完成',
-              onAction: () => _confirmClear(context, '已完成', completedTasks.length, () => downloadManager.clearCompletedTasks())),
-          ...completedTasks.map((task) => DownloadProgressItem(
-            task: task,
-            onDelete: () => _confirmDeleteDownloadTask(context, task, downloadManager),
-          )),
+          _buildSectionHeader(
+            context,
+            '已完成',
+            completedTasks.length,
+            actionLabel: '清除已完成',
+            onAction: () => _confirmClear(
+              context,
+              '已完成',
+              completedTasks.length,
+              () => downloadManager.clearCompletedTasks(),
+            ),
+          ),
+          ...completedTasks.map(
+            (task) => DownloadProgressItem(
+              task: task,
+              onDelete: () =>
+                  _confirmDeleteDownloadTask(context, task, downloadManager),
+            ),
+          ),
         ],
       ],
     );
@@ -132,49 +176,67 @@ class DownloadTasksTab extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       child: Column(
         children: [
-            if (failedTasks.isNotEmpty)
-              Align(
-                alignment: Alignment.centerRight,
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: TextButton.icon(
-                    icon: const Icon(LucideIcons.trash2, size: 14),
-                    label: const Text('清除失败', style: TextStyle(fontSize: 12)),
-                    onPressed: () => _confirmClear(context, '失败', failedTasks.length, () => downloadManager.clearFailedTasks()),
-                    style: TextButton.styleFrom(
-                      foregroundColor: colorScheme.error,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          if (failedTasks.isNotEmpty)
+            Align(
+              alignment: Alignment.centerRight,
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: TextButton.icon(
+                  icon: const Icon(LucideIcons.trash2, size: 14),
+                  label: const Text('清除失败', style: TextStyle(fontSize: 12)),
+                  onPressed: () => _confirmClear(
+                    context,
+                    '失败',
+                    failedTasks.length,
+                    () => downloadManager.clearFailedTasks(),
+                  ),
+                  style: TextButton.styleFrom(
+                    foregroundColor: colorScheme.error,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 4,
                     ),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
                 ),
               ),
-            if (completedTasks.isNotEmpty && failedTasks.isEmpty)
-              Align(
-                alignment: Alignment.centerRight,
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: TextButton.icon(
-                    icon: const Icon(LucideIcons.trash2, size: 14),
-                    label: const Text('清除已完成', style: TextStyle(fontSize: 12)),
-                    onPressed: () => _confirmClear(context, '已完成', completedTasks.length, () => downloadManager.clearCompletedTasks()),
-                    style: TextButton.styleFrom(
-                      foregroundColor: colorScheme.error,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          if (completedTasks.isNotEmpty && failedTasks.isEmpty)
+            Align(
+              alignment: Alignment.centerRight,
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: TextButton.icon(
+                  icon: const Icon(LucideIcons.trash2, size: 14),
+                  label: const Text('清除已完成', style: TextStyle(fontSize: 12)),
+                  onPressed: () => _confirmClear(
+                    context,
+                    '已完成',
+                    completedTasks.length,
+                    () => downloadManager.clearCompletedTasks(),
+                  ),
+                  style: TextButton.styleFrom(
+                    foregroundColor: colorScheme.error,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 4,
                     ),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
                 ),
               ),
-            SizedBox(
-              width: double.infinity,
-              child: Card(
-                margin: EdgeInsets.zero,
-                clipBehavior: Clip.antiAlias,
-                child: DataTable(
-                headingRowColor: WidgetStateProperty.all(colorScheme.surfaceContainerHighest),
+            ),
+          SizedBox(
+            width: double.infinity,
+            child: Card(
+              margin: EdgeInsets.zero,
+              clipBehavior: Clip.antiAlias,
+              child: DataTable(
+                headingRowColor: WidgetStateProperty.all(
+                  colorScheme.surfaceContainerHighest,
+                ),
                 columnSpacing: 24,
                 columns: const [
                   DataColumn(label: Text('名称')),
@@ -184,12 +246,17 @@ class DownloadTasksTab extends StatelessWidget {
                   DataColumn(label: Text('速度/完成时间')),
                   DataColumn(label: Text('操作')),
                 ],
-                rows: sortedTasks.map((task) => _buildDownloadDataRow(context, task, downloadManager)).toList(),
+                rows: sortedTasks
+                    .map(
+                      (task) =>
+                          _buildDownloadDataRow(context, task, downloadManager),
+                    )
+                    .toList(),
               ),
             ),
-            ),
-          ],
-        ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -200,9 +267,17 @@ class DownloadTasksTab extends StatelessWidget {
   ) {
     final colorScheme = Theme.of(context).colorScheme;
     final errorColor = colorScheme.error;
-    final statusColor = _getStatusColor(task.status, waitingForWifi: task.waitingForWifi);
-    final statusIcon = _getStatusIcon(task.status, waitingForWifi: task.waitingForWifi);
-    final isActive = task.status == DownloadStatus.downloading ||
+    final statusColor = _getStatusColor(
+      task.status,
+      waitingForWifi: task.waitingForWifi,
+    );
+    final statusIcon = _getStatusIcon(
+      task.status,
+      waitingForWifi: task.waitingForWifi,
+    );
+    final isActive =
+        task.status == DownloadStatus.archiving ||
+        task.status == DownloadStatus.downloading ||
         task.status == DownloadStatus.waiting ||
         task.status == DownloadStatus.paused;
 
@@ -249,14 +324,21 @@ class DownloadTasksTab extends StatelessWidget {
                     SizedBox(
                       width: 80,
                       child: LinearProgressIndicator(
-                        value: task.status == DownloadStatus.paused ? null : task.progress,
+                        value:
+                            task.status == DownloadStatus.paused ||
+                                task.status == DownloadStatus.archiving ||
+                                task.fileSize <= 0
+                            ? null
+                            : task.progress,
                         backgroundColor: colorScheme.surfaceContainerHighest,
-                        valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          colorScheme.primary,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      task.status == DownloadStatus.paused ? '已暂停' : task.progressText,
+                      _getProgressLabel(task),
                       style: const TextStyle(fontSize: 12),
                     ),
                   ],
@@ -269,7 +351,11 @@ class DownloadTasksTab extends StatelessWidget {
         // 大小
         DataCell(
           Text(
-            DownloadService.getReadableFileSize(task.fileSize),
+            task.fileSize > 0
+                ? DownloadService.getReadableFileSize(task.fileSize)
+                : task.downloadedBytes > 0
+                ? '${DownloadService.getReadableFileSize(task.downloadedBytes)} / 未知'
+                : '未知大小',
             style: const TextStyle(fontSize: 13),
           ),
         ),
@@ -277,13 +363,15 @@ class DownloadTasksTab extends StatelessWidget {
         DataCell(
           Text(
             task.status == DownloadStatus.completed
-                ? (task.completedAt != null ? _formatDateTime(task.completedAt!) : '-')
-                : (task.speedText.isNotEmpty ? task.speedText : '-'),
+                ? (task.completedAt != null
+                      ? _formatDateTime(task.completedAt!)
+                      : '-')
+                : (task.speed > 0 ? task.speedText : '-'),
             style: TextStyle(
               fontSize: 13,
               color: task.status == DownloadStatus.completed
                   ? null
-                  : (task.speedText.isNotEmpty ? colorScheme.primary : null),
+                  : (task.speed > 0 ? colorScheme.primary : null),
             ),
           ),
         ),
@@ -291,11 +379,24 @@ class DownloadTasksTab extends StatelessWidget {
         DataCell(
           Row(
             mainAxisSize: MainAxisSize.min,
-            children: _buildDesktopActionButtons(context, task, downloadManager, errorColor),
+            children: _buildDesktopActionButtons(
+              context,
+              task,
+              downloadManager,
+              errorColor,
+            ),
           ),
         ),
       ],
     );
+  }
+
+  String _getProgressLabel(DownloadTaskModel task) {
+    if (task.status == DownloadStatus.paused ||
+        task.status == DownloadStatus.archiving) {
+      return task.downloadedBytes > 0 ? task.progressText : task.statusText;
+    }
+    return task.progressText;
   }
 
   List<Widget> _buildDesktopActionButtons(
@@ -305,6 +406,7 @@ class DownloadTasksTab extends StatelessWidget {
     Color errorColor,
   ) {
     switch (task.status) {
+      case DownloadStatus.archiving:
       case DownloadStatus.waiting:
         return [
           IconButton(
@@ -315,11 +417,12 @@ class DownloadTasksTab extends StatelessWidget {
         ];
       case DownloadStatus.downloading:
         return [
-          IconButton(
-            icon: const Icon(Icons.pause, size: 18),
-            onPressed: () => downloadManager.pauseDownload(task.id),
-            tooltip: '暂停',
-          ),
+          if (task.fileSize > 0)
+            IconButton(
+              icon: const Icon(Icons.pause, size: 18),
+              onPressed: () => downloadManager.pauseDownload(task.id),
+              tooltip: '暂停',
+            ),
           IconButton(
             icon: Icon(Icons.cancel, size: 18, color: errorColor),
             onPressed: () => downloadManager.cancelDownload(task.id),
@@ -348,7 +451,8 @@ class DownloadTasksTab extends StatelessWidget {
           ),
           IconButton(
             icon: Icon(Icons.delete, size: 18, color: errorColor),
-            onPressed: () => _confirmDeleteDownloadTask(context, task, downloadManager),
+            onPressed: () =>
+                _confirmDeleteDownloadTask(context, task, downloadManager),
             tooltip: '删除',
           ),
         ];
@@ -368,7 +472,8 @@ class DownloadTasksTab extends StatelessWidget {
             ),
           IconButton(
             icon: Icon(Icons.delete_outline, size: 18, color: errorColor),
-            onPressed: () => _confirmDeleteDownloadTask(context, task, downloadManager),
+            onPressed: () =>
+                _confirmDeleteDownloadTask(context, task, downloadManager),
             tooltip: '删除',
           ),
         ];
@@ -377,10 +482,15 @@ class DownloadTasksTab extends StatelessWidget {
     }
   }
 
-  IconData _getStatusIcon(DownloadStatus status, {bool waitingForWifi = false}) {
+  IconData _getStatusIcon(
+    DownloadStatus status, {
+    bool waitingForWifi = false,
+  }) {
     switch (status) {
       case DownloadStatus.waiting:
         return waitingForWifi ? LucideIcons.wifi : LucideIcons.clock;
+      case DownloadStatus.archiving:
+        return LucideIcons.archive;
       case DownloadStatus.downloading:
         return LucideIcons.download;
       case DownloadStatus.completed:
@@ -397,6 +507,8 @@ class DownloadTasksTab extends StatelessWidget {
     switch (status) {
       case DownloadStatus.waiting:
         return waitingForWifi ? Colors.blue : Colors.grey;
+      case DownloadStatus.archiving:
+        return Colors.purple;
       case DownloadStatus.downloading:
         return Colors.blue;
       case DownloadStatus.completed:
@@ -495,7 +607,10 @@ class DownloadTasksTab extends StatelessWidget {
               onPressed: onAction,
               style: TextButton.styleFrom(
                 foregroundColor: theme.colorScheme.error,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 4,
+                ),
                 minimumSize: Size.zero,
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
@@ -505,7 +620,12 @@ class DownloadTasksTab extends StatelessWidget {
     );
   }
 
-  Future<void> _confirmClear(BuildContext context, String label, int count, VoidCallback onConfirm) async {
+  Future<void> _confirmClear(
+    BuildContext context,
+    String label,
+    int count,
+    VoidCallback onConfirm,
+  ) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -518,7 +638,9 @@ class DownloadTasksTab extends StatelessWidget {
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            style: FilledButton.styleFrom(backgroundColor: Theme.of(ctx).colorScheme.error),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
             child: const Text('清除'),
           ),
         ],
@@ -542,10 +664,19 @@ class DownloadTasksTab extends StatelessWidget {
           children: [
             const Text('确定要删除该任务吗？'),
             const SizedBox(height: 8),
-            Text(task.fileName, style: const TextStyle(fontWeight: FontWeight.w500)),
+            Text(
+              task.fileName,
+              style: const TextStyle(fontWeight: FontWeight.w500),
+            ),
             const SizedBox(height: 4),
-            Text('下载时间: ${_formatDateTime(task.createdAt)}', style: TextStyle(fontSize: 12, color: Theme.of(ctx).hintColor)),
-            Text('文件大小: ${date_utils.DateUtils.formatFileSize(task.fileSize)}', style: TextStyle(fontSize: 12, color: Theme.of(ctx).hintColor)),
+            Text(
+              '下载时间: ${_formatDateTime(task.createdAt)}',
+              style: TextStyle(fontSize: 12, color: Theme.of(ctx).hintColor),
+            ),
+            Text(
+              '文件大小: ${date_utils.DateUtils.formatFileSize(task.fileSize)}',
+              style: TextStyle(fontSize: 12, color: Theme.of(ctx).hintColor),
+            ),
           ],
         ),
         actions: [
@@ -555,7 +686,9 @@ class DownloadTasksTab extends StatelessWidget {
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            style: FilledButton.styleFrom(backgroundColor: Theme.of(ctx).colorScheme.error),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
             child: const Text('删除'),
           ),
         ],

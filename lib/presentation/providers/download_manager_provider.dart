@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import '../../core/constants/storage_keys.dart';
@@ -29,8 +30,9 @@ class DownloadManagerProvider extends ChangeNotifier {
   final Map<String, int> _resumeBaseBytes = {};
 
   /// 获取所有下载任务
-  List<DownloadTaskModel> get tasks => _tasks.values.toList()
-    ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+  List<DownloadTaskModel> get tasks =>
+      _tasks.values.toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
   /// 获取指定状态的任务
   List<DownloadTaskModel> getTasksByStatus(DownloadStatus status) {
@@ -38,15 +40,23 @@ class DownloadManagerProvider extends ChangeNotifier {
   }
 
   /// 下载中的任务数
-  int get downloadingCount =>
-      getTasksByStatus(DownloadStatus.downloading).length;
+  int get downloadingCount => tasks
+      .where(
+        (t) =>
+            t.status == DownloadStatus.archiving ||
+            t.status == DownloadStatus.downloading,
+      )
+      .length;
 
-  /// 活跃任务数（下载中 + 等待中 + 暂停）
+  /// 活跃任务数（打包中 + 下载中 + 等待中 + 暂停）
   int get activeTaskCount => tasks
-      .where((t) =>
-          t.status == DownloadStatus.downloading ||
-          t.status == DownloadStatus.waiting ||
-          t.status == DownloadStatus.paused)
+      .where(
+        (t) =>
+            t.status == DownloadStatus.archiving ||
+            t.status == DownloadStatus.downloading ||
+            t.status == DownloadStatus.waiting ||
+            t.status == DownloadStatus.paused,
+      )
       .length;
 
   /// WiFi-only 设置
@@ -61,7 +71,7 @@ class DownloadManagerProvider extends ChangeNotifier {
     // 加载 WiFi-only 设置
     _isWifiOnlyEnabled =
         await StorageService.instance.getBool(StorageKeys.downloadWifiOnly) ??
-            false;
+        false;
 
     // 从本地存储加载已保存的下载任务
     await _loadTasks();
@@ -73,8 +83,7 @@ class DownloadManagerProvider extends ChangeNotifier {
   /// 更新 WiFi-only 设置，并同步等待中的任务
   Future<void> setWifiOnlyEnabled(bool value) async {
     _isWifiOnlyEnabled = value;
-    await StorageService.instance
-        .setBool(StorageKeys.downloadWifiOnly, value);
+    await StorageService.instance.setBool(StorageKeys.downloadWifiOnly, value);
 
     // 如果关闭了WiFi-only，需要将等待WiFi的任务重新入队
     if (!value) {
@@ -102,6 +111,8 @@ class DownloadManagerProvider extends ChangeNotifier {
     required String fileUri,
     required int fileSize,
     String? savePath,
+    String? downloadUrl,
+    DownloadStatus initialStatus = DownloadStatus.waiting,
   }) async {
     // 如果已存在相同文件的任务，返回null
     DownloadTaskModel? existingTask;
@@ -134,7 +145,8 @@ class DownloadManagerProvider extends ChangeNotifier {
       fileUri: fileUri,
       fileSize: fileSize,
       savePath: savePath,
-      status: DownloadStatus.waiting,
+      downloadUrl: downloadUrl,
+      status: initialStatus,
     );
 
     _tasks[id] = task;
@@ -143,7 +155,8 @@ class DownloadManagerProvider extends ChangeNotifier {
 
     // 开始下载
     AppLogger.d(
-        '准备开始下载任务: ${task.id}, 文件: ${task.fileName}, 下载状态: ${task.status}');
+      '准备开始下载任务: ${task.id}, 文件: ${task.fileName}, 下载状态: ${task.status}',
+    );
     final bdTaskId = await _downloadService.startDownload(task);
     AppLogger.d('startDownload 返回: bdTaskId=$bdTaskId');
 
@@ -182,14 +195,20 @@ class DownloadManagerProvider extends ChangeNotifier {
   /// 处理下载回调
   ///
   /// [progressPercent] 为 null 表示这是纯状态更新，不应该重置已有进度。
+  /// [downloadedBytes] 用于 background_downloader 在未知总大小时上报的真实已下载字节数。
   void _handleDownloadCallback(
     String taskId,
     DownloadStatus status,
-    double? progressPercent,
-  ) async {
-    AppLogger.d(
+    double? progressPercent, {
+    int? downloadedBytes,
+  }) async {
+    final isProgressUpdate =
+        status == DownloadStatus.downloading &&
+        (progressPercent != null || downloadedBytes != null);
+    final logProgressCallback = isProgressUpdate ? AppLogger.t : AppLogger.d;
+    logProgressCallback(
       'DownloadManagerProvider._handleDownloadCallback: '
-      'taskId=$taskId, status=$status, progressPercent=$progressPercent',
+      'taskId=$taskId, status=$status, progressPercent=$progressPercent, downloadedBytes=$downloadedBytes',
     );
 
     final task = _tasks[taskId];
@@ -198,38 +217,43 @@ class DownloadManagerProvider extends ChangeNotifier {
       return;
     }
 
-    var downloadedBytes = task.downloadedBytes;
+    var currentDownloadedBytes = task.downloadedBytes;
     final hasProgress = progressPercent != null && progressPercent.isFinite;
 
-    if (status == DownloadStatus.completed) {
-      downloadedBytes = task.fileSize;
+    if (downloadedBytes != null) {
+      currentDownloadedBytes = downloadedBytes.clamp(0, 1 << 62);
+    } else if (status == DownloadStatus.completed) {
+      currentDownloadedBytes = task.fileSize > 0
+          ? task.fileSize
+          : _completedFileSize(task) ?? task.downloadedBytes;
       _resumeBaseBytes.remove(taskId);
     } else if (hasProgress && task.fileSize > 0) {
       final normalized = progressPercent.clamp(0.0, 100.0);
-      final calculatedWholeBytes =
-          (task.fileSize * normalized / 100.0).round().clamp(0, task.fileSize);
+      final calculatedWholeBytes = (task.fileSize * normalized / 100.0)
+          .round()
+          .clamp(0, task.fileSize);
 
       final resumeBase = _resumeBaseBytes[taskId];
 
       if (resumeBase != null &&
           resumeBase > 0 &&
           calculatedWholeBytes < resumeBase) {
-        // pause/resume 后，background_downloader 可能把 progress 当作
-        // “剩余部分”的进度重新从 0 上报。
-        // 真实累计进度 = 恢复前字节 + 剩余字节 * 本次进度。
-        final remainingBytes = (task.fileSize - resumeBase).clamp(0, task.fileSize);
-        final resumedBytes =
-            (resumeBase + remainingBytes * normalized / 100.0)
-                .round()
-                .clamp(0, task.fileSize);
+        final remainingBytes = (task.fileSize - resumeBase).clamp(
+          0,
+          task.fileSize,
+        );
+        final resumedBytes = (resumeBase + remainingBytes * normalized / 100.0)
+            .round()
+            .clamp(0, task.fileSize);
 
-        if (resumedBytes >= downloadedBytes || downloadedBytes == 0) {
-          downloadedBytes = resumedBytes;
+        if (resumedBytes >= currentDownloadedBytes ||
+            currentDownloadedBytes == 0) {
+          currentDownloadedBytes = resumedBytes;
         }
       } else {
-        // 正常累计进度，或本次 progress 已经追上/超过恢复前基准。
-        if (calculatedWholeBytes >= downloadedBytes || downloadedBytes == 0) {
-          downloadedBytes = calculatedWholeBytes;
+        if (calculatedWholeBytes >= currentDownloadedBytes ||
+            currentDownloadedBytes == 0) {
+          currentDownloadedBytes = calculatedWholeBytes;
         }
 
         if (resumeBase != null && calculatedWholeBytes >= resumeBase) {
@@ -241,24 +265,23 @@ class DownloadManagerProvider extends ChangeNotifier {
     var speed = task.speed;
     final now = DateTime.now();
 
-    if (status == DownloadStatus.downloading && hasProgress) {
+    if (status == DownloadStatus.downloading &&
+        (hasProgress || downloadedBytes != null)) {
       final lastTime = _lastProgressTime[taskId];
       final lastBytes = _lastProgressBytes[taskId];
 
       if (lastTime != null && lastBytes != null) {
         final elapsedMs = now.difference(lastTime).inMilliseconds;
-        final bytesDelta = downloadedBytes - lastBytes;
+        final bytesDelta = currentDownloadedBytes - lastBytes;
 
-        // 低于 300ms 的回调容易造成速度抖动；字节倒退时不计算速度。
         if (elapsedMs >= 300 && bytesDelta >= 0) {
           speed = (bytesDelta * 1000 / elapsedMs).round();
         }
       }
 
       _lastProgressTime[taskId] = now;
-      _lastProgressBytes[taskId] = downloadedBytes;
+      _lastProgressBytes[taskId] = currentDownloadedBytes;
     } else if (status == DownloadStatus.downloading && !hasProgress) {
-      // running 状态回调，不动速度和进度。
       speed = task.speed;
     } else {
       speed = 0;
@@ -267,19 +290,26 @@ class DownloadManagerProvider extends ChangeNotifier {
     }
 
     final waitingForWifi =
-        status == DownloadStatus.waiting && (_isWifiOnlyEnabled || task.waitingForWifi);
+        status == DownloadStatus.waiting &&
+        (_isWifiOnlyEnabled || task.waitingForWifi);
 
     final updatedTask = task.copyWith(
       status: status,
-      downloadedBytes: downloadedBytes,
+      fileSize: status == DownloadStatus.completed && task.fileSize <= 0
+          ? currentDownloadedBytes
+          : task.fileSize,
+      downloadedBytes: currentDownloadedBytes,
       speed: speed,
       waitingForWifi: waitingForWifi,
-      completedAt: status == DownloadStatus.completed ? DateTime.now() : task.completedAt,
+      completedAt: status == DownloadStatus.completed
+          ? DateTime.now()
+          : task.completedAt,
     );
 
     _tasks[taskId] = updatedTask;
 
-    AppLogger.d(
+    final logTaskUpdate = isProgressUpdate ? AppLogger.t : AppLogger.d;
+    logTaskUpdate(
       '下载任务更新: ${updatedTask.fileName}, '
       'status=${updatedTask.status}, '
       'bytes=${updatedTask.downloadedBytes}/${updatedTask.fileSize}, '
@@ -288,7 +318,8 @@ class DownloadManagerProvider extends ChangeNotifier {
     );
 
     final shouldPersistNow =
-        status != DownloadStatus.downloading || _shouldPersistProgress(now);
+        status != DownloadStatus.downloading ||
+        _shouldPersistProgress(now, updatedTask);
 
     if (shouldPersistNow) {
       await _saveTasks();
@@ -298,10 +329,23 @@ class DownloadManagerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  bool _shouldPersistProgress(DateTime now) {
+  int? _completedFileSize(DownloadTaskModel task) {
+    try {
+      final file = File(task.savePath);
+      if (file.existsSync()) {
+        return file.lengthSync();
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  bool _shouldPersistProgress(DateTime now, DownloadTaskModel task) {
     final last = _lastProgressPersistTime;
     if (last == null) return true;
-    return now.difference(last).inSeconds >= 2;
+
+    final isArchiveDownload = task.downloadUrl?.contains('/archive/') == true;
+    final interval = isArchiveDownload ? 30 : 2;
+    return now.difference(last).inSeconds >= interval;
   }
 
   /// 恢复下载
@@ -333,7 +377,10 @@ class DownloadManagerProvider extends ChangeNotifier {
       if (task.status == DownloadStatus.downloading) {
         _resumeBaseBytes[taskId] = task.downloadedBytes;
         _tasks[taskId] = task.copyWith(
-            status: DownloadStatus.paused, speed: 0, waitingForWifi: false);
+          status: DownloadStatus.paused,
+          speed: 0,
+          waitingForWifi: false,
+        );
         _lastProgressTime.remove(taskId);
         _lastProgressBytes.remove(taskId);
         await _saveTasks();
@@ -350,7 +397,9 @@ class DownloadManagerProvider extends ChangeNotifier {
     if (task != null) {
       _resumeBaseBytes.remove(taskId);
       _tasks[taskId] = task.copyWith(
-          status: DownloadStatus.cancelled, waitingForWifi: false);
+        status: DownloadStatus.cancelled,
+        waitingForWifi: false,
+      );
       await _saveTasks();
       notifyListeners();
 
@@ -437,8 +486,9 @@ class DownloadManagerProvider extends ChangeNotifier {
   /// 从本地存储加载下载任务
   Future<void> _loadTasks() async {
     try {
-      final tasksJson =
-          await StorageService.instance.getString(StorageKeys.downloadTasks);
+      final tasksJson = await StorageService.instance.getString(
+        StorageKeys.downloadTasks,
+      );
       if (tasksJson == null || tasksJson.isEmpty) {
         AppLogger.d('没有保存的下载任务');
         return;
@@ -450,8 +500,9 @@ class DownloadManagerProvider extends ChangeNotifier {
       final now = DateTime.now();
       for (final taskJson in tasksList) {
         try {
-          final task =
-              DownloadTaskModel.fromJson(taskJson as Map<String, dynamic>);
+          final task = DownloadTaskModel.fromJson(
+            taskJson as Map<String, dynamic>,
+          );
           // 过滤掉已取消的任务（修复4：已取消任务不恢复）
           if (task.status == DownloadStatus.cancelled) {
             continue;
@@ -462,16 +513,18 @@ class DownloadManagerProvider extends ChangeNotifier {
             if (task.completedAt == null) {
               continue;
             }
-            final retentionDays = await StorageService.instance
-                    .getInt(StorageKeys.taskRetentionDays) ??
+            final retentionDays =
+                await StorageService.instance.getInt(
+                  StorageKeys.taskRetentionDays,
+                ) ??
                 7;
             // retentionDays == -1 表示永不过期
             if (retentionDays > 0) {
-              final daysSinceCompletion =
-                  now.difference(task.completedAt!).inDays;
+              final daysSinceCompletion = now
+                  .difference(task.completedAt!)
+                  .inDays;
               if (daysSinceCompletion > retentionDays) {
-                AppLogger.d(
-                    '跳过超过$retentionDays天的已完成任务: ${task.fileName}');
+                AppLogger.d('跳过超过$retentionDays天的已完成任务: ${task.fileName}');
                 continue;
               }
             }
@@ -497,7 +550,8 @@ class DownloadManagerProvider extends ChangeNotifier {
 
       // 恢复未完成的任务
       for (final task in loadedTasks) {
-        if (task.status == DownloadStatus.downloading ||
+        if (task.status == DownloadStatus.archiving ||
+            task.status == DownloadStatus.downloading ||
             task.status == DownloadStatus.waiting) {
           AppLogger.d('恢复下载任务: ${task.fileName}');
           _resumeBaseBytes[task.id] = task.downloadedBytes;
@@ -524,9 +578,11 @@ class DownloadManagerProvider extends ChangeNotifier {
     try {
       final tasksList = _tasks.values.map((task) => task.toJson()).toList();
       final tasksJson = jsonEncode(tasksList);
-      await StorageService.instance
-          .setString(StorageKeys.downloadTasks, tasksJson);
-      AppLogger.d('已保存 ${_tasks.length} 个下载任务到存储');
+      await StorageService.instance.setString(
+        StorageKeys.downloadTasks,
+        tasksJson,
+      );
+      AppLogger.t('已保存 ${_tasks.length} 个下载任务到存储');
     } catch (e) {
       AppLogger.d('保存下载任务失败: $e');
     }

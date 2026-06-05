@@ -1,12 +1,14 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:background_downloader/background_downloader.dart' as bd;
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:external_path/external_path.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../core/constants/storage_keys.dart';
 import '../data/models/download_task_model.dart';
+import 'api_service.dart';
 import 'file_service.dart';
 import 'storage_service.dart';
 import '../core/utils/app_logger.dart';
@@ -25,10 +27,16 @@ class DownloadService {
 
   // 存储 background_downloader 的 DownloadTask 对象，用于暂停/恢复/取消
   final Map<String, bd.DownloadTask> _bdTasks = {};
+  final Map<String, CancelToken> _dioCancelTokens = {};
 
   // 回调处理器
-  static Function(String taskId, DownloadStatus status, double? progressPercent)?
-      _callbackHandler;
+  static Function(
+    String taskId,
+    DownloadStatus status,
+    double? progressPercent, {
+    int? downloadedBytes,
+  })?
+  _callbackHandler;
 
   final FileService _fileService = FileService();
   final Map<String, StreamController<DownloadTaskModel>> _progressControllers =
@@ -37,8 +45,14 @@ class DownloadService {
 
   /// 设置回调处理器
   static void setCallbackHandler(
-      Function(String taskId, DownloadStatus status, double? progressPercent)
-          handler) {
+    Function(
+      String taskId,
+      DownloadStatus status,
+      double? progressPercent, {
+      int? downloadedBytes,
+    })
+    handler,
+  ) {
     _callbackHandler = handler;
   }
 
@@ -108,22 +122,28 @@ class DownloadService {
 
   /// 读取 WiFi-only 下载设置
   Future<bool> isWifiOnlyEnabled() async {
-    return await StorageService.instance
-            .getBool(StorageKeys.downloadWifiOnly) ??
+    return await StorageService.instance.getBool(
+          StorageKeys.downloadWifiOnly,
+        ) ??
         false;
   }
 
   /// 读取重试次数设置
   Future<int> getRetries() async {
-    return await StorageService.instance
-            .getInt(StorageKeys.downloadRetries) ??
+    return await StorageService.instance.getInt(StorageKeys.downloadRetries) ??
         3;
   }
 
   /// 初始化下载器
-  Future<void> initialize(
-      {Function(String taskId, DownloadStatus status, double? progressPercent)?
-          callbackHandler}) async {
+  Future<void> initialize({
+    Function(
+      String taskId,
+      DownloadStatus status,
+      double? progressPercent, {
+      int? downloadedBytes,
+    })?
+    callbackHandler,
+  }) async {
     if (callbackHandler != null) {
       setCallbackHandler(callbackHandler);
       AppLogger.d('回调处理器已更新');
@@ -138,9 +158,10 @@ class DownloadService {
     if (Platform.isAndroid) {
       bd.FileDownloader().configureNotification(
         running: const bd.TaskNotification(
-            '正在下载', '文件: {filename} - {progress}'),
-        complete:
-            const bd.TaskNotification('下载完成', '文件: {filename} 已保存'),
+          '正在下载',
+          '文件: {filename} - {progress}',
+        ),
+        complete: const bd.TaskNotification('下载完成', '文件: {filename} 已保存'),
         error: const bd.TaskNotification('下载失败', '文件: {filename} 下载出错'),
         paused: const bd.TaskNotification('已暂停', '文件: {filename} 已暂停'),
         progressBar: true,
@@ -175,21 +196,28 @@ class DownloadService {
       _internalIdToExternalTaskId[metaInternalId] = update.task.taskId;
       _bdTasks[metaInternalId] = update.task as bd.DownloadTask;
       AppLogger.d(
-          '从 metaData 恢复映射: bdTaskId=${update.task.taskId}, internalId=$metaInternalId');
+        '从 metaData 恢复映射: bdTaskId=${update.task.taskId}, internalId=$metaInternalId',
+      );
     }
 
-    final resolvedInternalId =
-        _externalTaskIdToInternalId[update.task.taskId];
+    final resolvedInternalId = _externalTaskIdToInternalId[update.task.taskId];
     if (resolvedInternalId == null) {
       AppLogger.d(
-          'background_downloader 状态回调: 未找到内部任务ID, taskId=${update.task.taskId}');
+        'background_downloader 状态回调: 未找到内部任务ID, taskId=${update.task.taskId}',
+      );
       return;
     }
 
     DownloadStatus status;
     switch (update.status) {
       case bd.TaskStatus.enqueued:
-        status = DownloadStatus.waiting;
+        // Archive 下载在服务端打包期间连接 pending，保持 archiving 状态
+        final url = update.task.url;
+        if (url.contains('/archive/')) {
+          status = DownloadStatus.archiving;
+        } else {
+          status = DownloadStatus.waiting;
+        }
       case bd.TaskStatus.running:
         status = DownloadStatus.downloading;
       case bd.TaskStatus.complete:
@@ -206,7 +234,8 @@ class DownloadService {
     }
 
     AppLogger.d(
-        'background_downloader 状态更新: taskId=${update.task.taskId}, internalId=$resolvedInternalId, status=$status');
+      'background_downloader 状态更新: taskId=${update.task.taskId}, internalId=$resolvedInternalId, status=$status',
+    );
 
     // 状态回调不应该把进度重置为 0。
     // 之前 running/enqueued/paused/failed 都传 progress=0，导致任务页进度条一段段跳动、
@@ -222,9 +251,17 @@ class DownloadService {
 
     final rawProgress = update.progress;
 
-    // background_downloader 在部分状态下可能返回负数或非正常进度。
-    // 这些不是有效进度，不能用来刷新 UI。
-    if (rawProgress.isNaN || rawProgress < 0) {
+    if (rawProgress.isNaN) {
+      return;
+    }
+
+    if (rawProgress < 0) {
+      _callbackHandler?.call(
+        internalId,
+        DownloadStatus.downloading,
+        null,
+        downloadedBytes: rawProgress.abs().toInt(),
+      );
       return;
     }
 
@@ -272,6 +309,10 @@ class DownloadService {
         await file.delete();
       }
 
+      if (_shouldUseDioArchiveDownload(url)) {
+        return _startDioDownload(task, url, file);
+      }
+
       return _startBdDownload(task, url, dir);
     } catch (e) {
       AppLogger.d('下载失败: $e');
@@ -279,11 +320,89 @@ class DownloadService {
     }
   }
 
+  bool _shouldUseDioArchiveDownload(String url) {
+    if (!url.contains('/archive/')) return false;
+    return Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+  }
+
+  Future<String?> _startDioDownload(
+    DownloadTaskModel task,
+    String url,
+    File file,
+  ) async {
+    final cancelToken = CancelToken();
+    _dioCancelTokens[task.id] = cancelToken;
+    _callbackHandler?.call(task.id, DownloadStatus.downloading, null);
+
+    DateTime? lastProgressEmitAt;
+
+    unawaited(() async {
+      try {
+        await ApiService.instance.dio.download(
+          url,
+          file.path,
+          cancelToken: cancelToken,
+          options: Options(
+            responseType: ResponseType.stream,
+            followRedirects: true,
+          ),
+          onReceiveProgress: (received, total) {
+            final now = DateTime.now();
+            final elapsedMs = lastProgressEmitAt == null
+                ? null
+                : now.difference(lastProgressEmitAt!).inMilliseconds;
+            final isComplete = total > 0 && received >= total;
+
+            if (!isComplete && elapsedMs != null && elapsedMs < 1000) {
+              return;
+            }
+
+            lastProgressEmitAt = now;
+            _callbackHandler?.call(
+              task.id,
+              DownloadStatus.downloading,
+              total > 0 ? received * 100 / total : null,
+              downloadedBytes: received,
+            );
+          },
+        );
+
+        final finalBytes = await file.exists()
+            ? await file.length()
+            : task.downloadedBytes;
+        _callbackHandler?.call(
+          task.id,
+          DownloadStatus.completed,
+          100.0,
+          downloadedBytes: finalBytes,
+        );
+      } on DioException catch (e) {
+        if (CancelToken.isCancel(e)) {
+          _callbackHandler?.call(task.id, DownloadStatus.cancelled, null);
+        } else {
+          AppLogger.d('Dio 下载失败: $e');
+          _callbackHandler?.call(task.id, DownloadStatus.failed, null);
+        }
+      } catch (e) {
+        AppLogger.d('Dio 下载失败: $e');
+        _callbackHandler?.call(task.id, DownloadStatus.failed, null);
+      } finally {
+        _dioCancelTokens.remove(task.id);
+      }
+    }());
+
+    AppLogger.d('Dio archive 下载已启动: internalId=${task.id}, path=${file.path}');
+    return 'dio:${task.id}';
+  }
+
   /// 使用 background_downloader 开始下载
   Future<String?> _startBdDownload(
-      DownloadTaskModel task, String url, Directory dir) async {
+    DownloadTaskModel task,
+    String url,
+    Directory dir,
+  ) async {
     final wifiOnly = await isWifiOnlyEnabled();
-    final retries = await getRetries();
+    final retries = url.contains('/archive/') ? 0 : await getRetries();
     final bdTask = bd.DownloadTask(
       url: url,
       filename: task.fileName,
@@ -311,14 +430,14 @@ class DownloadService {
     task.backgroundTaskId = bdTask.taskId;
 
     AppLogger.d(
-        'background_downloader 任务已添加: taskId=${bdTask.taskId}, internalId=${task.id}, requiresWiFi=$wifiOnly, retries=$retries');
+      'background_downloader 任务已添加: taskId=${bdTask.taskId}, internalId=${task.id}, requiresWiFi=$wifiOnly, retries=$retries',
+    );
 
     return bdTask.taskId;
   }
 
   /// 恢复下载（用于重启后恢复暂停的任务）
-  Future<String?> resumeDownloadAfterRestart(
-      DownloadTaskModel task) async {
+  Future<String?> resumeDownloadAfterRestart(DownloadTaskModel task) async {
     try {
       if (!_isInitialized) {
         await initialize();
@@ -349,7 +468,7 @@ class DownloadService {
 
       // 恢复任务：不删除部分文件，使用 resume 方式重建 bdTask
       final wifiOnly = await isWifiOnlyEnabled();
-      final retries = await getRetries();
+      final retries = url.contains('/archive/') ? 0 : await getRetries();
       final bdTask = bd.DownloadTask(
         url: url,
         filename: task.fileName,
@@ -369,11 +488,11 @@ class DownloadService {
       task.backgroundTaskId = bdTask.taskId;
 
       // 如果有已下载的部分，尝试 resume；否则 enqueue
-      final partialFile =
-          File('${dir.path}/${task.fileName}.part');
+      final partialFile = File('${dir.path}/${task.fileName}.part');
       if (task.downloadedBytes > 0 && await partialFile.exists()) {
         AppLogger.d(
-            '断点续传: ${task.fileName}, 已下载 ${task.downloadedBytes} bytes');
+          '断点续传: ${task.fileName}, 已下载 ${task.downloadedBytes} bytes',
+        );
         await bd.FileDownloader().resume(bdTask);
       } else {
         AppLogger.d('重新下载: ${task.fileName}');
@@ -411,6 +530,12 @@ class DownloadService {
 
   /// 取消下载
   Future<void> cancelDownload(String taskId) async {
+    final dioCancelToken = _dioCancelTokens[taskId];
+    if (dioCancelToken != null && !dioCancelToken.isCancelled) {
+      dioCancelToken.cancel('用户取消下载');
+      return;
+    }
+
     final bdTask = _bdTasks[taskId];
     if (bdTask != null) {
       await bd.FileDownloader().cancel(bdTask);
@@ -425,6 +550,10 @@ class DownloadService {
     }
     _internalIdToExternalTaskId.remove(taskId);
     _bdTasks.remove(taskId);
+    final dioCancelToken = _dioCancelTokens.remove(taskId);
+    if (dioCancelToken != null && !dioCancelToken.isCancelled) {
+      dioCancelToken.cancel('任务已释放');
+    }
 
     // 关闭进度流
     final controller = _progressControllers[taskId];
@@ -469,6 +598,12 @@ class DownloadService {
     _externalTaskIdToInternalId.clear();
     _internalIdToExternalTaskId.clear();
     _bdTasks.clear();
+    for (final cancelToken in _dioCancelTokens.values) {
+      if (!cancelToken.isCancelled) {
+        cancelToken.cancel('DownloadService disposed');
+      }
+    }
+    _dioCancelTokens.clear();
 
     // 关闭所有流
     for (final controller in _progressControllers.values) {

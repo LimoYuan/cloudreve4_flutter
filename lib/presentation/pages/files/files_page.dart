@@ -14,6 +14,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../providers/file_manager_provider.dart';
 import '../../providers/download_manager_provider.dart';
+import '../../../data/models/download_task_model.dart';
 import '../../providers/upload_manager_provider.dart';
 import '../../providers/navigation_provider.dart';
 import '../../widgets/file_list_item.dart';
@@ -842,7 +843,7 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
                       }
                     },
                     onSelect: () => fileManager.toggleSelection(file.path),
-                    onDownload: !file.isFolder ? () => _downloadFile(context, fileManager, file) : null,
+                    onDownload: () => _downloadFile(context, fileManager, file),
                     onOpenInBrowser: !file.isFolder ? () => _openInBrowser(context, file) : null,
                     onOpenInCloudreveApp: !file.isFolder ? () => _openInCloudreveApp(context, file) : null,
                     onRename: () => FileOperationDialogs.showRenameDialog(context, fileManager, file),
@@ -941,7 +942,7 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
                 }
               },
               onSelect: () => fileManager.toggleSelection(file.path),
-              onDownload: !file.isFolder ? () => _downloadFile(context, fileManager, file) : null,
+              onDownload: () => _downloadFile(context, fileManager, file),
               onOpenInBrowser: !file.isFolder ? () => _openInBrowser(context, file) : null,
               onOpenInCloudreveApp: !file.isFolder ? () => _openInCloudreveApp(context, file) : null,
               onRename: () => FileOperationDialogs.showRenameDialog(context, fileManager, file),
@@ -1083,6 +1084,8 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
     final isDesktop = MediaQuery.of(context).size.width >= 1000;
     if (isDesktop && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
       await _showDesktopDownloadDialog(fileManager, [file]);
+    } else if (file.isFolder) {
+      await _downloadAsArchive(fileManager, [file]);
     } else {
       final downloadManager = Provider.of<DownloadManagerProvider>(context, listen: false);
       final task = await downloadManager.addDownloadTask(
@@ -1109,7 +1112,56 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
     final selectedPaths = fileManager.selectedFiles;
     if (selectedPaths.isEmpty) return;
     final files = fileManager.files.where((f) => selectedPaths.contains(f.path)).toList();
-    await _showDesktopDownloadDialog(fileManager, files);
+    final isDesktop = MediaQuery.of(context).size.width >= 1000;
+    if (isDesktop && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
+      await _showDesktopDownloadDialog(fileManager, files);
+    } else {
+      await _downloadAsArchive(fileManager, files);
+    }
+  }
+
+  /// 下载为压缩包（移动端 & 通用路径）
+  Future<void> _downloadAsArchive(
+    FileManagerProvider fileManager,
+    List<FileModel> files,
+  ) async {
+    try {
+      final downloadManager = Provider.of<DownloadManagerProvider>(context, listen: false);
+      final uris = files.map((f) => f.path).toList();
+      final response = await FileService().getDownloadUrls(
+        uris: uris,
+        download: true,
+        archive: true,
+        contextHint: fileManager.contextHint,
+      );
+
+      final url = _extractFirstDownloadUrl(response);
+      if (url == null || url.isEmpty) {
+        if (mounted) ToastHelper.error('服务端没有返回下载链接');
+        return;
+      }
+
+      final archiveName = _archiveNameFor(files);
+      final archiveUri = files.length == 1
+          ? files.first.path
+          : 'archive:${DateTime.now().millisecondsSinceEpoch}:${uris.join('|')}';
+
+      final task = await downloadManager.addDownloadTask(
+        fileName: archiveName,
+        fileUri: archiveUri,
+        fileSize: 0,
+        downloadUrl: url,
+        initialStatus: DownloadStatus.archiving,
+      );
+      if (!mounted) return;
+      if (task != null) {
+        ToastHelper.info('下载任务已存在');
+      } else {
+        ToastHelper.success('已添加压缩包下载任务');
+      }
+    } catch (e) {
+      if (mounted) ToastHelper.failure('添加下载任务失败: $e');
+    }
   }
 
   /// Desktop download target dialog.
@@ -1219,52 +1271,15 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
 
     if (result != true || !mounted) return;
 
-    // If "set as default" is checked, save the directory
     if (setAsDefault && selectedDirectory != null) {
       // Store for future use (implementation depends on StorageService)
     }
 
-    final downloadManager = Provider.of<DownloadManagerProvider>(context, listen: false);
-
     if (shouldArchive) {
-      // Download as archive
-      try {
-        final uris = files.map((f) => f.path).toList();
-        final response = await FileService().getDownloadUrls(
-          uris: uris,
-          download: true,
-          archive: true,
-          contextHint: fileManager.contextHint,
-        );
-
-        final url = _extractFirstDownloadUrl(response);
-        if (url == null || url.isEmpty) {
-          if (mounted) ToastHelper.error('服务端没有返回下载链接');
-          return;
-        }
-
-        final archiveName = _archiveNameFor(files);
-        final archiveUri = files.length == 1
-            ? files.first.path
-            : 'archive:${DateTime.now().millisecondsSinceEpoch}:${uris.join('|')}';
-
-        final task = await downloadManager.addDownloadTask(
-          fileName: archiveName,
-          fileUri: archiveUri,
-          fileSize: 0,
-        );
-        if (!mounted) return;
-        if (task != null) {
-          ToastHelper.info('下载任务已存在');
-        } else {
-          ToastHelper.success('已添加压缩包下载任务');
-        }
-      } catch (e) {
-        if (mounted) ToastHelper.failure('添加下载任务失败: $e');
-      }
+      await _downloadAsArchive(fileManager, files);
     } else {
-      // Single file download
       final file = files.first;
+      final downloadManager = Provider.of<DownloadManagerProvider>(context, listen: false);
       final task = await downloadManager.addDownloadTask(
         fileName: file.name,
         fileUri: file.relativePath,

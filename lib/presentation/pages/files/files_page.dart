@@ -3,11 +3,13 @@ import 'dart:io';
 import 'package:cross_file/cross_file.dart';
 import 'package:cloudreve4_flutter/data/models/file_model.dart';
 import 'package:cloudreve4_flutter/services/file_service.dart';
+import 'package:cloudreve4_flutter/services/storage_service.dart';
 import 'package:cloudreve4_flutter/services/upload_service.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/services.dart';
 import '../../../core/utils/file_utils.dart';
 import '../../../core/constants/sort_options.dart';
+import '../../../core/constants/storage_keys.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:provider/provider.dart';
@@ -1123,8 +1125,9 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
   /// 下载为压缩包（移动端 & 通用路径）
   Future<void> _downloadAsArchive(
     FileManagerProvider fileManager,
-    List<FileModel> files,
-  ) async {
+    List<FileModel> files, {
+    String? customParentDir,
+  }) async {
     try {
       final downloadManager = Provider.of<DownloadManagerProvider>(context, listen: false);
       final uris = files.map((f) => f.path).toList();
@@ -1150,6 +1153,9 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
         fileName: archiveName,
         fileUri: archiveUri,
         fileSize: 0,
+        savePath: customParentDir == null
+            ? null
+            : '$customParentDir${Platform.pathSeparator}$archiveName',
         downloadUrl: url,
         initialStatus: DownloadStatus.archiving,
       );
@@ -1170,9 +1176,18 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
     List<FileModel> files,
   ) async {
     final shouldArchive = files.length > 1 || files.any((f) => f.isFolder);
-    final theme = Theme.of(context);
+    final downloadManager = Provider.of<DownloadManagerProvider>(
+      context,
+      listen: false,
+    );
 
-    String? selectedDirectory;
+    final defaultDir = await StorageService.instance.getString(
+      StorageKeys.downloadDefaultDirectory,
+    );
+    if (!mounted) return;
+
+    final theme = Theme.of(context);
+    String? selectedDirectory = defaultDir;
     bool setAsDefault = false;
 
     final result = await showDialog<bool>(
@@ -1272,18 +1287,27 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
     if (result != true || !mounted) return;
 
     if (setAsDefault && selectedDirectory != null) {
-      // Store for future use (implementation depends on StorageService)
+      await StorageService.instance.setString(
+        StorageKeys.downloadDefaultDirectory,
+        selectedDirectory!,
+      );
     }
 
     if (shouldArchive) {
-      await _downloadAsArchive(fileManager, files);
+      await _downloadAsArchive(
+        fileManager,
+        files,
+        customParentDir: selectedDirectory,
+      );
     } else {
       final file = files.first;
-      final downloadManager = Provider.of<DownloadManagerProvider>(context, listen: false);
       final task = await downloadManager.addDownloadTask(
         fileName: file.name,
         fileUri: file.relativePath,
         fileSize: file.size,
+        savePath: selectedDirectory == null
+            ? null
+            : '$selectedDirectory${Platform.pathSeparator}${file.name}',
       );
       if (!mounted) return;
       if (task != null) {

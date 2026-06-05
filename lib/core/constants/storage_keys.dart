@@ -14,6 +14,7 @@ class StorageKeys {
   static const String downloadTasks = 'download_tasks';
   static const String downloadWifiOnly = 'download_wifi_only';
   static const String downloadRetries = 'download_retries';
+  static const String downloadDefaultDirectory = 'download_default_directory';
 
   // 任务记录
   static const String taskRetentionDays = 'task_retention_days';

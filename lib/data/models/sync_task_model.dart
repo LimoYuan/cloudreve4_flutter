@@ -27,6 +27,8 @@ class SyncTaskModel {
         'initial_sync' => '初始同步',
         'continuous' => '持续同步',
         'manual' => '手动同步',
+        'wcf_event' => '镜像事件',
+        'hydration' => '按需水合',
         _ => trigger,
       };
 
@@ -77,6 +79,7 @@ class SyncTaskItemModel {
         'mkdir_local' => '创建本地目录',
         'conflict_resolve' => '冲突解决',
         'create_placeholder' => '创建占位符',
+        'hydration' => '水合下载',
         _ => actionType,
       };
 

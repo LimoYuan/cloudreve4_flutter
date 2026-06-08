@@ -95,7 +95,7 @@ function build_linux_release() {
 
     # 2. 编译 Linux 版本
     echo "正在编译 Flutter Linux Release 版本..."
-    pxc -q flutter build linux -v --release
+    flutter build linux -v --release
 
     # 3. 创建临时目录结构
     if [ -d "$PKG_DIR" ]; then

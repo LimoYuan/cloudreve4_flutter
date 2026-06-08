@@ -113,6 +113,9 @@ impl SyncEngine {
                             fuse.remove_inode(&relative);
                         }
                     }
+                    // 释放水合缓存
+                    let remote_uri = format!("{}/{}", remote_root, &relative);
+                    self.hydration_cache.remove(&remote_uri);
                     let _ = self.db.delete_file_mapping(&root_id, &relative).await;
                     self._record_wcf_stats(&relative, TaskActionType::DeleteLocal, 0, None).await;
                     return;

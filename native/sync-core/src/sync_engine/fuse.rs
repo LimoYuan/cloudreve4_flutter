@@ -43,7 +43,7 @@ impl SyncEngine {
         reply_tx: tokio::sync::oneshot::Sender<Result<Vec<u8>, String>>,
         _local_root: &std::path::Path,
     ) {
-        tracing::debug!("FUSE 水合请求: ino={}, uri={}, offset={}, length={}", inode, remote_uri, offset, length);
+        tracing::trace!("FUSE 水合请求: ino={}, uri={}, offset={}, length={}", inode, remote_uri, offset, length);
 
         let root_id = match &self.sync_root_id {
             Some(id) => id.clone(),
@@ -59,7 +59,7 @@ impl SyncEngine {
         self.hydration_cache.retain(|_, (_, ts)| now.duration_since(*ts).as_secs() < 300);
 
         let data = if let Some(cached) = self.hydration_cache.get(&remote_uri_owned) {
-            tracing::debug!("FUSE 水合缓存命中: {}", remote_uri_owned);
+            tracing::trace!("FUSE 水合缓存命中: {}", remote_uri_owned);
             cached.0.clone()
         } else {
             tracing::info!("FUSE 水合下载: {}", remote_uri_owned);
@@ -90,7 +90,9 @@ impl SyncEngine {
 
             match download_result {
                 Ok(data) => {
+                    tracing::info!("FUSE 水合下载完成: {} ({}bytes)", remote_uri_owned, data.len());
                     self.hydration_cache.insert(remote_uri_owned.clone(), (data.clone(), std::time::Instant::now()));
+                    self._record_wcf_stats(&remote_uri_owned, TaskActionType::Hydration, data.len() as u64, None).await;
                     data
                 }
                 Err(e) => {
@@ -368,6 +370,9 @@ impl SyncEngine {
 
         match self.api.delete_files(&[remote_uri]).await {
             Ok(()) => {
+                // 释放水合缓存
+                self.hydration_cache.remove(remote_uri);
+
                 // 删除 DB mapping
                 let _ = self.db.delete_mapping_by_remote_uri(&root_id, remote_uri).await;
 
@@ -454,12 +459,26 @@ impl SyncEngine {
                     }
                 }
 
+                // 清理旧 URI 的水合缓存
+                self.hydration_cache.remove(old_remote_uri);
+
                 // 更新 DB mapping
                 let _ = self.db.update_mapping_remote_uri(&root_id, old_remote_uri, &new_remote_uri).await;
 
                 // 抑制 SSE 回弹
                 self.suppress_paths.insert(old_relative_path.to_string(), std::time::Instant::now());
                 self.suppress_paths.insert(new_relative_path.to_string(), std::time::Instant::now());
+
+                // 记录统计
+                let action = if old_parent_rel == new_parent_rel {
+                    TaskActionType::Rename
+                } else {
+                    TaskActionType::Move
+                };
+                self._record_wcf_stats(
+                    &format!("{} -> {}", old_relative_path, new_relative_path),
+                    action, 0, None,
+                ).await;
 
                 tracing::info!("FUSE 重命名/移动成功: {} → {}", old_relative_path, new_relative_path);
                 let _ = reply_tx.send(Ok(()));

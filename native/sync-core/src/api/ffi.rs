@@ -140,6 +140,11 @@ fn config_from_ffi(ffi: SyncConfigFfi) -> crate::models::SyncConfig {
         max_workers: ffi.max_workers as usize,
         data_dir: PathBuf::from(&ffi.data_dir),
         client_id: ffi.client_id,
+        max_hydration_cache_size_gb: if ffi.max_hydration_cache_size_gb == 0 {
+            2
+        } else {
+            ffi.max_hydration_cache_size_gb
+        },
     }
 }
 
@@ -185,6 +190,7 @@ fn config_to_ffi(c: &crate::models::SyncConfig) -> SyncConfigFfi {
         data_dir: c.data_dir.to_string_lossy().to_string(),
         client_id: c.client_id.clone(),
         log_level: String::new(),
+        max_hydration_cache_size_gb: c.max_hydration_cache_size_gb,
     }
 }
 
@@ -358,6 +364,10 @@ pub async fn init_sync_engine(config: SyncConfigFfi) -> Result<(), SyncErrorFfi>
 
     let engine = SyncEngine::new(config_from_ffi(config)).await
         .map_err(error_to_ffi)?;
+
+    // 跨重启重建 FUSE 水合缓存索引（仅 linux-fuse 编译启用）
+    #[cfg(feature = "linux-fuse")]
+    engine.rebuild_hydration_cache_index().await;
 
     ENGINE.set(Arc::new(engine))
         .map_err(|_| SyncErrorFfi::InternalError {

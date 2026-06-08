@@ -1000,8 +1000,8 @@ class RustSyncApiApiImpl extends RustSyncApiApiImplPlatform
   SyncConfigFfi dco_decode_sync_config_ffi(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 15)
-      throw Exception('unexpected arr length: expect 15 but see ${arr.length}');
+    if (arr.length != 16)
+      throw Exception('unexpected arr length: expect 16 but see ${arr.length}');
     return SyncConfigFfi(
       baseUrl: dco_decode_String(arr[0]),
       accessToken: dco_decode_String(arr[1]),
@@ -1018,6 +1018,7 @@ class RustSyncApiApiImpl extends RustSyncApiApiImplPlatform
       dataDir: dco_decode_String(arr[12]),
       clientId: dco_decode_String(arr[13]),
       logLevel: dco_decode_String(arr[14]),
+      maxHydrationCacheSizeGb: dco_decode_u_32(arr[15]),
     );
   }
 
@@ -1412,6 +1413,7 @@ class RustSyncApiApiImpl extends RustSyncApiApiImplPlatform
     var var_dataDir = sse_decode_String(deserializer);
     var var_clientId = sse_decode_String(deserializer);
     var var_logLevel = sse_decode_String(deserializer);
+    var var_maxHydrationCacheSizeGb = sse_decode_u_32(deserializer);
     return SyncConfigFfi(
       baseUrl: var_baseUrl,
       accessToken: var_accessToken,
@@ -1428,6 +1430,7 @@ class RustSyncApiApiImpl extends RustSyncApiApiImplPlatform
       dataDir: var_dataDir,
       clientId: var_clientId,
       logLevel: var_logLevel,
+      maxHydrationCacheSizeGb: var_maxHydrationCacheSizeGb,
     );
   }
 
@@ -1904,6 +1907,7 @@ class RustSyncApiApiImpl extends RustSyncApiApiImplPlatform
     sse_encode_String(self.dataDir, serializer);
     sse_encode_String(self.clientId, serializer);
     sse_encode_String(self.logLevel, serializer);
+    sse_encode_u_32(self.maxHydrationCacheSizeGb, serializer);
   }
 
   @protected

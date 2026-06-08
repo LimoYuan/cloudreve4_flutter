@@ -52,10 +52,10 @@ impl SyncEngine {
 
         // 清理过期缓存（超过 5 分钟）
         let now = std::time::Instant::now();
-        self.hydration_cache.retain(|_, (_, ts)| now.duration_since(*ts).as_secs() < 300);
+        self.wcf_hydration_cache.retain(|_, (_, ts)| now.duration_since(*ts).as_secs() < 300);
 
         // 尝试从缓存获取已下载的数据；cache miss 时下载并标记 is_new_download
-        let (data, is_new_download) = if let Some(cached) = self.hydration_cache.get(&remote_uri) {
+        let (data, is_new_download) = if let Some(cached) = self.wcf_hydration_cache.get(&remote_uri) {
             tracing::debug!("WCF 水合缓存命中: {}", remote_uri);
             (cached.0.clone(), false)
         } else {
@@ -87,7 +87,7 @@ impl SyncEngine {
 
             match download_result {
                 Ok(data) => {
-                    self.hydration_cache.insert(remote_uri.clone(), (data.clone(), std::time::Instant::now()));
+                    self.wcf_hydration_cache.insert(remote_uri.clone(), (data.clone(), std::time::Instant::now()));
                     (data, true)
                 }
                 Err(e) => {

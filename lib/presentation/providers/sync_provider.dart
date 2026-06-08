@@ -156,6 +156,8 @@ class SyncProvider extends ChangeNotifier {
           dataDir: configMap['dataDir'] as String? ?? '',
           clientId: configMap['clientId'] as String? ?? '',
           logLevel: configMap['logLevel'] as String? ?? 'info',
+          maxHydrationCacheSizeGb:
+              configMap['maxHydrationCacheSizeGb'] as int? ?? 2,
         );
         AppLogger.i('恢复同步配置: 模式=${_persistedConfig!.syncMode}, 冲突=${_persistedConfig!.conflictStrategy}, 并发=${_persistedConfig!.maxConcurrentTransfers}, 带宽=${_persistedConfig!.bandwidthLimitKbps}kbps, maxWorkers=${_persistedConfig!.maxWorkers}');
       } catch (e) {
@@ -202,6 +204,7 @@ class SyncProvider extends ChangeNotifier {
       'dataDir': config.dataDir,
       'clientId': config.clientId,
       'logLevel': config.logLevel,
+      'maxHydrationCacheSizeGb': config.maxHydrationCacheSizeGb,
     });
   }
 

@@ -41,6 +41,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
   String _logLevel = 'info';
   String _syncLogFilePath = '';
   int? _syncLogFileSize;
+  int _maxHydrationCacheSizeGb = 2;
 
   @override
   void initState() {
@@ -70,6 +71,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
           _wcfDeleteMode = config.wcfDeleteMode;
           _maxConcurrent = config.maxConcurrentTransfers;
           _bandwidthLimitKbps = config.bandwidthLimitKbps;
+          _maxHydrationCacheSizeGb = config.maxHydrationCacheSizeGb;
           _maxWorkers = config.maxWorkers;
           _logLevel = config.logLevel;
         });
@@ -281,6 +283,16 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => _pickBandwidthLimit(),
                 ),
+                if (Platform.isLinux && _syncMode == 'mirror_wcf')
+                  ListTile(
+                    leading: const Icon(Icons.sd_storage_outlined),
+                    title: const Text('水合缓存大小'),
+                    subtitle: Text(
+                      '$_maxHydrationCacheSizeGb GB（FUSE 按需下载文件落盘缓存上限）',
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => _pickHydrationCacheSize(),
+                  ),
               ],
             ),
             SettingsSection(
@@ -807,6 +819,79 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     }
   }
 
+  Future<void> _pickHydrationCacheSize() async {
+    final presets = <(int, String)>[
+      (2, '2 GB（默认）'),
+      (5, '5 GB'),
+      (10, '10 GB'),
+      (15, '15 GB'),
+      (-1, '自定义…'),
+    ];
+
+    final result = await showGlassOptionDialog<int>(
+      context,
+      title: '水合缓存大小',
+      icon: LucideIcons.hardDrive,
+      options: presets
+          .map((e) => (e.$1, e.$2, e.$1 == _maxHydrationCacheSizeGb))
+          .toList(),
+    );
+    if (result == null) return;
+
+    int? finalValue;
+    if (result == -1) {
+      if (!mounted) return;
+      final controller =
+          TextEditingController(text: _maxHydrationCacheSizeGb.toString());
+      finalValue = await showDialog<int>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('自定义水合缓存大小'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: controller,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  hintText: '单位 GB（1 ~ 100）',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '允许范围 1 ~ 100 GB\nFUSE 按需水合的文件会落盘到该缓存\n超出上限时按最早访问淘汰',
+                style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(ctx).hintColor,
+                    ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final val = int.tryParse(controller.text) ?? 2;
+                Navigator.pop(ctx, val.clamp(1, 100));
+              },
+              child: const Text('确定'),
+            ),
+          ],
+        ),
+      );
+    } else {
+      finalValue = result;
+    }
+
+    if (finalValue != null && finalValue != _maxHydrationCacheSizeGb) {
+      setState(() => _maxHydrationCacheSizeGb = finalValue!);
+      _pushConfig();
+    }
+  }
+
   void _pushConfig() {
     final sync = context.read<SyncProvider>();
 
@@ -823,6 +908,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       bandwidthLimitKbps: _bandwidthLimitKbps,
       maxWorkers: _maxWorkers,
       logLevel: _logLevel,
+      maxHydrationCacheSizeGb: _maxHydrationCacheSizeGb,
     );
     sync.updateConfig(updated);
   }
@@ -915,6 +1001,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       dataDir: appSupportDir.path,
       clientId: '',
       logLevel: _logLevel,
+      maxHydrationCacheSizeGb: _maxHydrationCacheSizeGb,
     );
 
     // Album 模式：先初始化引擎，再确保远程相册目录存在

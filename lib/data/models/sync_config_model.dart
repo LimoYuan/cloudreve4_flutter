@@ -16,6 +16,8 @@ class SyncConfigModel {
   final String dataDir;
   final String clientId;
   final String logLevel;
+  /// FUSE 水合缓存上限（GB），默认 2，仅 Linux MirrorWcf 模式生效
+  final int maxHydrationCacheSizeGb;
 
   const SyncConfigModel({
     required this.baseUrl,
@@ -33,6 +35,7 @@ class SyncConfigModel {
     this.excludedPaths = const [],
     this.maxWorkers = 0,
     this.logLevel = 'info',
+    this.maxHydrationCacheSizeGb = 2,
   });
 
   SyncConfigModel copyWith({
@@ -51,6 +54,7 @@ class SyncConfigModel {
     String? dataDir,
     String? clientId,
     String? logLevel,
+    int? maxHydrationCacheSizeGb,
   }) {
     return SyncConfigModel(
       baseUrl: baseUrl ?? this.baseUrl,
@@ -69,6 +73,8 @@ class SyncConfigModel {
       dataDir: dataDir ?? this.dataDir,
       clientId: clientId ?? this.clientId,
       logLevel: logLevel ?? this.logLevel,
+      maxHydrationCacheSizeGb:
+          maxHydrationCacheSizeGb ?? this.maxHydrationCacheSizeGb,
     );
   }
 
@@ -89,6 +95,7 @@ class SyncConfigModel {
       dataDir: dataDir,
       clientId: clientId,
       logLevel: logLevel,
+      maxHydrationCacheSizeGb: maxHydrationCacheSizeGb,
     );
   }
 
@@ -109,6 +116,7 @@ class SyncConfigModel {
       dataDir: ffi.dataDir,
       clientId: ffi.clientId,
       logLevel: ffi.logLevel,
+      maxHydrationCacheSizeGb: ffi.maxHydrationCacheSizeGb,
     );
   }
 }

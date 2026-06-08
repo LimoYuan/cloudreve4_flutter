@@ -27,6 +27,8 @@ pub struct SyncConfigFfi {
     pub data_dir: String,
     pub client_id: String,
     pub log_level: String,
+    /// FUSE 水合缓存大小上限（GB），默认 2
+    pub max_hydration_cache_size_gb: u32,
 }
 
 /// 同步状态快照

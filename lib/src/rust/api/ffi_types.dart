@@ -68,6 +68,9 @@ class SyncConfigFfi {
   final String clientId;
   final String logLevel;
 
+  /// FUSE 水合缓存大小上限（GB），默认 2
+  final int maxHydrationCacheSizeGb;
+
   const SyncConfigFfi({
     required this.baseUrl,
     required this.accessToken,
@@ -84,6 +87,7 @@ class SyncConfigFfi {
     required this.dataDir,
     required this.clientId,
     required this.logLevel,
+    required this.maxHydrationCacheSizeGb,
   });
 
   @override
@@ -102,7 +106,8 @@ class SyncConfigFfi {
       maxWorkers.hashCode ^
       dataDir.hashCode ^
       clientId.hashCode ^
-      logLevel.hashCode;
+      logLevel.hashCode ^
+      maxHydrationCacheSizeGb.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -123,7 +128,8 @@ class SyncConfigFfi {
           maxWorkers == other.maxWorkers &&
           dataDir == other.dataDir &&
           clientId == other.clientId &&
-          logLevel == other.logLevel;
+          logLevel == other.logLevel &&
+          maxHydrationCacheSizeGb == other.maxHydrationCacheSizeGb;
 }
 
 /// 累积统计（FFI）

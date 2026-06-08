@@ -17,7 +17,7 @@ Future<void> initSyncEngine({required SyncConfigFfi config}) =>
 Future<void> disposeSyncEngine() =>
     RustSyncApi.instance.api.crateApiFfiDisposeSyncEngine();
 
-/// 进程退出前同步清理（WCF 模式下必须调用，确保占位符释放）
+/// 进程退出前同步清理（WCF/FUSE 模式下必须调用，确保占位符释放和挂载点卸载）
 /// 此函数是同步的，不依赖 tokio runtime，可安全在 exit(0) 前调用
 Future<void> syncShutdown() =>
     RustSyncApi.instance.api.crateApiFfiSyncShutdown();

@@ -33,7 +33,7 @@ impl SyncEngine {
         }
     }
 
-    /// MirrorFUSE: 处理 FUSE read 水合请求（按需下载）
+    /// MirrorFUSE: 处理 FUSE read 水合请求（按需下载，磁盘缓存）
     pub(crate) async fn handle_fuse_read(
         &self,
         inode: u64,
@@ -55,54 +55,87 @@ impl SyncEngine {
 
         let remote_uri_owned = remote_uri.to_string();
 
-        let now = std::time::Instant::now();
-        self.hydration_cache.retain(|_, (_, ts)| now.duration_since(*ts).as_secs() < 300);
-
-        let data = if let Some(cached) = self.hydration_cache.get(&remote_uri_owned) {
-            tracing::trace!("FUSE 水合缓存命中: {}", remote_uri_owned);
-            cached.0.clone()
-        } else {
-            tracing::info!("FUSE 水合下载: {}", remote_uri_owned);
-            let config = self.snapshot_worker_config().await;
-
-            let download_result = async {
-                let urls = self.api.get_download_url(&[&remote_uri_owned]).await;
-                let urls = match urls {
-                    Ok(u) => u,
-                    Err(crate::errors::SyncError::Auth(_)) => {
-                        tracing::info!("FUSE 水合: token 过期，尝试刷新后重试");
-                        self.api.refresh_access_token().await?;
-                        self.api.get_download_url(&[&remote_uri_owned]).await?
-                    }
-                    Err(e) => return Err(e),
-                };
-                let download_url = urls.into_iter().next()
-                    .ok_or_else(|| crate::errors::SyncError::Network("获取下载 URL 返回空列表".into()))?;
-
-                let data = crate::downloader::download_to_buffer(
-                    &self.api,
-                    &download_url,
-                    config.bandwidth_limit,
-                ).await?;
-
-                Ok::<Vec<u8>, crate::errors::SyncError>(data)
-            }.await;
-
-            match download_result {
+        // 1. 缓存命中：直接从磁盘切片
+        if let Some(entry_ref) = self.fuse_hydration_cache.get(&remote_uri_owned) {
+            let file_path = entry_ref.file_path.clone();
+            let file_size = entry_ref.size;
+            drop(entry_ref);
+            tracing::trace!("FUSE 水合缓存命中: {} (size={})", remote_uri_owned, file_size);
+            match crate::platform::fuse::read_cache_slice(&file_path, offset, length, file_size).await {
                 Ok(data) => {
-                    tracing::info!("FUSE 水合下载完成: {} ({}bytes)", remote_uri_owned, data.len());
-                    self.hydration_cache.insert(remote_uri_owned.clone(), (data.clone(), std::time::Instant::now()));
-                    self._record_wcf_stats(&remote_uri_owned, TaskActionType::Hydration, data.len() as u64, None).await;
-                    data
-                }
-                Err(e) => {
-                    tracing::error!("FUSE 水合下载失败: {}: {}", remote_uri_owned, e);
-                    let _ = reply_tx.send(Err(format!("下载失败: {}", e)));
+                    // 刷新 created_at 实现 LRU（避免被频繁访问的条目被淘汰）
+                    if let Some(mut entry) = self.fuse_hydration_cache.get_mut(&remote_uri_owned) {
+                        entry.created_at = std::time::Instant::now();
+                    }
+                    let _ = reply_tx.send(Ok(data));
                     return;
                 }
+                Err(e) => {
+                    tracing::warn!("FUSE 水合缓存读取失败，将重新下载: {}: {}", remote_uri_owned, e);
+                    self.remove_hydration_cache_entry(&remote_uri_owned).await;
+                }
+            }
+        }
+
+        // 3. 缓存未命中：流式下载到磁盘
+        tracing::info!("FUSE 水合下载（落盘）: {}", remote_uri_owned);
+        let config = self.snapshot_worker_config().await;
+
+        let cache_filename = Self::hydration_cache_filename(&remote_uri_owned);
+        let cache_path = self.fuse_hydration_cache_dir.join(&cache_filename);
+
+        let download_result = async {
+            let urls = self.api.get_download_url(&[&remote_uri_owned]).await;
+            let urls = match urls {
+                Ok(u) => u,
+                Err(crate::errors::SyncError::Auth(_)) => {
+                    tracing::info!("FUSE 水合: token 过期，尝试刷新后重试");
+                    self.api.refresh_access_token().await?;
+                    self.api.get_download_url(&[&remote_uri_owned]).await?
+                }
+                Err(e) => return Err(e),
+            };
+            let download_url = urls.into_iter().next()
+                .ok_or_else(|| crate::errors::SyncError::Network("获取下载 URL 返回空列表".into()))?;
+
+            let resp = self.api.stream_download(&download_url, 0).await?;
+            crate::downloader::stream_to_file(resp, &cache_path, config.bandwidth_limit, 0).await?;
+
+            let metadata = tokio::fs::metadata(&cache_path).await
+                .map_err(|e| crate::errors::SyncError::FileSystem(format!("读取缓存文件元信息失败: {}", e)))?;
+            Ok::<u64, crate::errors::SyncError>(metadata.len())
+        }.await;
+
+        let file_size = match download_result {
+            Ok(size) => {
+                tracing::info!("FUSE 水合下载完成（落盘）: {} ({}bytes) → {}", remote_uri_owned, size, cache_path.display());
+                size
+            }
+            Err(e) => {
+                tracing::error!("FUSE 水合下载失败: {}: {}", remote_uri_owned, e);
+                let _ = tokio::fs::remove_file(&cache_path).await;
+                let _ = reply_tx.send(Err(format!("下载失败: {}", e)));
+                return;
             }
         };
 
+        // 4. 写入索引
+        self.fuse_hydration_cache.insert(
+            remote_uri_owned.clone(),
+            crate::platform::fuse::HydrationCacheEntry {
+                file_path: cache_path.clone(),
+                size: file_size,
+                created_at: std::time::Instant::now(),
+            },
+        );
+
+        // 5. 容量淘汰
+        self.evict_oversized_hydration_cache().await;
+
+        // 6. 记录统计
+        self._record_wcf_stats(&remote_uri_owned, TaskActionType::Hydration, file_size, None).await;
+
+        // 7. 更新 DB mapping
         if let Ok(Some(mapping)) = self.db.find_mapping_by_remote_uri(&root_id, &remote_uri_owned).await {
             let _ = self.db.upsert_file_mapping(&FileMapping {
                 id: mapping.id,
@@ -115,13 +148,205 @@ impl SyncEngine {
                 local_mtime: mapping.local_mtime,
                 remote_mtime: mapping.remote_mtime,
                 local_size: None,
-                remote_size: Some(data.len() as u64),
+                remote_size: Some(file_size),
                 sync_status: SyncFileStatus::Synced,
                 is_placeholder: false,
             }).await;
         }
 
-        let _ = reply_tx.send(Ok(data));
+        // 8. 返回切片
+        match crate::platform::fuse::read_cache_slice(&cache_path, offset, length, file_size).await {
+            Ok(data) => {
+                let _ = reply_tx.send(Ok(data));
+            }
+            Err(e) => {
+                tracing::error!("FUSE 水合缓存切片读取失败: {}", e);
+                let _ = reply_tx.send(Err(format!("读取缓存切片失败: {}", e)));
+            }
+        }
+    }
+
+    /// 计算 URI 对应的缓存文件名：hydration_{sha256(uri)}.cache
+    pub(crate) fn hydration_cache_filename(remote_uri: &str) -> String {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(remote_uri.as_bytes());
+        let hash = hex::encode(hasher.finalize());
+        format!("hydration_{}.cache", hash)
+    }
+
+    /// 启动时扫描缓存目录，反查 DB 重建 DashMap 索引
+    /// 孤儿文件（DB 中无对应 mapping）直接删除
+    pub(crate) async fn rebuild_hydration_cache_index(&self) {
+        use std::collections::HashMap;
+        let root_id = match &self.sync_root_id {
+            Some(id) => id.clone(),
+            None => {
+                tracing::warn!("FUSE 水合缓存索引重建跳过: sync_root_id 为空");
+                return;
+            }
+        };
+
+        // 读取磁盘上的缓存文件列表
+        let cache_dir = self.fuse_hydration_cache_dir.clone();
+        let entries = match tokio::fs::read_dir(&cache_dir).await {
+            Ok(e) => e,
+            Err(e) => {
+                tracing::warn!("打开水合缓存目录失败: {}: {}", cache_dir.display(), e);
+                return;
+            }
+        };
+
+        // 收集 hash → (path, size, mtime)
+        let mut disk_entries: HashMap<String, (std::path::PathBuf, u64, std::time::SystemTime)> = HashMap::new();
+        let mut entries = entries;
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let path = entry.path();
+            let name = match path.file_name().and_then(|n| n.to_str()) {
+                Some(n) => n.to_string(),
+                None => continue,
+            };
+            let hash = match name.strip_prefix("hydration_").and_then(|s| s.strip_suffix(".cache")) {
+                Some(h) => h.to_string(),
+                None => {
+                    let _ = tokio::fs::remove_file(&path).await;
+                    continue;
+                }
+            };
+            let metadata = match tokio::fs::metadata(&path).await {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+            if !metadata.is_file() { continue; }
+            let mtime = metadata.modified().unwrap_or(std::time::SystemTime::now());
+            disk_entries.insert(hash, (path, metadata.len(), mtime));
+        }
+
+        if disk_entries.is_empty() {
+            tracing::info!("FUSE 水合缓存目录为空: {}", cache_dir.display());
+            return;
+        }
+
+        // 从 DB 拉取所有 mapping，按 remote_uri 索引
+        let pool = self.db.read_pool();
+        let uris: Vec<String> = match tokio::task::spawn_blocking(move || -> crate::errors::Result<Vec<String>> {
+            let conn = pool.get()?;
+            let mut stmt = conn.prepare(
+                "SELECT remote_uri FROM file_mapping WHERE sync_root_id = ?1"
+            )?;
+            let rows = stmt.query_map(rusqlite::params![root_id], |row| row.get::<_, String>(0))?;
+            Ok(rows.filter_map(|r| r.ok()).collect())
+        }).await {
+            Ok(Ok(v)) => v,
+            Ok(Err(e)) => {
+                tracing::warn!("读取 file_mapping 失败: {}", e);
+                return;
+            }
+            Err(e) => {
+                tracing::warn!("read_pool spawn_blocking 失败: {}", e);
+                return;
+            }
+        };
+
+        let now_instant = std::time::Instant::now();
+        let now_system = std::time::SystemTime::now();
+
+        // hash → uri 反查表
+        let mut hash_to_uri: HashMap<String, String> = HashMap::new();
+        for uri in &uris {
+            let filename = Self::hydration_cache_filename(uri);
+            if let Some(hash) = filename.strip_prefix("hydration_").and_then(|s| s.strip_suffix(".cache")) {
+                hash_to_uri.insert(hash.to_string(), uri.clone());
+            }
+        }
+
+        let mut restored = 0usize;
+        let mut orphaned = 0usize;
+        for (hash, (path, size, mtime)) in disk_entries {
+            if let Some(uri) = hash_to_uri.get(&hash) {
+                // mtime → Instant (近似)：用 now - (now_system - mtime) 反推
+                let created_at = match now_system.duration_since(mtime) {
+                    Ok(elapsed) => now_instant.checked_sub(elapsed).unwrap_or(now_instant),
+                    Err(_) => now_instant,
+                };
+                self.fuse_hydration_cache.insert(
+                    uri.clone(),
+                    crate::platform::fuse::HydrationCacheEntry {
+                        file_path: path,
+                        size,
+                        created_at,
+                    },
+                );
+                restored += 1;
+            } else {
+                // 孤儿：DB 中没有对应 mapping
+                let _ = tokio::fs::remove_file(&path).await;
+                orphaned += 1;
+            }
+        }
+
+        tracing::info!(
+            "FUSE 水合缓存索引重建完成: 恢复 {} 项, 清理孤儿 {} 项, 目录={}",
+            restored, orphaned, cache_dir.display()
+        );
+
+        // 重建后立即跑一次容量淘汰，确保不超过配置上限
+        self.evict_oversized_hydration_cache().await;
+    }
+
+    /// 删除单个水合缓存条目（DashMap + 磁盘文件）
+    pub(crate) async fn remove_hydration_cache_entry(&self, remote_uri: &str) {
+        if let Some((_, entry)) = self.fuse_hydration_cache.remove(remote_uri) {
+            tracing::debug!("FUSE 水合缓存条目删除: {} ({}bytes)", remote_uri, entry.size);
+            if let Err(e) = tokio::fs::remove_file(&entry.file_path).await {
+                if e.kind() != std::io::ErrorKind::NotFound {
+                    tracing::warn!("删除水合缓存文件失败 {}: {}", entry.file_path.display(), e);
+                }
+            }
+        }
+    }
+
+    /// 容量淘汰：超过 max_hydration_cache_size_gb 时按最旧顺序淘汰
+    pub(crate) async fn evict_oversized_hydration_cache(&self) {
+        let max_bytes = {
+            let config = self.config.read().await;
+            (config.max_hydration_cache_size_gb as u64) * 1024 * 1024 * 1024
+        };
+        if max_bytes == 0 { return; }
+
+        let total: u64 = self.fuse_hydration_cache.iter()
+            .map(|kv| kv.value().size)
+            .sum();
+        if total <= max_bytes { return; }
+
+        // 按 created_at 升序排序（最旧优先淘汰）
+        let mut entries: Vec<(String, std::time::Instant, u64)> = self.fuse_hydration_cache.iter()
+            .map(|kv| (kv.key().clone(), kv.value().created_at, kv.value().size))
+            .collect();
+        entries.sort_by_key(|e| e.1);
+
+        let mut current = total;
+        for (uri, _, size) in entries {
+            if current <= max_bytes { break; }
+            tracing::info!("FUSE 水合缓存容量淘汰: {} ({}bytes), 当前={}MB, 上限={}GB",
+                uri, size, current / 1024 / 1024, max_bytes / 1024 / 1024 / 1024);
+            self.remove_hydration_cache_entry(&uri).await;
+            current = current.saturating_sub(size);
+        }
+    }
+
+    /// 启动清理：清空缓存目录（崩溃恢复，调用前 cache 必须为空）
+    /// 实际清理已在 SyncEngine::new() 中完成，此处仅供 reset_sync 显式调用
+    pub(crate) async fn cleanup_stale_hydration_cache(&self) {
+        // 清空内存索引
+        self.fuse_hydration_cache.clear();
+        // 重建缓存目录
+        let _ = tokio::fs::remove_dir_all(&self.fuse_hydration_cache_dir).await;
+        if let Err(e) = tokio::fs::create_dir_all(&self.fuse_hydration_cache_dir).await {
+            tracing::warn!("重建水合缓存目录失败: {}", e);
+        } else {
+            tracing::info!("水合缓存目录已清空: {}", self.fuse_hydration_cache_dir.display());
+        }
     }
 
     /// FUSE 上传：将写入的文件上传到云端
@@ -370,8 +595,8 @@ impl SyncEngine {
 
         match self.api.delete_files(&[remote_uri]).await {
             Ok(()) => {
-                // 释放水合缓存
-                self.hydration_cache.remove(remote_uri);
+                // 释放水合缓存（内存索引 + 磁盘文件）
+                self.remove_hydration_cache_entry(remote_uri).await;
 
                 // 删除 DB mapping
                 let _ = self.db.delete_mapping_by_remote_uri(&root_id, remote_uri).await;
@@ -460,7 +685,7 @@ impl SyncEngine {
                 }
 
                 // 清理旧 URI 的水合缓存
-                self.hydration_cache.remove(old_remote_uri);
+                self.remove_hydration_cache_entry(old_remote_uri).await;
 
                 // 更新 DB mapping
                 let _ = self.db.update_mapping_remote_uri(&root_id, old_remote_uri, &new_remote_uri).await;

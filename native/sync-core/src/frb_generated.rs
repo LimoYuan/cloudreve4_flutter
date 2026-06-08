@@ -1118,6 +1118,7 @@ impl SseDecode for crate::api::ffi_types::SyncConfigFfi {
         let mut var_dataDir = <String>::sse_decode(deserializer);
         let mut var_clientId = <String>::sse_decode(deserializer);
         let mut var_logLevel = <String>::sse_decode(deserializer);
+        let mut var_maxHydrationCacheSizeGb = <u32>::sse_decode(deserializer);
         return crate::api::ffi_types::SyncConfigFfi {
             base_url: var_baseUrl,
             access_token: var_accessToken,
@@ -1134,6 +1135,7 @@ impl SseDecode for crate::api::ffi_types::SyncConfigFfi {
             data_dir: var_dataDir,
             client_id: var_clientId,
             log_level: var_logLevel,
+            max_hydration_cache_size_gb: var_maxHydrationCacheSizeGb,
         };
     }
 }
@@ -1593,6 +1595,9 @@ impl flutter_rust_bridge::IntoDart for crate::api::ffi_types::SyncConfigFfi {
             self.data_dir.into_into_dart().into_dart(),
             self.client_id.into_into_dart().into_dart(),
             self.log_level.into_into_dart().into_dart(),
+            self.max_hydration_cache_size_gb
+                .into_into_dart()
+                .into_dart(),
         ]
         .into_dart()
     }
@@ -2064,6 +2069,7 @@ impl SseEncode for crate::api::ffi_types::SyncConfigFfi {
         <String>::sse_encode(self.data_dir, serializer);
         <String>::sse_encode(self.client_id, serializer);
         <String>::sse_encode(self.log_level, serializer);
+        <u32>::sse_encode(self.max_hydration_cache_size_gb, serializer);
     }
 }
 

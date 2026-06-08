@@ -262,6 +262,55 @@ pub struct UploadResult {
     pub size: u64,
 }
 
+// ========== 水合磁盘缓存 ==========
+
+/// 水合缓存索引项（仅存元数据，文件落盘）
+#[derive(Debug, Clone)]
+pub struct HydrationCacheEntry {
+    /// 缓存文件绝对路径
+    pub file_path: std::path::PathBuf,
+    /// 缓存文件大小
+    pub size: u64,
+    /// 创建时间（用于 TTL/LRU 淘汰）
+    pub created_at: std::time::Instant,
+}
+
+/// 从磁盘缓存文件读取 offset 起 length 字节
+/// 边界：offset >= file_size 返回空 Vec；length 超界自动截断
+pub async fn read_cache_slice(
+    file_path: &Path,
+    offset: i64,
+    length: i64,
+    file_size: u64,
+) -> std::result::Result<Vec<u8>, String> {
+    use tokio::io::{AsyncReadExt, AsyncSeekExt};
+
+    if offset < 0 || length <= 0 {
+        return Ok(Vec::new());
+    }
+    let offset_u = offset as u64;
+    if offset_u >= file_size {
+        return Ok(Vec::new());
+    }
+    let read_len = ((file_size - offset_u) as usize).min(length as usize);
+    if read_len == 0 {
+        return Ok(Vec::new());
+    }
+
+    let mut file = tokio::fs::File::open(file_path)
+        .await
+        .map_err(|e| format!("打开缓存文件失败: {}", e))?;
+    file.seek(std::io::SeekFrom::Start(offset_u))
+        .await
+        .map_err(|e| format!("seek 失败: {}", e))?;
+
+    let mut buf = vec![0u8; read_len];
+    file.read_exact(&mut buf)
+        .await
+        .map_err(|e| format!("读取缓存切片失败: {}", e))?;
+    Ok(buf)
+}
+
 // ========== 写缓冲 ==========
 
 /// 单个文件的写缓冲
@@ -543,13 +592,8 @@ impl Filesystem for CloudreveFuseFs {
 
         match self.runtime.block_on(rx) {
             Ok(Ok(data)) => {
-                let start = offset as usize;
-                let end = (offset as usize + size as usize).min(data.len());
-                if start < data.len() {
-                    reply.data(&data[start..end]);
-                } else {
-                    reply.data(&[]);
-                }
+                // handle_fuse_read 已返回切片数据，直接透传
+                reply.data(&data);
             }
             Ok(Err(e)) => {
                 tracing::error!("FUSE read: 水合失败: {}", e);

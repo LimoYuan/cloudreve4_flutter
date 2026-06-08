@@ -42,6 +42,8 @@ pub struct SyncConfig {
     pub max_workers: usize,
     pub data_dir: PathBuf,
     pub client_id: String,
+    /// FUSE 水合缓存大小上限（GB），默认 2，最小 1，最大 100
+    pub max_hydration_cache_size_gb: u32,
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -48,7 +48,7 @@ class FloatingUploadService {
   }
 
   Future<void> _syncSiteIcon() async {
-    if (!(Platform.isWindows || Platform.isLinux)) return;
+    if (!Platform.isWindows) return;
 
     try {
       final server = ServerService.instance.currentServer;

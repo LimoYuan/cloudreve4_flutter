@@ -65,7 +65,7 @@ pub struct SyncEngine {
     wcf_fetch_rx: std::sync::Mutex<Option<mpsc::Receiver<sync_windows::FetchDataRequest>>>,
     /// WCF 水合缓存：uri → 已下载的完整文件数据，避免同一文件重复下载
     #[cfg(feature = "windows-cfapi")]
-    hydration_cache: Arc<DashMap<String, (Vec<u8>, std::time::Instant)>>,
+    wcf_hydration_cache: Arc<DashMap<String, (Vec<u8>, std::time::Instant)>>,
     /// 缓存的本地同步根路径（WCF 清理时同步读取，避免 await）
     #[cfg(feature = "windows-cfapi")]
     cached_local_root: std::sync::Mutex<std::path::PathBuf>,
@@ -75,9 +75,12 @@ pub struct SyncEngine {
     /// FUSE 请求接收端（在适配器初始化时提取）
     #[cfg(feature = "linux-fuse")]
     fuse_request_rx: std::sync::Mutex<Option<tokio::sync::mpsc::Receiver<crate::platform::fuse::FuseRequest>>>,
-    /// FUSE 水合缓存：uri → 已下载的完整文件数据
+    /// FUSE 水合磁盘缓存索引：uri → 磁盘缓存文件元信息
     #[cfg(feature = "linux-fuse")]
-    hydration_cache: Arc<DashMap<String, (Vec<u8>, std::time::Instant)>>,
+    fuse_hydration_cache: Arc<DashMap<String, crate::platform::fuse::HydrationCacheEntry>>,
+    /// FUSE 水合缓存目录
+    #[cfg(feature = "linux-fuse")]
+    fuse_hydration_cache_dir: std::path::PathBuf,
 }
 
 impl SyncEngine {
@@ -103,6 +106,16 @@ impl SyncEngine {
         let ensured_dirs = Arc::new(DashMap::new());
         let event_sink = Arc::new(EventSink::new());
         let suppress_paths = Arc::new(DashMap::new());
+
+        #[cfg(feature = "linux-fuse")]
+        let fuse_hydration_cache_dir = config.data_dir.join("sync_core").join("hydration_cache");
+        #[cfg(feature = "linux-fuse")]
+        {
+            // 确保缓存目录存在（不清空，启动后由 rebuild_hydration_cache_index 重建索引）
+            if let Err(e) = std::fs::create_dir_all(&fuse_hydration_cache_dir) {
+                tracing::warn!("创建 FUSE 水合缓存目录失败: {}: {}", fuse_hydration_cache_dir.display(), e);
+            }
+        }
 
         let max_workers = config.max_workers;
         let client_id = config.client_id.clone();
@@ -136,7 +149,7 @@ impl SyncEngine {
             #[cfg(feature = "windows-cfapi")]
             wcf_fetch_rx: std::sync::Mutex::new(None),
             #[cfg(feature = "windows-cfapi")]
-            hydration_cache: Arc::new(DashMap::new()),
+            wcf_hydration_cache: Arc::new(DashMap::new()),
             #[cfg(feature = "windows-cfapi")]
             cached_local_root: std::sync::Mutex::new(std::path::PathBuf::new()),
             #[cfg(feature = "linux-fuse")]
@@ -144,7 +157,9 @@ impl SyncEngine {
             #[cfg(feature = "linux-fuse")]
             fuse_request_rx: std::sync::Mutex::new(None),
             #[cfg(feature = "linux-fuse")]
-            hydration_cache: Arc::new(DashMap::new()),
+            fuse_hydration_cache: Arc::new(DashMap::new()),
+            #[cfg(feature = "linux-fuse")]
+            fuse_hydration_cache_dir,
         })
     }
 
@@ -218,6 +233,12 @@ impl SyncEngine {
         #[cfg(feature = "linux-fuse")]
         {
             self.cleanup_fuse();
+        }
+
+        // 2c. 清空 FUSE 水合缓存（重置时彻底清理）
+        #[cfg(feature = "linux-fuse")]
+        {
+            self.cleanup_stale_hydration_cache().await;
         }
 
         // 3. 终止所有活跃 Worker
@@ -305,9 +326,9 @@ impl SyncEngine {
     }
 
     pub async fn update_config(&self, new_config: SyncConfig) -> Result<()> {
-        let old_access_token = {
+        let (old_access_token, old_hydration_cache_gb) = {
             let config = self.config.read().await;
-            config.access_token.clone()
+            (config.access_token.clone(), config.max_hydration_cache_size_gb)
         };
 
         *self.conflict.write().await = ConflictResolver::new(new_config.conflict_strategy.clone());
@@ -321,15 +342,28 @@ impl SyncEngine {
         let new_wcf_delete = format!("{:?}", new_config.wcf_delete_mode);
         let new_mode = format!("{:?}", new_config.sync_mode);
         let new_max_concurrent = new_config.max_concurrent_transfers;
+        let new_hydration_cache_gb = new_config.max_hydration_cache_size_gb;
         *self.config.write().await = new_config;
 
         if new_bandwidth.is_some() {
             tracing::info!("仅对下载限速生效, 由于Cloudreve实现原因, 上传限速无法生效");
         }
         tracing::info!(
-            "同步配置已更新: 模式={}, 冲突策略={}, WCF删除={}, 并发={}, 带宽限制={:?}",
-            new_mode, new_conflict, new_wcf_delete, new_max_concurrent, new_bandwidth
+            "同步配置已更新: 模式={}, 冲突策略={}, WCF删除={}, 并发={}, 带宽限制={:?}, 水合缓存上限={}GB",
+            new_mode, new_conflict, new_wcf_delete, new_max_concurrent, new_bandwidth, new_hydration_cache_gb
         );
+
+        #[cfg(feature = "linux-fuse")]
+        if new_hydration_cache_gb != old_hydration_cache_gb {
+            tracing::info!(
+                "水合缓存上限变化: {}GB -> {}GB, 立即触发淘汰",
+                old_hydration_cache_gb, new_hydration_cache_gb
+            );
+            self.evict_oversized_hydration_cache().await;
+        }
+        #[cfg(not(feature = "linux-fuse"))]
+        let _ = old_hydration_cache_gb;
+
         Ok(())
     }
 

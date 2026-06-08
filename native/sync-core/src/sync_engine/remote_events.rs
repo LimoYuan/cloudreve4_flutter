@@ -113,9 +113,9 @@ impl SyncEngine {
                             fuse.remove_inode(&relative);
                         }
                     }
-                    // 释放水合缓存
+                    // 释放水合缓存（内存索引 + 磁盘文件）
                     let remote_uri = format!("{}/{}", remote_root, &relative);
-                    self.hydration_cache.remove(&remote_uri);
+                    self.remove_hydration_cache_entry(&remote_uri).await;
                     let _ = self.db.delete_file_mapping(&root_id, &relative).await;
                     self._record_wcf_stats(&relative, TaskActionType::DeleteLocal, 0, None).await;
                     return;
@@ -174,6 +174,9 @@ impl SyncEngine {
                             fuse.handle_remote_rename(&old_relative, &new_relative, &new_entry.uri);
                         }
                     }
+                    // 清理旧 URI 水合缓存
+                    let old_uri = format!("{}/{}", remote_root, &old_relative);
+                    self.remove_hydration_cache_entry(&old_uri).await;
                     // 同时更新 local_path 和 remote_uri（与 Worker 的 update_file_mapping_path 一致）
                     let _ = self.db.update_file_mapping_path(&root_id, &old_relative, &new_relative, &new_entry.uri).await;
                     self._record_wcf_stats(
@@ -254,6 +257,9 @@ impl SyncEngine {
                             fuse.handle_remote_rename(&old_relative, &new_relative, &new_entry.uri);
                         }
                     }
+                    // 清理旧 URI 水合缓存
+                    let old_uri = format!("{}/{}", remote_root, &old_relative);
+                    self.remove_hydration_cache_entry(&old_uri).await;
                     // 同时更新 local_path 和 remote_uri
                     let _ = self.db.update_file_mapping_path(&root_id, &old_relative, &new_relative, &new_entry.uri).await;
                     self._record_wcf_stats(

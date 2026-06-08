@@ -423,4 +423,37 @@ impl SyncEngine {
 
         Ok(result)
     }
+
+    /// 记录绕过 WorkerPool 的操作统计（WCF / FUSE 共用）
+    pub(crate) async fn _record_wcf_stats(
+        &self,
+        relative_path: &str,
+        action_type: TaskActionType,
+        file_size: u64,
+        error_message: Option<String>,
+    ) {
+        let now = chrono::Utc::now().to_rfc3339();
+        let status = if error_message.is_none() {
+            TaskItemStatus::Completed
+        } else {
+            TaskItemStatus::Failed
+        };
+        let task_id = format!("wcf_{}", uuid::Uuid::new_v4());
+        if let Err(e) = self.db.record_standalone_task_item(
+            &WorkerTrigger::WcfEvent,
+            &SyncTaskItem {
+                id: 0,
+                task_id,
+                relative_path: relative_path.to_string(),
+                action_type,
+                status,
+                file_size,
+                error_message,
+                created_at: now.clone(),
+                updated_at: now,
+            },
+        ).await {
+            tracing::warn!("WCF 统计记录失败: {}", e);
+        }
+    }
 }

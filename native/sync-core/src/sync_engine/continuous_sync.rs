@@ -27,8 +27,17 @@ impl SyncEngine {
         };
 
         // 仅 UploadOnly、Full、MirrorWcf、AlbumUpload 启动本地文件监听
-        let mut local_rx = if matches!(sync_mode, SyncMode::UploadOnly | SyncMode::Full | SyncMode::MirrorWcf | SyncMode::AlbumUpload) {
+        // 但 FUSE 模式下不需要：所有文件操作都经过 FUSE handler，监听器只会造成无限循环
+        #[cfg(feature = "linux-fuse")]
+        let fuse_active = lock_recover(&self.fuse_request_rx).is_some();
+        #[cfg(not(feature = "linux-fuse"))]
+        let fuse_active = false;
+
+        let mut local_rx = if matches!(sync_mode, SyncMode::UploadOnly | SyncMode::Full | SyncMode::MirrorWcf | SyncMode::AlbumUpload) && !fuse_active {
             Some(spawn_local_watcher(&local_root, lock_recover(&self.shutdown_token).clone()))
+        } else if fuse_active {
+            tracing::info!("FUSE 模式: 不启动本地文件监听（FUSE handler 已处理所有操作）");
+            None
         } else {
             tracing::info!("仅下载模式: 不启动本地文件监听");
             None

@@ -251,6 +251,9 @@ impl SyncEngine {
         // 抑制 SSE 回弹
         self.suppress_paths.insert(relative_path.to_string(), std::time::Instant::now());
 
+        // 记录统计
+        self._record_wcf_stats(relative_path, TaskActionType::Upload, file_size, None).await;
+
         tracing::info!("FUSE 上传完成: {} → {} ({}bytes)", name, file_uri, file_size);
 
         let _ = reply_tx.send(Ok(crate::platform::fuse::UploadResult {
@@ -330,6 +333,9 @@ impl SyncEngine {
                 // 抑制 SSE 回弹
                 self.suppress_paths.insert(relative_path.to_string(), std::time::Instant::now());
 
+                // 记录统计
+                self._record_wcf_stats(relative_path, TaskActionType::MkdirRemote, 0, None).await;
+
                 tracing::info!("FUSE 目录创建成功: {} → {}", name, remote_uri);
                 let _ = reply_tx.send(Ok(()));
             }
@@ -367,6 +373,9 @@ impl SyncEngine {
 
                 // 抑制 SSE 回弹
                 self.suppress_paths.insert(relative_path.to_string(), std::time::Instant::now());
+
+                // 记录统计
+                self._record_wcf_stats(relative_path, TaskActionType::DeleteRemote, 0, None).await;
 
                 tracing::info!("FUSE 删除成功: {}", name);
                 let _ = reply_tx.send(Ok(()));

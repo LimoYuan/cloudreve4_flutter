@@ -1042,6 +1042,32 @@ impl FusePlatformAdapter {
         }
     }
 
+    /// 处理远程重命名/移动事件：直接更新 InodeStore（不走 FUSE handler）
+    pub fn handle_remote_rename(&self, old_rel: &str, new_rel: &str, new_remote_uri: &str) {
+        let new_path = std::path::Path::new(new_rel);
+        let new_parent_rel = new_path.parent()
+            .map(|p| crate::utils::normalize_path(&p.to_string_lossy()))
+            .unwrap_or_default();
+        let new_name = new_path.file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+
+        let new_parent_ino = self.inode_store.path_to_inode.get(&new_parent_rel)
+            .map(|r| *r.value())
+            .unwrap_or(FUSE_ROOT_INO);
+
+        let ino = self.inode_store.path_to_inode.get(old_rel)
+            .map(|r| *r.value());
+
+        self.inode_store.rename_inode(old_rel, new_rel, new_parent_ino, &new_name);
+
+        if let Some(ino) = ino {
+            self.inode_store.update_remote_uri(ino, new_remote_uri);
+        }
+
+        tracing::info!("FUSE 远程重命名: {} → {} (ino={:?})", old_rel, new_rel, ino);
+    }
+
     pub fn unmount(&self) -> anyhow::Result<()> {
         self.shutdown.cancel();
         let result = std::process::Command::new("fusermount3")

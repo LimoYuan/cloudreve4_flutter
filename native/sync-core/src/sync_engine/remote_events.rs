@@ -101,6 +101,23 @@ impl SyncEngine {
                     return;
                 }
 
+                // MirrorFUSE: 始终清理 inode + DB（不检查 suppress）
+                // 远程删除必须反映到本地，suppress 只用于 create/modify 回弹
+                // 即使是 FUSE unlink 的 SSE 回弹，重复 remove_inode/delete 也是 no-op 无害
+                #[cfg(feature = "linux-fuse")]
+                if is_mirror_wcf {
+                    self.suppress_paths.remove(&relative); // consume 如果存在
+                    {
+                        let adapter = lock_recover(&self.fuse_adapter);
+                        if let Some(ref fuse) = *adapter {
+                            fuse.remove_inode(&relative);
+                        }
+                    }
+                    let _ = self.db.delete_file_mapping(&root_id, &relative).await;
+                    self._record_wcf_stats(&relative, TaskActionType::DeleteLocal, 0, None).await;
+                    return;
+                }
+
                 // 被抑制的路径：上传失败清理远端碎片等场景，不应删除本地文件
                 if self.suppress_paths.contains_key(&relative) {
                     tracing::info!("[远程事件] 删除已抑制，跳过本地删除: {}", relative);
@@ -120,15 +137,6 @@ impl SyncEngine {
                 }
                 let _ = self.db.delete_file_mapping(&root_id, &relative).await;
                 self.suppress_paths.insert(relative.clone(), std::time::Instant::now());
-
-                // MirrorFUSE: 远程删除 → 从 FUSE inode 缓存移除
-                #[cfg(feature = "linux-fuse")]
-                if is_mirror_wcf {
-                    let adapter = lock_recover(&self.fuse_adapter);
-                    if let Some(ref fuse) = *adapter {
-                        fuse.remove_inode(&relative);
-                    }
-                }
 
                 // MirrorWcf: 远程删除 → 删本地，记录统计
                 if is_mirror_wcf && existed {
@@ -153,6 +161,24 @@ impl SyncEngine {
                 let now = std::time::Instant::now();
                 self.suppress_paths.insert(old_relative.clone(), now);
                 self.suppress_paths.insert(new_relative.clone(), now);
+
+                // MirrorFUSE: 直接更新 InodeStore + DB，不走 Worker（避免触发 FUSE rename 二次操作）
+                #[cfg(feature = "linux-fuse")]
+                if is_mirror_wcf {
+                    {
+                        let adapter = lock_recover(&self.fuse_adapter);
+                        if let Some(ref fuse) = *adapter {
+                            fuse.handle_remote_rename(&old_relative, &new_relative, &new_entry.uri);
+                        }
+                    }
+                    // 同时更新 local_path 和 remote_uri（与 Worker 的 update_file_mapping_path 一致）
+                    let _ = self.db.update_file_mapping_path(&root_id, &old_relative, &new_relative, &new_entry.uri).await;
+                    self._record_wcf_stats(
+                        &format!("{} -> {}", old_relative, new_relative),
+                        TaskActionType::Rename, 0, None,
+                    ).await;
+                    return;
+                }
 
                 let old_local_path = local_root.join(&old_relative);
 
@@ -216,6 +242,24 @@ impl SyncEngine {
                 self.suppress_paths.insert(old_relative.clone(), now);
                 self.suppress_paths.insert(new_relative.clone(), now);
 
+                // MirrorFUSE: 直接更新 InodeStore + DB，不走 Worker
+                #[cfg(feature = "linux-fuse")]
+                if is_mirror_wcf {
+                    {
+                        let adapter = lock_recover(&self.fuse_adapter);
+                        if let Some(ref fuse) = *adapter {
+                            fuse.handle_remote_rename(&old_relative, &new_relative, &new_entry.uri);
+                        }
+                    }
+                    // 同时更新 local_path 和 remote_uri
+                    let _ = self.db.update_file_mapping_path(&root_id, &old_relative, &new_relative, &new_entry.uri).await;
+                    self._record_wcf_stats(
+                        &format!("{} -> {}", old_relative, new_relative),
+                        TaskActionType::Move, 0, None,
+                    ).await;
+                    return;
+                }
+
                 let old_local_path = local_root.join(&old_relative);
 
                 if old_local_path.exists() {
@@ -259,39 +303,6 @@ impl SyncEngine {
                     ).await;
                 }
             }
-        }
-    }
-
-    /// MirrorWcf 专用：记录绕过 WorkerPool 的操作统计
-    async fn _record_wcf_stats(
-        &self,
-        relative_path: &str,
-        action_type: TaskActionType,
-        file_size: u64,
-        error_message: Option<String>,
-    ) {
-        let now = chrono::Utc::now().to_rfc3339();
-        let status = if error_message.is_none() {
-            TaskItemStatus::Completed
-        } else {
-            TaskItemStatus::Failed
-        };
-        let task_id = format!("wcf_{}", uuid::Uuid::new_v4());
-        if let Err(e) = self.db.record_standalone_task_item(
-            &WorkerTrigger::WcfEvent,
-            &SyncTaskItem {
-                id: 0,
-                task_id,
-                relative_path: relative_path.to_string(),
-                action_type,
-                status,
-                file_size,
-                error_message,
-                created_at: now.clone(),
-                updated_at: now,
-            },
-        ).await {
-            tracing::warn!("WCF 统计记录失败: {}", e);
         }
     }
 

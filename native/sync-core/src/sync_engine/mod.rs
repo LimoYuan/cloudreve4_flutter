@@ -29,6 +29,7 @@ use crate::event_sink::EventSink;
 use crate::file_lock::FileLockRegistry;
 use crate::models::*;
 use crate::sync_db::SyncDb;
+use crate::utils::lock_recover;
 use crate::worker::WorkerPool;
 use dashmap::DashMap;
 use std::collections::HashMap;
@@ -163,16 +164,16 @@ impl SyncEngine {
 
     /// 确保 shutdown token 未被取消（stop 后重新启动时使用）
     pub fn ensure_token_fresh(&self) {
-        let token = self.shutdown_token.lock().unwrap().clone();
+        let token = lock_recover(&self.shutdown_token).clone();
         if token.is_cancelled() {
             let new_token = tokio_util::sync::CancellationToken::new();
             self.worker_pool.update_shutdown_token(new_token.clone());
-            *self.shutdown_token.lock().unwrap() = new_token;
+            *lock_recover(&self.shutdown_token) = new_token;
         }
     }
 
     pub async fn stop(&self) -> Result<()> {
-        self.shutdown_token.lock().unwrap().cancel();
+        lock_recover(&self.shutdown_token).cancel();
         *self.state.write().await = SyncState::Stopped;
         Ok(())
     }
@@ -189,11 +190,11 @@ impl SyncEngine {
 
     pub async fn force_sync(&self) -> Result<SyncSummary> {
         // 取消当前所有操作（持续同步 + 正在运行的初始同步）
-        self.shutdown_token.lock().unwrap().cancel();
+        lock_recover(&self.shutdown_token).cancel();
 
         // 创建新 token，供接下来的 run_initial_sync 使用
         let new_token = tokio_util::sync::CancellationToken::new();
-        *self.shutdown_token.lock().unwrap() = new_token.clone();
+        *lock_recover(&self.shutdown_token) = new_token.clone();
         self.worker_pool.update_shutdown_token(new_token);
 
         // run_initial_sync 会等待 sync_lock（旧同步的 worker 检测到取消后快速退出，释放锁）
@@ -364,7 +365,7 @@ impl SyncEngine {
         #[cfg(feature = "windows-cfapi")]
         {
             let path = std::path::PathBuf::from(local_path);
-            if let Some(adapter) = self.platform_adapter.lock().unwrap().as_ref() {
+            if let Some(adapter) = lock_recover(&self.platform_adapter).as_ref() {
                 adapter.hydrate_file(&path)?;
             }
         }

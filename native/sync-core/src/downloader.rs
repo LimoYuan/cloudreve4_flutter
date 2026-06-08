@@ -192,6 +192,19 @@ pub async fn stream_to_file(
             }
         }
         Some(limit) => {
+            // limit == 0 视为无限速，避免除零 panic
+            if limit == 0 {
+                tracing::warn!(
+                    "stream_to_file: bandwidth_limit=Some(0) 被识别为无限速，请检查上层是否应传 None（tmp={}）",
+                    tmp_path.display()
+                );
+                while let Some(chunk) = stream.next().await {
+                    let chunk = chunk.map_err(|e| SyncError::Network(e.to_string()))?;
+                    file.write_all(&chunk).await?;
+                }
+                file.flush().await?;
+                return Ok(());
+            }
             let transfer_start = std::time::Instant::now();
 
             while let Some(chunk) = stream.next().await {
@@ -287,6 +300,17 @@ pub async fn download_to_buffer(
             }
         }
         Some(limit) => {
+            // limit == 0 视为无限速，避免除零 panic
+            if limit == 0 {
+                tracing::warn!(
+                    "download_to_buffer: bandwidth_limit=Some(0) 被识别为无限速，请检查上层是否应传 None"
+                );
+                while let Some(chunk) = stream.next().await {
+                    let chunk = chunk.map_err(|e| SyncError::Network(e.to_string()))?;
+                    buffer.extend_from_slice(&chunk);
+                }
+                return Ok(buffer);
+            }
             let transfer_start = std::time::Instant::now();
             while let Some(chunk) = stream.next().await {
                 let chunk = chunk.map_err(|e| SyncError::Network(e.to_string()))?;

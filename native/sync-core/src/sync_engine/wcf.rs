@@ -2,6 +2,7 @@
 //! 仅在 windows-cfapi feature 启用时编译
 
 use crate::models::*;
+use crate::utils::lock_recover;
 
 use super::SyncEngine;
 
@@ -209,7 +210,7 @@ impl SyncEngine {
         } else {
             #[cfg(feature = "windows-cfapi")]
             {
-                if let Some(adapter) = self.platform_adapter.lock().unwrap().as_ref() {
+                if let Some(adapter) = lock_recover(&self.platform_adapter).as_ref() {
                     match adapter.create_placeholder_for_remote(
                         local_path.parent().unwrap_or(local_root),
                         local_path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default().as_str(),
@@ -244,13 +245,13 @@ impl SyncEngine {
 
     /// WCF 清理（同步，可安全在 exit 前调用）
     pub(crate) fn cleanup_wcf(&self) {
-        let adapter_opt = self.platform_adapter.lock().unwrap().take();
+        let adapter_opt = lock_recover(&self.platform_adapter).take();
         if let Some(adapter) = adapter_opt {
             if let Err(e) = adapter.disconnect() {
                 tracing::warn!("WCF 断开连接失败: {}", e);
             }
 
-            let local_root = self.cached_local_root.lock().unwrap().clone();
+            let local_root = lock_recover(&self.cached_local_root).clone();
             if !local_root.as_os_str().is_empty() {
                 unsafe {
                     use std::os::windows::ffi::OsStrExt;

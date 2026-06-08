@@ -4,6 +4,7 @@ use crate::errors::{Result, SyncError};
 use crate::file_lock::FileLockRegistry;
 use crate::models::*;
 use crate::sync_db::SyncDb;
+use crate::utils::lock_recover;
 use super::worker_impl::Worker;
 #[cfg(feature = "windows-cfapi")]
 use super::worker_impl::PlaceholderCreator;
@@ -137,9 +138,9 @@ impl WorkerPool {
             conflict_resolver,
             self.event_sink.clone(),
             self.suppress_paths.clone(),
-            self.shutdown_token.lock().unwrap().clone(),
+            lock_recover(&self.shutdown_token).clone(),
             #[cfg(feature = "windows-cfapi")]
-            self.platform_adapter.lock().unwrap().clone(),
+            lock_recover(&self.platform_adapter).clone(),
         );
 
         let _ = self
@@ -237,18 +238,38 @@ impl WorkerPool {
         let ensured_dirs = self.ensured_dirs.clone();
         let event_sink = self.event_sink.clone();
         let suppress_paths = self.suppress_paths.clone();
-        let shutdown_token = self.shutdown_token.lock().unwrap().clone();
+        let shutdown_token = lock_recover(&self.shutdown_token).clone();
         let active_workers = self.active_workers.clone();
         let active_upload_paths = self.active_upload_paths.clone();
         let active_count = self.active_count.clone();
         #[cfg(feature = "windows-cfapi")]
-        let platform_adapter = self.platform_adapter.lock().unwrap().clone();
+        let platform_adapter = lock_recover(&self.platform_adapter).clone();
 
         self.active_count
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
         let handle = tokio::spawn(async move {
-            let _permit = sem.acquire().await.unwrap();
+            let _permit = match sem.acquire().await {
+                Ok(p) => p,
+                Err(e) => {
+                    tracing::warn!(
+                        "[{}] Worker 信号量已关闭，跳过执行: {}",
+                        task_id, e
+                    );
+                    let _ = event_sink
+                        .emit(crate::api::ffi_types::SyncEventFfi::WorkerFailed {
+                            task_id: task_id.clone(),
+                            message: format!("Worker 信号量已关闭（同步引擎可能正在停止）: {}", e),
+                        })
+                        .await;
+                    active_workers.remove(&task_id);
+                    for path in &upload_paths_for_cleanup {
+                        active_upload_paths.remove(path);
+                    }
+                    active_count.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+                    return;
+                }
+            };
             let worker = Worker::new(
                 task_id.clone(),
                 trigger,
@@ -281,7 +302,7 @@ impl WorkerPool {
 
     #[cfg(feature = "windows-cfapi")]
     pub fn set_platform_adapter(&self, adapter: Arc<dyn PlaceholderCreator>) {
-        *self.platform_adapter.lock().unwrap() = Some(adapter);
+        *lock_recover(&self.platform_adapter) = Some(adapter);
     }
 
     /// 当前活跃 Worker 数（含阻塞型和后台型）
@@ -304,7 +325,7 @@ impl WorkerPool {
 
     /// 更新 shutdown token（引擎重启时调用）
     pub fn update_shutdown_token(&self, token: CancellationToken) {
-        *self.shutdown_token.lock().unwrap() = token;
+        *lock_recover(&self.shutdown_token) = token;
     }
 
     /// 终止所有活跃 Worker 并等待退出

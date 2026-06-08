@@ -1,7 +1,29 @@
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard};
 
 use crate::errors::{Result, SyncError};
+
+/// 获取 `std::sync::Mutex` 锁，PoisonError 自动恢复（into_inner）。
+///
+/// 与裸 `.lock().unwrap()` 的差异：调用方在持锁期间 panic 时，本函数仍可继续工作，
+/// 避免一次 panic 把同一 Mutex 上后续所有操作连锁炸掉。同步引擎里所有跨线程共享的
+/// `std::sync::Mutex` 都应通过此 helper 取锁。
+///
+/// 触发 PoisonError 恢复时会以 `warn` 级别记录调用方位置（依赖 `#[track_caller]`），
+/// 方便排查是哪个调用点持锁时 panic。
+#[inline]
+#[track_caller]
+pub fn lock_recover<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|p| {
+        let loc = std::panic::Location::caller();
+        tracing::warn!(
+            "lock_recover: Mutex 被 poison 后恢复 at {}:{}:{}（说明此前有线程持锁时 panic，请追溯日志）",
+            loc.file(), loc.line(), loc.column()
+        );
+        p.into_inner()
+    })
+}
 
 /// 增量哈希：前 8KB + 文件大小（快速判断文件是否变更）
 pub async fn quick_hash(path: &Path, size: u64) -> Result<String> {

@@ -135,7 +135,7 @@ impl WindowsAdapter {
         let (tx, rx) = mpsc::channel(256);
         // 替换全局回调发送端
         {
-            let mut guard = CALLBACK_SENDER.lock().unwrap();
+            let mut guard = CALLBACK_SENDER.lock().unwrap_or_else(|p| p.into_inner());
             *guard = Some(tx);
         }
 

@@ -1,6 +1,7 @@
 use crate::errors::Result;
 use crate::event_handler::EventHandler;
 use crate::models::*;
+use crate::utils::lock_recover;
 
 use super::SyncEngine;
 
@@ -27,7 +28,7 @@ impl SyncEngine {
 
         // 仅 UploadOnly、Full、MirrorWcf、AlbumUpload 启动本地文件监听
         let mut local_rx = if matches!(sync_mode, SyncMode::UploadOnly | SyncMode::Full | SyncMode::MirrorWcf | SyncMode::AlbumUpload) {
-            Some(spawn_local_watcher(&local_root, self.shutdown_token.lock().unwrap().clone()))
+            Some(spawn_local_watcher(&local_root, lock_recover(&self.shutdown_token).clone()))
         } else {
             tracing::info!("仅下载模式: 不启动本地文件监听");
             None
@@ -39,7 +40,7 @@ impl SyncEngine {
         // MirrorWcf: 取走 WCF 回调接收端
         #[cfg(feature = "windows-cfapi")]
         let mut wcf_fetch_rx = if matches!(sync_mode, SyncMode::MirrorWcf) {
-            self.wcf_fetch_rx.lock().unwrap().take()
+            lock_recover(&self.wcf_fetch_rx).take()
         } else {
             None
         };
@@ -49,7 +50,7 @@ impl SyncEngine {
         // MirrorFUSE: 取走 FUSE 请求接收端
         #[cfg(feature = "linux-fuse")]
         let mut fuse_request_rx = if matches!(sync_mode, SyncMode::MirrorWcf) {
-            self.fuse_request_rx.lock().ok().and_then(|mut rx| rx.take())
+            lock_recover(&self.fuse_request_rx).take()
         } else {
             None
         };
@@ -60,7 +61,7 @@ impl SyncEngine {
             std::time::Duration::from_millis(500),
         );
 
-        let shutdown_token = self.shutdown_token.lock().unwrap().clone();
+        let shutdown_token = lock_recover(&self.shutdown_token).clone();
         loop {
             tokio::select! {
                 _ = shutdown_token.cancelled() => {

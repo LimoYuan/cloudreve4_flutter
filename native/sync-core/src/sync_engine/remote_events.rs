@@ -1,4 +1,6 @@
 use crate::models::*;
+#[cfg(feature = "linux-fuse")]
+use crate::utils::lock_recover;
 
 use super::SyncEngine;
 
@@ -122,7 +124,7 @@ impl SyncEngine {
                 // MirrorFUSE: 远程删除 → 从 FUSE inode 缓存移除
                 #[cfg(feature = "linux-fuse")]
                 if is_mirror_wcf {
-                    let adapter = self.fuse_adapter.lock().unwrap();
+                    let adapter = lock_recover(&self.fuse_adapter);
                     if let Some(ref fuse) = *adapter {
                         fuse.remove_inode(&relative);
                     }

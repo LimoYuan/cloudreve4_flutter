@@ -16,6 +16,8 @@ use crate::models::SyncConfig;
 #[cfg(feature = "windows-cfapi")]
 use crate::sync_db::SyncDb;
 #[cfg(feature = "windows-cfapi")]
+use crate::utils::lock_recover;
+#[cfg(feature = "windows-cfapi")]
 use crate::worker::PlaceholderCreator;
 
 #[cfg(feature = "windows-cfapi")]
@@ -63,7 +65,7 @@ impl WcfPlatformAdapter {
 
     /// 取走 FETCH_DATA 回调接收端（供 SyncEngine 持续同步消费）
     pub fn take_fetch_receiver(&self) -> Option<mpsc::Receiver<sync_windows::FetchDataRequest>> {
-        self.fetch_rx.lock().unwrap().take()
+        lock_recover(&self.fetch_rx).take()
     }
 
     /// 创建占位符文件
@@ -83,7 +85,7 @@ impl WcfPlatformAdapter {
             "mtime_ms": remote_mtime_ms,
         })).unwrap_or_default();
 
-        self.adapter.lock().unwrap().create_single_placeholder(
+        lock_recover(&self.adapter).create_single_placeholder(
             base_dir,
             file_name,
             file_size,
@@ -95,13 +97,13 @@ impl WcfPlatformAdapter {
 
     /// 水合文件（按需下载）
     pub fn hydrate_file(&self, local_path: &Path) -> Result<()> {
-        self.adapter.lock().unwrap().hydrate_placeholder(local_path)
+        lock_recover(&self.adapter).hydrate_placeholder(local_path)
             .map_err(|e| crate::errors::SyncError::FileSystem(e.to_string()))
     }
 
     /// 脱水文件（释放本地空间）
     pub fn dehydrate_file(&self, local_path: &Path) -> Result<()> {
-        self.adapter.lock().unwrap().dehydrate_placeholder(local_path)
+        lock_recover(&self.adapter).dehydrate_placeholder(local_path)
             .map_err(|e| crate::errors::SyncError::FileSystem(e.to_string()))
     }
 
@@ -127,7 +129,7 @@ impl WcfPlatformAdapter {
 
     /// 断开连接
     pub fn disconnect(&self) -> Result<()> {
-        self.adapter.lock().unwrap().disconnect()
+        lock_recover(&self.adapter).disconnect()
             .map_err(|e| crate::errors::SyncError::FileSystem(e.to_string()))
     }
 }
@@ -142,7 +144,7 @@ impl PlaceholderCreator for WcfPlatformAdapter {
         file_size: u64,
         file_identity: &[u8],
     ) -> Result<()> {
-        self.adapter.lock().unwrap().create_single_placeholder(
+        lock_recover(&self.adapter).create_single_placeholder(
             base_dir,
             &file_name,
             file_size,

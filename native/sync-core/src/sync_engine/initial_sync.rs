@@ -1,6 +1,7 @@
 use crate::errors::{Result, SyncError};
 use crate::fs_scanner::FsScanner;
 use crate::models::*;
+use crate::utils::lock_recover;
 use std::time::Instant;
 
 use super::SyncEngine;
@@ -12,7 +13,7 @@ impl SyncEngine {
         let _guard = self.sync_lock.lock().await;
 
         // 检查是否已被取消
-        if self.shutdown_token.lock().unwrap().is_cancelled() {
+        if lock_recover(&self.shutdown_token).is_cancelled() {
             tracing::info!("初始同步已取消，跳过");
             return Err(SyncError::Internal("同步已被取消".into()));
         }
@@ -34,7 +35,7 @@ impl SyncEngine {
         let local_files = scanner.scan(&local_root, 50, false, compute_hash).await?;
         tracing::info!("本地扫描完成: {} 个条目", local_files.len());
 
-        if self.shutdown_token.lock().unwrap().is_cancelled() {
+        if lock_recover(&self.shutdown_token).is_cancelled() {
             return Err(SyncError::Internal("同步已被取消".into()));
         }
 
@@ -42,7 +43,7 @@ impl SyncEngine {
         let remote_files = self.api.list_all_files(&remote_root).await?;
         tracing::info!("远程扫描完成: {} 个条目", remote_files.len());
 
-        if self.shutdown_token.lock().unwrap().is_cancelled() {
+        if lock_recover(&self.shutdown_token).is_cancelled() {
             return Err(SyncError::Internal("同步已被取消".into()));
         }
 
@@ -57,7 +58,7 @@ impl SyncEngine {
             plan.conflicts.len(),
         );
 
-        if self.shutdown_token.lock().unwrap().is_cancelled() {
+        if lock_recover(&self.shutdown_token).is_cancelled() {
             return Err(SyncError::Internal("同步已被取消".into()));
         }
 
@@ -76,7 +77,7 @@ impl SyncEngine {
         // MirrorWcf 模式：初始化 WCF 平台适配器（仅首次，重复初始化会触发 CFApi 重新水合）
         #[cfg(feature = "windows-cfapi")]
         if matches!(sync_mode, SyncMode::MirrorWcf) {
-            let already_initialized = self.platform_adapter.lock().unwrap().is_some();
+            let already_initialized = lock_recover(&self.platform_adapter).is_some();
             if !already_initialized {
                 let config = self.config.read().await;
                 let adapter = crate::platform::wcf::WcfPlatformAdapter::new(
@@ -85,11 +86,11 @@ impl SyncEngine {
                     config.clone(),
                 ).map_err(|e| crate::errors::SyncError::Internal(e.to_string()))?;
                 let fetch_rx = adapter.take_fetch_receiver();
-                *self.wcf_fetch_rx.lock().unwrap() = fetch_rx;
+                *lock_recover(&self.wcf_fetch_rx) = fetch_rx;
                 let adapter_arc = std::sync::Arc::new(adapter);
-                *self.platform_adapter.lock().unwrap() = Some(adapter_arc.clone());
+                *lock_recover(&self.platform_adapter) = Some(adapter_arc.clone());
                 self.worker_pool.set_platform_adapter(adapter_arc);
-                *self.cached_local_root.lock().unwrap() = config.local_root.clone();
+                *lock_recover(&self.cached_local_root) = config.local_root.clone();
                 tracing::info!("MirrorWcf: WCF 平台适配器已初始化");
             } else {
                 tracing::info!("MirrorWcf: WCF 平台适配器已存在，跳过重复初始化");
@@ -99,7 +100,7 @@ impl SyncEngine {
         // MirrorFUSE 模式：初始化 FUSE 平台适配器（直接挂载到 local_root）
         #[cfg(feature = "linux-fuse")]
         if matches!(sync_mode, SyncMode::MirrorWcf) {
-            let already_initialized = self.fuse_adapter.lock().map(|g| g.is_some()).unwrap_or(false);
+            let already_initialized = lock_recover(&self.fuse_adapter).is_some();
             if !already_initialized {
                 let config = self.config.read().await;
                 let mount_path = config.local_root.clone();
@@ -136,12 +137,8 @@ impl SyncEngine {
                 }
 
                 let request_rx = adapter.take_request_receiver();
-                if let Ok(mut rx) = self.fuse_request_rx.lock() {
-                    *rx = request_rx;
-                }
-                if let Ok(mut adapter_guard) = self.fuse_adapter.lock() {
-                    *adapter_guard = Some(std::sync::Arc::new(adapter));
-                }
+                *lock_recover(&self.fuse_request_rx) = request_rx;
+                *lock_recover(&self.fuse_adapter) = Some(std::sync::Arc::new(adapter));
                 tracing::info!("MirrorFUSE: FUSE 平台适配器已初始化, 挂载点={}, inode 数={}", mount_path.display(), remote_files.len());
             } else {
                 tracing::info!("MirrorFUSE: FUSE 平台适配器已存在，跳过重复初始化");
@@ -163,7 +160,7 @@ impl SyncEngine {
             }
             Err(e) => {
                 // 被取消时不需要设 Error 状态
-                if self.shutdown_token.lock().unwrap().is_cancelled() {
+                if lock_recover(&self.shutdown_token).is_cancelled() {
                     tracing::info!("初始同步已取消");
                     Err(SyncError::Internal("同步已被取消".into()))
                 } else {

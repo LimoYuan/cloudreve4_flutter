@@ -166,13 +166,13 @@ else()
         COMMAND ${CARGO_CMD} build
             --manifest-path "${SYNC_CORE_DIR}/Cargo.toml"
             --target-dir "${RUST_TARGET_DIR}"
-            --features sync-core/windows-cfapi
+            --features sync-core/windows-cfapi,sync-core/event_sink_enabled
 
         # 无论如何，都去编译 Release（供 flutter build 使用）
         COMMAND ${CARGO_CMD} build --release
             --manifest-path "${SYNC_CORE_DIR}/Cargo.toml"
             --target-dir "${RUST_TARGET_DIR}"
-            --features sync-core/windows-cfapi
+            --features sync-core/windows-cfapi,sync-core/event_sink_enabled
 
         COMMAND ${CMAKE_COMMAND} -E touch "${RUST_BUILD_STAMP}"
         COMMENT "Building Rust sync engine (Debug & Release)..."

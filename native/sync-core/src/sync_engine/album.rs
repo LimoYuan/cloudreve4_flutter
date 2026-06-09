@@ -68,11 +68,9 @@ impl SyncEngine {
     }
 
     pub async fn create_album_dirs(&self, base_uri: &str) -> Result<()> {
-        self.api.create_directory(base_uri, "DCIM").await?;
-        self.api.create_directory(base_uri, "Pictures").await?;
-        // 创建 DCIM/Camera 子目录
-        let dcim_uri = format!("{}/DCIM", base_uri);
-        self.api.create_directory(&dcim_uri, "Camera").await?;
+        let base_uri = base_uri.trim_end_matches('/');
+        self.api.ensure_directory_path(&format!("{}/DCIM/Camera", base_uri)).await?;
+        self.api.ensure_directory_path(&format!("{}/Pictures", base_uri)).await?;
         Ok(())
     }
 }

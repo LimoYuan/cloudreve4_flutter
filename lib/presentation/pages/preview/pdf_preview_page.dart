@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:pdfrx/pdfrx.dart';
+import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
+
 import '../../../data/models/file_model.dart';
 import '../../../services/file_service.dart';
 
-/// PDF预览页面
 class PdfPreviewPage extends StatefulWidget {
   final FileModel file;
   final String? entityId;
@@ -15,17 +16,17 @@ class PdfPreviewPage extends StatefulWidget {
 }
 
 class _PdfPreviewPageState extends State<PdfPreviewPage> {
-  String? _pdfUrl;
-  bool _isLoading = true;
-  String? _errorMessage;
+  bool _loading = true;
+  String? _url;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
-    _loadPdfUrl();
+    _loadUrl();
   }
 
-  Future<void> _loadPdfUrl() async {
+  Future<void> _loadUrl() async {
     try {
       final response = await FileService().getDownloadUrls(
         uris: [widget.file.relativePath],
@@ -34,96 +35,148 @@ class _PdfPreviewPageState extends State<PdfPreviewPage> {
       );
 
       final urls = response['urls'] as List<dynamic>? ?? [];
-      if (urls.isNotEmpty) {
-        final urlData = urls[0] as Map<String, dynamic>;
-        final url = urlData['url'] as String;
-
-        if (mounted) {
-          setState(() {
-            _pdfUrl = url;
-            _isLoading = false;
-          });
-        }
-      } else {
-        if (mounted) {
-          setState(() {
-            _errorMessage = '无法获取PDF URL';
-            _isLoading = false;
-          });
-        }
-      }
-    } catch (e) {
-      if (mounted) {
+      if (urls.isEmpty) {
+        if (!mounted) return;
         setState(() {
-          _errorMessage = e.toString();
-          _isLoading = false;
+          _loading = false;
+          _error = 'Unable to get PDF URL';
         });
+        return;
       }
+
+      final first = urls.first as Map<String, dynamic>;
+      final url = first['url']?.toString();
+
+      if (!mounted) return;
+      setState(() {
+        _url = url;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = e.toString();
+      });
     }
+  }
+
+  Future<void> _openExternal() async {
+    final url = _url;
+    if (url == null || url.isEmpty) return;
+
+    final ok = await launchUrl(
+      Uri.parse(url),
+      mode: LaunchMode.externalApplication,
+    );
+
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Unable to open PDF')));
+    }
+  }
+
+  Future<void> _copyUrl() async {
+    final url = _url;
+    if (url == null || url.isEmpty) return;
+
+    await Clipboard.setData(ClipboardData(text: url));
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('PDF URL copied')));
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(widget.file.name)),
-      body: _buildBody(),
+      appBar: AppBar(
+        title: Text(widget.file.name),
+        actions: [
+          if (_url != null)
+            IconButton(
+              tooltip: 'Copy URL',
+              onPressed: _copyUrl,
+              icon: const Icon(Icons.copy),
+            ),
+          if (_url != null)
+            IconButton(
+              tooltip: 'Open externally',
+              onPressed: _openExternal,
+              icon: const Icon(Icons.open_in_new),
+            ),
+        ],
+      ),
+      body: _buildBody(context),
     );
   }
 
-  Widget _buildBody() {
-    if (_isLoading) {
+  Widget _buildBody(BuildContext context) {
+    if (_loading) {
       return const Center(child: CircularProgressIndicator());
     }
 
-    if (_errorMessage != null) {
+    if (_error != null) {
       return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.error_outline, size: 64, color: Colors.red),
-            const SizedBox(height: 16),
-            Text(
-              _errorMessage!,
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey.shade600),
-            ),
-            const SizedBox(height: 16),
-            FilledButton(
-              onPressed: () {
-                setState(() {
-                  _isLoading = true;
-                  _errorMessage = null;
-                });
-                _loadPdfUrl();
-              },
-              child: const Text('重试'),
-            ),
-          ],
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.picture_as_pdf_outlined, size: 72),
+              const SizedBox(height: 16),
+              Text(_error!, textAlign: TextAlign.center),
+              const SizedBox(height: 16),
+              FilledButton(
+                onPressed: () {
+                  setState(() {
+                    _loading = true;
+                    _error = null;
+                  });
+                  _loadUrl();
+                },
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
         ),
       );
     }
 
-    if (_pdfUrl == null) {
-      return const Center(child: Text('无法加载PDF'));
-    }
-
-    return Container(
-      color: Colors.grey.shade200,
-      child: PdfViewer.uri(
-        Uri.parse(_pdfUrl!),
-        initialPageNumber: 1,
-        params: const PdfViewerParams(
-          activeMatchTextColor: Colors.yellow,
-          annotationRenderingMode: PdfAnnotationRenderingMode.annotationAndForms,
-          sizeDelegateProvider: PdfViewerSizeDelegateProviderLegacy(
-            maxScale: 4.0,
-            minScale: 0.8, // Allow 300% zoom
-          ),
-          scaleEnabled: true,
-          textSelectionParams: PdfTextSelectionParams(
-            enabled: true,
-            showContextMenuAutomatically: true,
-          ),
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.picture_as_pdf_outlined, size: 80),
+            const SizedBox(height: 20),
+            Text(
+              widget.file.name,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'PDF inline preview is temporarily disabled on Android. Open it with an external app.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 24),
+            FilledButton.icon(
+              onPressed: _openExternal,
+              icon: const Icon(Icons.open_in_new),
+              label: const Text('Open externally'),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _copyUrl,
+              icon: const Icon(Icons.copy),
+              label: const Text('Copy URL'),
+            ),
+          ],
         ),
       ),
     );

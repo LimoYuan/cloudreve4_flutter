@@ -89,9 +89,18 @@ class _StorageUsageCardState extends State<StorageUsageCard>
               children: [
                 Row(
                   children: [
-                    Icon(LucideIcons.hardDrive, size: 20, color: colorScheme.primary),
+                    Icon(
+                      LucideIcons.hardDrive,
+                      size: 20,
+                      color: colorScheme.primary,
+                    ),
                     const SizedBox(width: 8),
-                    Text('存储空间', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+                    Text(
+                      '存储空间',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 24),
@@ -103,7 +112,9 @@ class _StorageUsageCardState extends State<StorageUsageCard>
                       painter: _SemiCircleProgressPainter(
                         progress: _animatedProgress.clamp(0.0, 1.0),
                         color: colorScheme.primary,
-                        backgroundColor: colorScheme.primary.withValues(alpha: 0.12),
+                        backgroundColor: colorScheme.primary.withValues(
+                          alpha: 0.12,
+                        ),
                       ),
                     ),
                   ),
@@ -137,7 +148,9 @@ class _StorageUsageCardState extends State<StorageUsageCard>
   String _formatBytes(int bytes) {
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    if (bytes < 1024 * 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
   }
 }

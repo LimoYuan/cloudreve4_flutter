@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../../data/models/sync_task_model.dart';
 import '../../providers/sync_provider.dart';
 import '../../widgets/sync_stats_card.dart';
+import 'mobile_sync_wizard_page.dart';
 import 'sync_settings_page.dart';
 
 /// 移动端同步详情页面 - 展示实时同步状态和任务列表
@@ -17,12 +18,16 @@ class SyncPageAndroid extends StatefulWidget {
 class _SyncPageAndroidState extends State<SyncPageAndroid> {
   final Set<String> _expandedTasks = {};
   final Set<String> _loadingDetails = {};
+  bool _openingSetupWizard = false;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<SyncProvider>().loadRecentTasks();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final sync = context.read<SyncProvider>();
+      await sync.restoreFromStorage();
+      await sync.loadRecentTasks();
+      await _ensureRequiredWizard();
     });
   }
 
@@ -57,52 +62,143 @@ class _SyncPageAndroidState extends State<SyncPageAndroid> {
                 child: _buildHeader(sync, theme),
               ),
             ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                child: SyncStatsCard(
-                  uploaded: sync.cumUploaded,
-                  downloaded: sync.cumDownloaded,
-                  renamed: sync.cumRenamed,
-                  moved: sync.cumMoved,
-                  conflicts: sync.cumConflicts,
-                  failed: sync.cumFailed,
-                  deletedLocal: sync.cumDeletedLocal,
-                  deletedRemote: sync.cumDeletedRemote,
-                  skipped: sync.cumSkipped,
+            if (sync.persistedConfig == null && !sync.isActive)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: _buildRequiredSetupGate(theme),
+              )
+            else ...[
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: SyncStatsCard(
+                    uploaded: sync.cumUploaded,
+                    downloaded: sync.cumDownloaded,
+                    renamed: sync.cumRenamed,
+                    moved: sync.cumMoved,
+                    conflicts: sync.cumConflicts,
+                    failed: sync.cumFailed,
+                    deletedLocal: sync.cumDeletedLocal,
+                    deletedRemote: sync.cumDeletedRemote,
+                    skipped: sync.cumSkipped,
+                  ),
                 ),
               ),
-            ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
-                child: Row(
-                  children: [
-                    Icon(Icons.sync_outlined, size: 18, color: theme.colorScheme.primary),
-                    const SizedBox(width: 8),
-                    Text(
-                      '同步任务',
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.sync_outlined,
+                        size: 18,
                         color: theme.colorScheme.primary,
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 8),
+                      Text(
+                        '同步任务',
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-            _buildTaskList(sync, theme),
-            const SliverToBoxAdapter(child: SizedBox(height: 100)),
+              _buildTaskList(sync, theme),
+              const SliverToBoxAdapter(child: SizedBox(height: 100)),
+            ],
           ],
         ),
       ),
     );
   }
 
-  void _navigateToSettings() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const SyncSettingsPage()),
+  Widget _buildRequiredSetupGate(ThemeData theme) {
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.auto_awesome_outlined,
+            size: 56,
+            color: theme.colorScheme.primary,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            '需要先完成同步设置',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '这是第一次使用手机文件同步。完成向导并启动首次同步后，才能使用同步任务和统计信息。你可以返回上一页，但未完成前不能开始同步。',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: _ensureRequiredWizard,
+              icon: const Icon(Icons.playlist_add_check),
+              label: const Text('打开同步向导'),
+            ),
+          ),
+        ],
+      ),
     );
+  }
+
+  Future<void> _ensureRequiredWizard() async {
+    if (!mounted || _openingSetupWizard) return;
+
+    final sync = context.read<SyncProvider>();
+    if (sync.persistedConfig != null || sync.isActive) return;
+
+    _openingSetupWizard = true;
+    try {
+      final completed = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(builder: (_) => const MobileSyncWizardPage()),
+      );
+
+      if (completed == true && mounted) {
+        sync.invalidateAllTaskDetails();
+        await sync.loadRecentTasks();
+      }
+    } finally {
+      _openingSetupWizard = false;
+    }
+  }
+
+  Future<void> _startSyncFromHeader(SyncProvider sync) async {
+    final config = sync.persistedConfig;
+    if (config == null) {
+      await _ensureRequiredWizard();
+      return;
+    }
+
+    await sync.startSync(config);
+    sync.invalidateAllTaskDetails();
+    await sync.loadRecentTasks();
+  }
+
+  void _navigateToSettings() {
+    final sync = context.read<SyncProvider>();
+    if (sync.persistedConfig == null && !sync.isActive) {
+      _ensureRequiredWizard();
+      return;
+    }
+
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const SyncSettingsPage()));
   }
 
   Widget _buildHeader(SyncProvider sync, ThemeData theme) {
@@ -174,11 +270,16 @@ class _SyncPageAndroidState extends State<SyncPageAndroid> {
                         width: 96,
                         height: 96,
                         child: CircularProgressIndicator(
-                          value: sync.activeTotalCount > 0 ? sync.activeProgress : null,
+                          value: sync.activeTotalCount > 0
+                              ? sync.activeProgress
+                              : null,
                           strokeWidth: 6,
                           strokeCap: StrokeCap.round,
-                          backgroundColor: theme.colorScheme.surfaceContainerHighest,
-                          valueColor: AlwaysStoppedAnimation<Color>(statusColor),
+                          backgroundColor:
+                              theme.colorScheme.surfaceContainerHighest,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            statusColor,
+                          ),
                         ),
                       )
                     else
@@ -188,8 +289,11 @@ class _SyncPageAndroidState extends State<SyncPageAndroid> {
                         child: CircularProgressIndicator(
                           value: 0,
                           strokeWidth: 6,
-                          backgroundColor: theme.colorScheme.surfaceContainerHighest,
-                          valueColor: AlwaysStoppedAnimation<Color>(statusColor),
+                          backgroundColor:
+                              theme.colorScheme.surfaceContainerHighest,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            statusColor,
+                          ),
                         ),
                       ),
                     // 中心文字
@@ -206,12 +310,14 @@ class _SyncPageAndroidState extends State<SyncPageAndroid> {
                           ),
                         Text(
                           isActive
-                              ? (sync.state == SyncState.continuous ? '持续同步' : '同步中')
+                              ? (sync.state == SyncState.continuous
+                                    ? '持续同步'
+                                    : '同步中')
                               : isPaused
-                                  ? '已暂停'
-                                  : hasError
-                                      ? '错误'
-                                      : '未启动',
+                              ? '已暂停'
+                              : hasError
+                              ? '错误'
+                              : '未启动',
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: theme.hintColor,
                             fontSize: 11,
@@ -228,11 +334,29 @@ class _SyncPageAndroidState extends State<SyncPageAndroid> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildStatRow(Icons.file_upload_outlined, '${sync.cumUploaded}', '已上传', Colors.blue, theme),
+                    _buildStatRow(
+                      Icons.file_upload_outlined,
+                      '${sync.cumUploaded}',
+                      '已上传',
+                      Colors.blue,
+                      theme,
+                    ),
                     const SizedBox(height: 8),
-                    _buildStatRow(Icons.file_download_outlined, '${sync.cumDownloaded}', '已下载', Colors.green, theme),
+                    _buildStatRow(
+                      Icons.file_download_outlined,
+                      '${sync.cumDownloaded}',
+                      '已下载',
+                      Colors.green,
+                      theme,
+                    ),
                     const SizedBox(height: 8),
-                    _buildStatRow(Icons.warning_amber_outlined, '${sync.cumConflicts}', '冲突', Colors.orange, theme),
+                    _buildStatRow(
+                      Icons.warning_amber_outlined,
+                      '${sync.cumConflicts}',
+                      '冲突',
+                      Colors.orange,
+                      theme,
+                    ),
                   ],
                 ),
               ),
@@ -242,7 +366,9 @@ class _SyncPageAndroidState extends State<SyncPageAndroid> {
             const SizedBox(height: 12),
             Text(
               sync.currentFile!,
-              style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.hintColor,
+              ),
               overflow: TextOverflow.ellipsis,
               maxLines: 1,
             ),
@@ -251,7 +377,9 @@ class _SyncPageAndroidState extends State<SyncPageAndroid> {
             const SizedBox(height: 8),
             Text(
               '${sync.activeCompletedCount} / ${sync.activeTotalCount} 文件',
-              style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.hintColor,
+              ),
             ),
           ],
           const SizedBox(height: 16),
@@ -261,7 +389,7 @@ class _SyncPageAndroidState extends State<SyncPageAndroid> {
               if (!sync.isActive && !sync.isPaused)
                 Expanded(
                   child: FilledButton.icon(
-                    onPressed: () => _navigateToSettings(),
+                    onPressed: () => _startSyncFromHeader(sync),
                     icon: const Icon(Icons.play_arrow, size: 18),
                     label: const Text('开始同步'),
                   ),
@@ -302,14 +430,28 @@ class _SyncPageAndroidState extends State<SyncPageAndroid> {
     );
   }
 
-  Widget _buildStatRow(IconData icon, String value, String label, Color color, ThemeData theme) {
+  Widget _buildStatRow(
+    IconData icon,
+    String value,
+    String label,
+    Color color,
+    ThemeData theme,
+  ) {
     return Row(
       children: [
         Icon(icon, size: 16, color: color),
         const SizedBox(width: 8),
-        Text(value, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+        Text(
+          value,
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.bold,
+          ),
+        ),
         const SizedBox(width: 4),
-        Text(label, style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor)),
+        Text(
+          label,
+          style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor),
+        ),
       ],
     );
   }
@@ -318,9 +460,13 @@ class _SyncPageAndroidState extends State<SyncPageAndroid> {
     // 活跃任务 + 已完成任务
     final activeTasks = sync.activeTasks;
     final completedTasks = sync.recentTasks
-        .where((t) =>
-            (t.status == 'completed' || t.status == 'failed' || t.status == 'cancelled') &&
-            t.totalCount > 0)
+        .where(
+          (t) =>
+              (t.status == 'completed' ||
+                  t.status == 'failed' ||
+                  t.status == 'cancelled') &&
+              t.totalCount > 0,
+        )
         .toList();
     final allTasks = [...activeTasks, ...completedTasks];
 
@@ -351,7 +497,11 @@ class _SyncPageAndroidState extends State<SyncPageAndroid> {
     );
   }
 
-  Widget _buildTaskCard(SyncTaskModel task, SyncProvider sync, ThemeData theme) {
+  Widget _buildTaskCard(
+    SyncTaskModel task,
+    SyncProvider sync,
+    ThemeData theme,
+  ) {
     final isExpanded = _expandedTasks.contains(task.id);
     final isRunning = task.status == 'running';
     final isFailed = task.status == 'failed';
@@ -398,10 +548,10 @@ class _SyncPageAndroidState extends State<SyncPageAndroid> {
                       isRunning
                           ? Icons.sync
                           : isFailed
-                              ? Icons.error_outline
-                              : isCompleted
-                                  ? Icons.check_circle_outline
-                                  : Icons.cloud_off,
+                          ? Icons.error_outline
+                          : isCompleted
+                          ? Icons.check_circle_outline
+                          : Icons.cloud_off,
                       color: statusColor,
                       size: 20,
                     ),
@@ -415,7 +565,10 @@ class _SyncPageAndroidState extends State<SyncPageAndroid> {
                         Row(
                           children: [
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
                               decoration: BoxDecoration(
                                 color: statusColor.withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(6),
@@ -431,7 +584,9 @@ class _SyncPageAndroidState extends State<SyncPageAndroid> {
                             const SizedBox(width: 8),
                             Text(
                               task.triggerLabel,
-                              style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor),
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.hintColor,
+                              ),
                             ),
                           ],
                         ),
@@ -440,10 +595,15 @@ class _SyncPageAndroidState extends State<SyncPageAndroid> {
                         ClipRRect(
                           borderRadius: BorderRadius.circular(4),
                           child: LinearProgressIndicator(
-                            value: isRunning && task.totalCount > 0 ? task.progress : (isCompleted ? 1.0 : null),
+                            value: isRunning && task.totalCount > 0
+                                ? task.progress
+                                : (isCompleted ? 1.0 : null),
                             minHeight: 4,
-                            backgroundColor: theme.colorScheme.surfaceContainerHighest,
-                            valueColor: AlwaysStoppedAnimation<Color>(statusColor),
+                            backgroundColor:
+                                theme.colorScheme.surfaceContainerHighest,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              statusColor,
+                            ),
                           ),
                         ),
                         const SizedBox(height: 4),
@@ -452,7 +612,9 @@ class _SyncPageAndroidState extends State<SyncPageAndroid> {
                           children: [
                             Text(
                               '${task.completedCount}/${task.totalCount}',
-                              style: theme.textTheme.bodySmall?.copyWith(fontSize: 11),
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                fontSize: 11,
+                              ),
                             ),
                             if (task.failedCount > 0)
                               Text(
@@ -483,14 +645,22 @@ class _SyncPageAndroidState extends State<SyncPageAndroid> {
     );
   }
 
-  Widget _buildTaskDetailList(SyncTaskModel task, SyncProvider sync, ThemeData theme) {
+  Widget _buildTaskDetailList(
+    SyncTaskModel task,
+    SyncProvider sync,
+    ThemeData theme,
+  ) {
     final items = sync.getCachedTaskDetail(task.id);
 
     if (_loadingDetails.contains(task.id)) {
       return const Padding(
         padding: EdgeInsets.all(16),
         child: Center(
-          child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+          child: SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
         ),
       );
     }
@@ -506,7 +676,12 @@ class _SyncPageAndroidState extends State<SyncPageAndroid> {
 
     return Column(
       children: [
-        Divider(height: 1, indent: 16, endIndent: 16, color: theme.dividerColor),
+        Divider(
+          height: 1,
+          indent: 16,
+          endIndent: 16,
+          color: theme.dividerColor,
+        ),
         ...items.map((item) => _buildTaskItemTile(item, theme)),
         if (hasMore)
           Padding(
@@ -555,14 +730,15 @@ class _SyncPageAndroidState extends State<SyncPageAndroid> {
               item.actionType == 'upload'
                   ? Icons.file_upload_outlined
                   : item.actionType == 'download'
-                      ? Icons.file_download_outlined
-                      : item.actionType == 'delete_local' || item.actionType == 'delete_remote'
-                          ? Icons.delete_outline
-                          : item.actionType == 'rename'
-                              ? Icons.edit_outlined
-                              : item.actionType == 'move'
-                                  ? Icons.drive_file_move_outline
-                                  : Icons.sync_outlined,
+                  ? Icons.file_download_outlined
+                  : item.actionType == 'delete_local' ||
+                        item.actionType == 'delete_remote'
+                  ? Icons.delete_outline
+                  : item.actionType == 'rename'
+                  ? Icons.edit_outlined
+                  : item.actionType == 'move'
+                  ? Icons.drive_file_move_outline
+                  : Icons.sync_outlined,
               color: actionColor,
               size: 14,
             ),
@@ -575,7 +751,9 @@ class _SyncPageAndroidState extends State<SyncPageAndroid> {
               children: [
                 Text(
                   item.filename,
-                  style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w500),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.w500,
+                  ),
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
                 ),
@@ -638,7 +816,8 @@ class _SyncPageAndroidState extends State<SyncPageAndroid> {
     setState(() => _expandedTasks.add(taskId));
     sync.watchTaskDetail(taskId);
 
-    if (sync.getCachedTaskDetail(taskId) == null && !_loadingDetails.contains(taskId)) {
+    if (sync.getCachedTaskDetail(taskId) == null &&
+        !_loadingDetails.contains(taskId)) {
       setState(() => _loadingDetails.add(taskId));
       sync.getTaskDetail(taskId).whenComplete(() {
         if (mounted) {

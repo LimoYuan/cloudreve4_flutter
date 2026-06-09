@@ -5,6 +5,7 @@ import 'package:cloudreve4_flutter/presentation/widgets/desktop_constrained.dart
 import 'package:cloudreve4_flutter/services/captcha_service.dart';
 import 'package:cloudreve4_flutter/services/qr_login_service.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons/lucide_icons.dart';
@@ -28,6 +29,9 @@ import 'register_page.dart';
 enum _LoginMode { password, qr }
 
 class LoginPage extends StatefulWidget {
+  static const String _oldAndroidLoginLogoUrl =
+      'https://mkwgame.com/58a45deaef7b8dd23b42f3c8fbe8e5a.webp';
+
   const LoginPage({super.key});
 
   @override
@@ -58,8 +62,21 @@ class _LoginPageState extends State<LoginPage> {
   String? _siteName;
   String? _siteDescription;
   Uint8List? _siteLogoBytes;
+  int _siteBrandLoadId = 0;
 
   static const double _desktopDualPanelBreakpoint = 760;
+
+  bool get _showQrLogin =>
+      defaultTargetPlatform != TargetPlatform.android &&
+      defaultTargetPlatform != TargetPlatform.iOS;
+
+  bool get _showCaptcha {
+    final captcha = CaptchaService.instance;
+    return _loginConfig.loginCaptcha ||
+        captcha.isWebCaptcha ||
+        ((captcha.captchaImage ?? '').isNotEmpty) ||
+        ((captcha.captchaTicket ?? '').isNotEmpty);
+  }
 
   @override
   void initState() {
@@ -102,17 +119,15 @@ class _LoginPageState extends State<LoginPage> {
 
     try {
       await ApiService.instance.setBaseUrl(server.baseUrl);
-      final config = await AuthService.instance
-          .getLoginConfig()
-          .timeout(const Duration(seconds: 10));
+      final config = await AuthService.instance.getLoginConfig().timeout(
+        const Duration(seconds: 10),
+      );
 
       if (!mounted) return;
       setState(() => _loginConfig = config);
 
-      if (config.loginCaptcha) {
-        await CaptchaService.instance.loadCaptcha(server.baseUrl);
-        if (mounted) setState(() {});
-      }
+      await CaptchaService.instance.loadCaptcha(server.baseUrl);
+      if (mounted) setState(() {});
     } catch (_) {}
   }
 
@@ -120,47 +135,319 @@ class _LoginPageState extends State<LoginPage> {
     final server = ServerService.instance.currentServer;
     if (server == null) return;
 
-    try {
-      final config = await AuthService.instance
-          .getBasicSiteConfig()
-          .timeout(const Duration(seconds: 10));
-      if (!mounted) return;
+    final loadId = ++_siteBrandLoadId;
+    final fallbackName = server.label.trim().isEmpty
+        ? 'Cloudreve'
+        : server.label.trim();
 
-      final title = config['title'] as String?;
-      final description = config['description'] as String?;
-      final favicon = config['favicon'] as String?;
-
-      String? logoUrl;
-      if (favicon != null && favicon.isNotEmpty) {
-        logoUrl = favicon.startsWith('http')
-            ? favicon
-            : '${QrLoginService.cloudreveSiteBase(server.baseUrl)}/$favicon';
-      }
-
+    if (mounted) {
       setState(() {
-        _siteName = title;
-        _siteDescription = description;
+        _siteName = fallbackName;
+        _siteDescription = null;
+        _siteLogoBytes = null;
       });
-
-      // Load logo bytes if URL available
-      if (logoUrl != null) {
-        try {
-          final response = await Dio().get<List<int>>(
-            logoUrl,
-            options: Options(responseType: ResponseType.bytes),
-          );
-          if (mounted && response.data != null) {
-            setState(() {
-              _siteLogoBytes = Uint8List.fromList(response.data!);
-            });
-          }
-        } catch (_) {
-          // Logo fetch failed, will fallback to app logo
-        }
-      }
-    } catch (_) {
-      // Site brand fetch failed, use defaults
     }
+
+    String? siteName;
+    String? description;
+    String? logo;
+
+    try {
+      await ApiService.instance.setBaseUrl(server.baseUrl);
+      final config = await AuthService.instance.getBasicSiteConfig().timeout(
+        const Duration(seconds: 8),
+      );
+
+      siteName = _firstString(config, const [
+        'title',
+        'name',
+        'site_name',
+        'siteName',
+        'site_title',
+        'siteTitle',
+        'app_name',
+        'appName',
+        'product_name',
+      ]);
+      description = _firstString(config, const [
+        'description',
+        'site_description',
+        'siteDescription',
+        'subtitle',
+        'sub_title',
+        'site_subtitle',
+        'siteSubtitle',
+        'site_notice',
+        'notice',
+      ]);
+
+      // 这里必须取站点大 logo，不取 favicon / icon / site_icon 这类小图标。
+      logo = _firstString(config, const [
+        'logo',
+        'logo_url',
+        'logoUrl',
+        'site_logo',
+        'siteLogo',
+        'app_logo',
+        'appLogo',
+        'brand_logo',
+        'brandLogo',
+        'main_logo',
+        'mainLogo',
+        'login_logo',
+        'loginLogo',
+        'auth_logo',
+        'authLogo',
+        'header_logo',
+        'headerLogo',
+      ]);
+    } catch (_) {}
+
+    try {
+      final htmlBrand = await _fetchSiteHtmlBrand(
+        server.baseUrl,
+      ).timeout(const Duration(seconds: 8));
+      siteName = htmlBrand.title ?? siteName;
+      description = htmlBrand.description ?? description;
+      logo = htmlBrand.logoUrl ?? logo;
+    } catch (_) {}
+
+    final resolvedLogo = _resolveSiteAssetUrl(server.baseUrl, logo);
+
+    Uint8List? logoBytes;
+    if (resolvedLogo != null) {
+      try {
+        logoBytes = await _fetchLogoBytes(
+          resolvedLogo,
+        ).timeout(const Duration(seconds: 8));
+      } catch (_) {}
+    }
+
+    if (!mounted || loadId != _siteBrandLoadId) return;
+    setState(() {
+      _siteName = _cleanSiteText(siteName) ?? fallbackName;
+      _siteDescription = _cleanSiteText(description);
+      _siteLogoBytes = logoBytes;
+    });
+  }
+
+  String? _firstString(Map<String, dynamic> data, List<String> keys) {
+    for (final key in keys) {
+      final value = data[key];
+      if (value is String && value.trim().isNotEmpty) return value.trim();
+      if (value != null && value is! Map && value is! List) {
+        final text = value.toString().trim();
+        if (text.isNotEmpty) return text;
+      }
+    }
+
+    for (final entry in data.entries) {
+      final value = entry.value;
+      if (value is Map) {
+        final found = _firstString(Map<String, dynamic>.from(value), keys);
+        if (found != null) return found;
+      }
+    }
+    return null;
+  }
+
+  String? _cleanSiteText(String? value) {
+    if (value == null) return null;
+    final text = value
+        .replaceAll(RegExp(r'<[^>]+>'), '')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .replaceAll('&nbsp;', ' ')
+        .replaceAll('&amp;', '&')
+        .replaceAll('&quot;', '"')
+        .replaceAll('&#39;', "'")
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .trim();
+    return text.isEmpty ? null : text;
+  }
+
+  String? _resolveSiteAssetUrl(String baseUrl, String? value) {
+    if (value == null || value.trim().isEmpty) return null;
+    final raw = value.trim();
+    if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+
+    final site = QrLoginService.cloudreveSiteBase(baseUrl);
+    final uri = Uri.parse(site);
+    if (raw.startsWith('//')) return '${uri.scheme}:$raw';
+    if (raw.startsWith('/')) return '${uri.scheme}://${uri.authority}$raw';
+    return '${site.replaceFirst(RegExp(r'/+$'), '')}/$raw';
+  }
+
+  Future<_SiteHtmlBrand> _fetchSiteHtmlBrand(String baseUrl) async {
+    final site = QrLoginService.cloudreveSiteBase(baseUrl);
+    final response = await Dio().get<String>(
+      site,
+      options: Options(
+        responseType: ResponseType.plain,
+        followRedirects: true,
+        headers: {'Accept': 'text/html,application/xhtml+xml'},
+        validateStatus: (status) => status != null && status < 500,
+      ),
+    );
+    final html = response.data ?? '';
+    return _SiteHtmlBrand(
+      title: _extractHtmlTitle(html),
+      description: _extractMetaContent(html, 'description'),
+      logoUrl: _extractLargeLogoHref(html, site),
+    );
+  }
+
+  Future<Uint8List?> _fetchLogoBytes(String url) async {
+    final response = await Dio().get<List<int>>(
+      url,
+      options: Options(
+        responseType: ResponseType.bytes,
+        followRedirects: true,
+        headers: {'Accept': 'image/*,*/*;q=0.8'},
+        validateStatus: (status) => status != null && status < 500,
+      ),
+    );
+    final status = response.statusCode ?? 0;
+    final data = response.data;
+    if (status < 200 || status >= 300 || data == null || data.isEmpty) {
+      return null;
+    }
+    if (data.length > 1024 * 1024) return null;
+    return Uint8List.fromList(data);
+  }
+
+  String? _extractHtmlTitle(String html) {
+    final match = RegExp(
+      r'<title[^>]*>(.*?)</title>',
+      caseSensitive: false,
+      dotAll: true,
+    ).firstMatch(html);
+    return _decodeHtmlText(match?.group(1));
+  }
+
+  String? _extractMetaContent(String html, String name) {
+    final escaped = RegExp.escape(name);
+    final patterns = [
+      RegExp(
+        '<meta[^>]+name=["\\\']$escaped["\\\'][^>]+content=["\\\']([^"\\\']+)["\\\'][^>]*>',
+        caseSensitive: false,
+        dotAll: true,
+      ),
+      RegExp(
+        '<meta[^>]+content=["\\\']([^"\\\']+)["\\\'][^>]+name=["\\\']$escaped["\\\'][^>]*>',
+        caseSensitive: false,
+        dotAll: true,
+      ),
+    ];
+    for (final pattern in patterns) {
+      final match = pattern.firstMatch(html);
+      final value = _decodeHtmlText(match?.group(1));
+      if (value != null && value.isNotEmpty) return value;
+    }
+    return null;
+  }
+
+  String? _extractLargeLogoHref(String html, String baseUrl) {
+    final metaLogo =
+        _extractMetaImageContent(html, 'og:image', baseUrl) ??
+        _extractMetaImageContent(html, 'twitter:image', baseUrl) ??
+        _extractMetaImageContent(html, 'twitter:image:src', baseUrl);
+    if (metaLogo != null) return metaLogo;
+
+    final imgPattern = RegExp(
+      r'''<img\b[^>]*>''',
+      caseSensitive: false,
+      dotAll: true,
+    );
+
+    for (final match in imgPattern.allMatches(html)) {
+      final tag = match.group(0) ?? '';
+      final marker = [
+        _extractHtmlAttribute(tag, 'id'),
+        _extractHtmlAttribute(tag, 'class'),
+        _extractHtmlAttribute(tag, 'alt'),
+        _extractHtmlAttribute(tag, 'title'),
+        _extractHtmlAttribute(tag, 'src'),
+      ].whereType<String>().join(' ').toLowerCase();
+
+      if (!marker.contains('logo') &&
+          !marker.contains('brand') &&
+          !marker.contains('site-logo') &&
+          !marker.contains('app-logo')) {
+        continue;
+      }
+
+      final src =
+          _extractHtmlAttribute(tag, 'src') ??
+          _extractHtmlAttribute(tag, 'data-src') ??
+          _extractHtmlAttribute(tag, 'data-original') ??
+          _extractHtmlAttribute(tag, 'data-lazy-src');
+      final resolved = _resolveSiteAssetUrl(baseUrl, src);
+      if (resolved != null) return resolved;
+    }
+
+    return null;
+  }
+
+  String? _extractMetaImageContent(
+    String html,
+    String property,
+    String baseUrl,
+  ) {
+    final escaped = RegExp.escape(property);
+    final patterns = [
+      RegExp(
+        '<meta[^>]+property=["\\\']$escaped["\\\'][^>]+content=["\\\']([^"\\\']+)["\\\'][^>]*>',
+        caseSensitive: false,
+        dotAll: true,
+      ),
+      RegExp(
+        '<meta[^>]+name=["\\\']$escaped["\\\'][^>]+content=["\\\']([^"\\\']+)["\\\'][^>]*>',
+        caseSensitive: false,
+        dotAll: true,
+      ),
+      RegExp(
+        '<meta[^>]+content=["\\\']([^"\\\']+)["\\\'][^>]+property=["\\\']$escaped["\\\'][^>]*>',
+        caseSensitive: false,
+        dotAll: true,
+      ),
+      RegExp(
+        '<meta[^>]+content=["\\\']([^"\\\']+)["\\\'][^>]+name=["\\\']$escaped["\\\'][^>]*>',
+        caseSensitive: false,
+        dotAll: true,
+      ),
+    ];
+
+    for (final pattern in patterns) {
+      final value = _decodeHtmlText(pattern.firstMatch(html)?.group(1));
+      final resolved = _resolveSiteAssetUrl(baseUrl, value);
+      if (resolved != null) return resolved;
+    }
+
+    return null;
+  }
+
+  String? _extractHtmlAttribute(String tag, String name) {
+    final escaped = RegExp.escape(name);
+    final pattern = RegExp(
+      '$escaped=["\\\']([^"\\\']+)["\\\']',
+      caseSensitive: false,
+    );
+    return _decodeHtmlText(pattern.firstMatch(tag)?.group(1));
+  }
+
+  String? _decodeHtmlText(String? value) {
+    if (value == null) return null;
+    final text = value
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .replaceAll('&nbsp;', ' ')
+        .replaceAll('&amp;', '&')
+        .replaceAll('&quot;', '"')
+        .replaceAll('&#39;', "'")
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .trim();
+    return text.isEmpty ? null : text;
   }
 
   Future<void> _showServerSelector() async {
@@ -188,6 +475,7 @@ class _LoginPageState extends State<LoginPage> {
   // ─── QR Login ──────────────────────────────────────────────
 
   Future<void> _startQrLogin() async {
+    if (!_showQrLogin) return;
     final server = ServerService.instance.currentServer;
     if (server == null) {
       ToastHelper.failure('请先选择服务器');
@@ -263,9 +551,7 @@ class _LoginPageState extends State<LoginPage> {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
 
       // Save the user from QR login result
-      await ServerService.instance.updateCurrentServerLogin(
-        user: payload.user,
-      );
+      await ServerService.instance.updateCurrentServerLogin(user: payload.user);
 
       authProvider.setUser(payload.user);
       authProvider.setState(AuthState.authenticated);
@@ -301,7 +587,7 @@ class _LoginPageState extends State<LoginPage> {
 
     final captcha = CaptchaService.instance;
 
-    if (_loginConfig.loginCaptcha && !captcha.isWebCaptchaVerified) {
+    if (_showCaptcha && !captcha.isWebCaptchaVerified) {
       ToastHelper.failure('请先完成人机验证');
       return;
     }
@@ -312,7 +598,7 @@ class _LoginPageState extends State<LoginPage> {
     setState(() => _isLoading = true);
 
     try {
-      final captchaParams = _loginConfig.loginCaptcha
+      final captchaParams = _showCaptcha
           ? captcha.getCaptchaParams()
           : <String, String>{};
 
@@ -337,7 +623,7 @@ class _LoginPageState extends State<LoginPage> {
         await Future.delayed(const Duration(seconds: 1));
         if (mounted) navigator.pushReplacementNamed(RouteNames.home);
       } else if (mounted) {
-        if (_loginConfig.loginCaptcha) {
+        if (_showCaptcha) {
           await captcha.refreshCaptcha();
           setState(() {});
         }
@@ -358,7 +644,7 @@ class _LoginPageState extends State<LoginPage> {
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
-        if (_loginConfig.loginCaptcha) {
+        if (_showCaptcha) {
           await captcha.refreshCaptcha();
           setState(() {});
         }
@@ -489,27 +775,6 @@ class _LoginPageState extends State<LoginPage> {
             children: [
               Center(child: _buildLogo()),
               const SizedBox(height: 32),
-              Center(
-                child: Text(
-                  _siteName ?? 'Cloudreve V4.0',
-                  style: Theme.of(context).textTheme.headlineMedium,
-                ),
-              ),
-              if (_siteDescription != null &&
-                  _siteDescription!.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Center(
-                  child: Text(
-                    _siteDescription!,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
               const SizedBox(height: 32),
               _buildLoginFormCard(),
             ],
@@ -523,9 +788,7 @@ class _LoginPageState extends State<LoginPage> {
 
   Widget _buildLoginFormCard() {
     return Card(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
@@ -536,9 +799,11 @@ class _LoginPageState extends State<LoginPage> {
               onManage: _showServerManagement,
             ),
             const SizedBox(height: 16),
-            _buildLoginModeToggle(),
-            const SizedBox(height: 16),
-            if (_loginMode == _LoginMode.password)
+            if (_showQrLogin) ...[
+              _buildLoginModeToggle(),
+              const SizedBox(height: 16),
+            ],
+            if (!_showQrLogin || _loginMode == _LoginMode.password)
               _buildPasswordPanel()
             else
               _buildQrLoginPanel(),
@@ -681,7 +946,7 @@ class _LoginPageState extends State<LoginPage> {
             ),
             onFieldSubmitted: (_) => _login(),
           ),
-          if (_loginConfig.loginCaptcha) ...[
+          if (_showCaptcha) ...[
             const SizedBox(height: 16),
             captcha.buildCaptchaInput(context),
           ],
@@ -713,9 +978,8 @@ class _LoginPageState extends State<LoginPage> {
                 onPressed: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
-                      builder: (context) => ForgotPasswordPage(
-                        loginConfig: _loginConfig,
-                      ),
+                      builder: (context) =>
+                          ForgotPasswordPage(loginConfig: _loginConfig),
                     ),
                   );
                 },
@@ -725,9 +989,8 @@ class _LoginPageState extends State<LoginPage> {
                 onPressed: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
-                      builder: (context) => RegisterPage(
-                        loginConfig: _loginConfig,
-                      ),
+                      builder: (context) =>
+                          RegisterPage(loginConfig: _loginConfig),
                     ),
                   );
                 },
@@ -765,9 +1028,7 @@ class _LoginPageState extends State<LoginPage> {
     if (_isQrLoading) {
       return const SizedBox(
         height: 280,
-        child: Center(
-          child: CircularProgressIndicator(),
-        ),
+        child: Center(child: CircularProgressIndicator()),
       );
     }
 
@@ -920,14 +1181,14 @@ class _LoginPageState extends State<LoginPage> {
           isExpired
               ? '二维码已过期'
               : isAuthorized
-                  ? '扫码成功'
-                  : '请使用手机 App 扫描二维码登录',
+              ? '扫码成功'
+              : '请使用手机 App 扫描二维码登录',
           style: theme.textTheme.bodyMedium?.copyWith(
             color: isExpired
                 ? theme.colorScheme.error
                 : isAuthorized
-                    ? theme.colorScheme.primary
-                    : theme.colorScheme.onSurfaceVariant,
+                ? theme.colorScheme.primary
+                : theme.colorScheme.onSurfaceVariant,
           ),
         ),
         if (isExpired) ...[
@@ -946,40 +1207,82 @@ class _LoginPageState extends State<LoginPage> {
   // ─── Logo ──────────────────────────────────────────────────
 
   Widget _buildLogo({double size = 96}) {
-    if (_siteLogoBytes != null) {
-      return ClipOval(
-        child: Image.memory(
-          _siteLogoBytes!,
-          width: size,
-          height: size,
-          fit: BoxFit.cover,
-          errorBuilder: (_, _, _) => _buildAppLogo(size),
+    final screenWidth = MediaQuery.of(context).size.width;
+    final logoWidth = screenWidth * 0.72 > 280.0 ? 280.0 : screenWidth * 0.72;
+    const logoHeight = 126.0;
+
+    if (_siteLogoBytes != null && _siteLogoBytes!.isNotEmpty) {
+      return SizedBox(
+        width: logoWidth,
+        height: logoHeight,
+        child: Center(
+          child: Image.memory(
+            _siteLogoBytes!,
+            width: logoWidth,
+            height: logoHeight,
+            fit: BoxFit.contain,
+            errorBuilder: (_, _, _) => _buildAppLogo(size),
+          ),
         ),
       );
     }
+
     return _buildAppLogo(size);
   }
 
   Widget _buildAppLogo(double size) {
-    return ClipOval(
-      child: Image.asset(
-        'assets/images/app_logo.png',
-        width: size,
-        height: size,
-        fit: BoxFit.cover,
+    final screenWidth = MediaQuery.of(context).size.width;
+    final logoWidth = screenWidth * 0.72 > 280.0 ? 280.0 : screenWidth * 0.72;
+
+    return SizedBox(
+      width: logoWidth,
+      height: 126,
+      child: Center(
+        child: Image.network(
+          LoginPage._oldAndroidLoginLogoUrl,
+          width: logoWidth,
+          height: 126,
+          fit: BoxFit.contain,
+          filterQuality: FilterQuality.high,
+          headers: const {
+            'User-Agent':
+                'Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Mobile Safari/537.36',
+            'Accept':
+                'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+          },
+          loadingBuilder: (context, child, loadingProgress) {
+            if (loadingProgress == null) return child;
+            return const SizedBox(
+              width: 32,
+              height: 32,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            );
+          },
+          errorBuilder: (_, _, _) => Image.asset(
+            'assets/images/app_logo.png',
+            width: size,
+            height: size,
+            fit: BoxFit.contain,
+          ),
+        ),
       ),
     );
   }
+}
+
+class _SiteHtmlBrand {
+  final String? title;
+  final String? description;
+  final String? logoUrl;
+
+  const _SiteHtmlBrand({this.title, this.description, this.logoUrl});
 }
 
 class _ServerSelector extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onManage;
 
-  const _ServerSelector({
-    required this.onTap,
-    required this.onManage,
-  });
+  const _ServerSelector({required this.onTap, required this.onManage});
 
   @override
   Widget build(BuildContext context) {
@@ -1043,4 +1346,3 @@ class _ServerSelector extends StatelessWidget {
     );
   }
 }
-

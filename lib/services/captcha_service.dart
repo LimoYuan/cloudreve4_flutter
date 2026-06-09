@@ -5,10 +5,12 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../presentation/pages/auth/captcha_challenge_page.dart';
+import '../presentation/pages/auth/mobile_captcha_challenge_page.dart';
 import '../presentation/widgets/toast_helper.dart';
 import '../services/auth_service.dart';
 import '../services/server_service.dart';
 import 'api_service.dart';
+import 'mobile_captcha_service.dart';
 
 /// 验证码服务（单例）
 ///
@@ -35,7 +37,10 @@ class CaptchaService {
   // 代理配置（仅 Windows 桌面端）
   CaptchaProxyConfig? _proxyConfig;
 
-  bool get _isDesktop => !kIsWeb && (Platform.isWindows || Platform.isLinux);
+  bool get _isDesktop =>
+      !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
+
+  bool get _isMobile => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
 
   bool get isLoadingCaptcha => _isLoadingCaptcha;
   String? get captchaImage => _captchaImage;
@@ -98,7 +103,11 @@ class CaptchaService {
     return raw;
   }
 
-  /// 加载验证码配置和图片
+  /// 加载验证码配置和图片。
+  ///
+  /// 平台边界：
+  /// - Android / iOS 只走旧安卓验证码解析逻辑。
+  /// - Windows / Linux / macOS 保留桌面验证码和代理逻辑。
   Future<void> loadCaptcha(String baseUrl) async {
     if (_isLoadingCaptcha) return;
 
@@ -107,96 +116,146 @@ class CaptchaService {
     try {
       await ApiService.instance.setBaseUrl(baseUrl);
 
-      Map<String, dynamic> config = <String, dynamic>{};
-
-      try {
-        config = await AuthService.instance
-            .getBasicSiteConfig()
-            .timeout(const Duration(seconds: 10));
-      } catch (_) {}
-
-      final captchaType = _normalizeCaptchaType(
-        (config['captcha_type'] ??
-                config['captchaType'] ??
-                config['captcha'])
-            ?.toString(),
-      );
-
-      final recaptchaKey = _firstNonEmptyString(config, const [
-        'captcha_ReCaptchaKey',
-        'captcha_re_captcha_key',
-        'captchaReCaptchaKey',
-        'recaptcha_site_key',
-        'recaptchaSiteKey',
-        'recaptcha_key',
-        'reCaptchaKey',
-      ]);
-
-      final turnstileSiteKey = _firstNonEmptyString(config, const [
-        'turnstile_site_id',
-        'turnstileSiteId',
-        'turnstile_site_key',
-        'turnstileSiteKey',
-      ]);
-
-      final capInstanceUrl = _firstNonEmptyString(config, const [
-        'captcha_cap_instance_url',
-        'captchaCapInstanceUrl',
-        'cap_instance_url',
-        'capInstanceUrl',
-      ]);
-
-      final capSiteKey = _firstNonEmptyString(config, const [
-        'captcha_cap_site_key',
-        'captchaCapSiteKey',
-        'cap_site_key',
-        'capSiteKey',
-      ]);
-
-      final capAssetServer = _firstNonEmptyString(config, const [
-        'captcha_cap_asset_server',
-        'captchaCapAssetServer',
-        'cap_asset_server',
-        'capAssetServer',
-      ]);
-
-      final isExternalCaptcha = captchaType == 'turnstile' ||
-          captchaType == 'recaptcha' ||
-          captchaType == 'cap';
-
-      if (isExternalCaptcha) {
-        _captchaType = captchaType;
-        _recaptchaSiteKey = recaptchaKey;
-        _turnstileSiteKey = turnstileSiteKey;
-        _capInstanceUrl = capInstanceUrl;
-        _capSiteKey = capSiteKey;
-        _capAssetServer = capAssetServer;
-        _captchaToken = null;
-
-        _captchaImage = null;
-        _captchaTicket = null;
-        captchaController.clear();
-        return;
+      if (_isMobile) {
+        await _loadMobileCaptcha();
+      } else {
+        await _loadDesktopCaptcha();
       }
-
-      final captcha = await AuthService.instance.getCaptcha();
-
-      _captchaType = captchaType.isEmpty ? 'normal' : captchaType;
-      _recaptchaSiteKey = null;
-      _turnstileSiteKey = null;
-      _capInstanceUrl = null;
-      _capSiteKey = null;
-      _capAssetServer = null;
-      _captchaToken = null;
-
-      _captchaImage = captcha['image'];
-      _captchaTicket = captcha['ticket'];
-      captchaController.clear();
     } catch (_) {
-      clearCaptcha();
+      if (_isMobile) {
+        _setMobileCaptchaFallback();
+      } else {
+        clearCaptcha();
+      }
     } finally {
       _isLoadingCaptcha = false;
     }
+  }
+
+  /// 旧安卓验证码配置加载逻辑。
+  Future<void> _loadMobileCaptcha() async {
+    final captchaInfo = await MobileCaptchaService.instance.load(
+      enabledKeys: const ['login_captcha', 'loginCaptcha'],
+      defaultEnabled: true,
+    );
+
+    if (!captchaInfo.enabled) {
+      clearCaptcha();
+      return;
+    }
+
+    _captchaType = captchaInfo.type;
+    _recaptchaSiteKey = captchaInfo.recaptchaSiteKey;
+    _turnstileSiteKey = captchaInfo.turnstileSiteKey;
+    _capInstanceUrl = captchaInfo.capInstanceUrl;
+    _capSiteKey = captchaInfo.capSiteKey;
+    _capAssetServer = captchaInfo.capAssetServer;
+    _captchaToken = null;
+    _captchaImage = captchaInfo.image;
+    _captchaTicket = captchaInfo.ticket;
+    captchaController.clear();
+  }
+
+  /// 旧安卓加载失败时的回退行为：保持验证码入口可刷新，不绕过登录验证码。
+  void _setMobileCaptchaFallback() {
+    _captchaType = 'normal';
+    _recaptchaSiteKey = null;
+    _turnstileSiteKey = null;
+    _capInstanceUrl = null;
+    _capSiteKey = null;
+    _capAssetServer = null;
+    _captchaToken = null;
+    _captchaImage = null;
+    _captchaTicket = null;
+    captchaController.clear();
+  }
+
+  /// 桌面端验证码配置加载逻辑。
+  Future<void> _loadDesktopCaptcha() async {
+    Map<String, dynamic> config = <String, dynamic>{};
+
+    try {
+      config = await AuthService.instance.getBasicSiteConfig().timeout(
+        const Duration(seconds: 10),
+      );
+    } catch (_) {}
+
+    final captchaType = _normalizeCaptchaType(
+      (config['captcha_type'] ?? config['captchaType'] ?? config['captcha'])
+          ?.toString(),
+    );
+
+    final recaptchaKey = _firstNonEmptyString(config, const [
+      'captcha_ReCaptchaKey',
+      'captcha_re_captcha_key',
+      'captchaReCaptchaKey',
+      'recaptcha_site_key',
+      'recaptchaSiteKey',
+      'recaptcha_key',
+      'reCaptchaKey',
+    ]);
+
+    final turnstileSiteKey = _firstNonEmptyString(config, const [
+      'turnstile_site_id',
+      'turnstileSiteId',
+      'turnstile_site_key',
+      'turnstileSiteKey',
+    ]);
+
+    final capInstanceUrl = _firstNonEmptyString(config, const [
+      'captcha_cap_instance_url',
+      'captchaCapInstanceUrl',
+      'cap_instance_url',
+      'capInstanceUrl',
+    ]);
+
+    final capSiteKey = _firstNonEmptyString(config, const [
+      'captcha_cap_site_key',
+      'captchaCapSiteKey',
+      'cap_site_key',
+      'capSiteKey',
+    ]);
+
+    final capAssetServer = _firstNonEmptyString(config, const [
+      'captcha_cap_asset_server',
+      'captchaCapAssetServer',
+      'cap_asset_server',
+      'capAssetServer',
+    ]);
+
+    final isExternalCaptcha =
+        captchaType == 'turnstile' ||
+        captchaType == 'recaptcha' ||
+        captchaType == 'cap';
+
+    if (isExternalCaptcha) {
+      _captchaType = captchaType;
+      _recaptchaSiteKey = recaptchaKey;
+      _turnstileSiteKey = turnstileSiteKey;
+      _capInstanceUrl = capInstanceUrl;
+      _capSiteKey = capSiteKey;
+      _capAssetServer = capAssetServer;
+      _captchaToken = null;
+
+      _captchaImage = null;
+      _captchaTicket = null;
+      captchaController.clear();
+      return;
+    }
+
+    final captcha = await AuthService.instance.getCaptcha();
+
+    _captchaType = captchaType.isEmpty ? 'normal' : captchaType;
+    _recaptchaSiteKey = null;
+    _turnstileSiteKey = null;
+    _capInstanceUrl = null;
+    _capSiteKey = null;
+    _capAssetServer = null;
+    _captchaToken = null;
+
+    _captchaImage = captcha['image'];
+    _captchaTicket = captcha['ticket'];
+    captchaController.clear();
   }
 
   /// 重新加载图形验证码图片
@@ -207,7 +266,10 @@ class CaptchaService {
   }
 
   /// 跳转到 Web 验证码页面
-  Future<void> openCaptchaChallenge(BuildContext context, {VoidCallback? onVerified}) async {
+  Future<void> openCaptchaChallenge(
+    BuildContext context, {
+    VoidCallback? onVerified,
+  }) async {
     final server = ServerService.instance.currentServer;
     final config = captchaWebConfig;
 
@@ -218,11 +280,20 @@ class CaptchaService {
 
     final token = await Navigator.of(context).push<String>(
       MaterialPageRoute(
-        builder: (_) => CaptchaChallengePage(
-          config: config,
-          baseUrl: server.baseUrl,
-          proxyConfig: _isDesktop ? _proxyConfig : null,
-        ),
+        builder: (_) {
+          if (_isMobile) {
+            return MobileCaptchaChallengePage(
+              config: config,
+              baseUrl: server.baseUrl,
+            );
+          }
+
+          return CaptchaChallengePage(
+            config: config,
+            baseUrl: server.baseUrl,
+            proxyConfig: _isDesktop ? _proxyConfig : null,
+          );
+        },
       ),
     );
 
@@ -253,21 +324,16 @@ class CaptchaService {
   Map<String, String> getCaptchaParams() {
     if (isWebCaptcha) {
       if (_captchaToken == null || _captchaToken!.isEmpty) return {};
-      return {
-        'captcha': _captchaToken!,
-        'ticket': _captchaToken!,
-      };
+      return {'captcha': _captchaToken!, 'ticket': _captchaToken!};
     }
 
     final userInput = captchaController.text.trim();
-    if (userInput.isEmpty && (_captchaTicket == null || _captchaTicket!.isEmpty)) {
+    if (userInput.isEmpty &&
+        (_captchaTicket == null || _captchaTicket!.isEmpty)) {
       return {};
     }
 
-    return {
-      'captcha': userInput,
-      'ticket': _captchaTicket ?? '',
-    };
+    return {'captcha': userInput, 'ticket': _captchaTicket ?? ''};
   }
 
   /// Web 验证码是否已通过
@@ -287,10 +353,12 @@ class CaptchaService {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               OutlinedButton.icon(
-                onPressed: _isLoadingCaptcha ? null : () async {
-                  await openCaptchaChallenge(context);
-                  setState(() {});
-                },
+                onPressed: _isLoadingCaptcha
+                    ? null
+                    : () async {
+                        await openCaptchaChallenge(context);
+                        setState(() {});
+                      },
                 onLongPress: _isDesktop && Platform.isWindows
                     ? () => _showProxyDialog(context, setState)
                     : null,
@@ -427,7 +495,9 @@ class CaptchaService {
   /// Windows 桌面端长按弹出代理设置对话框
   void _showProxyDialog(BuildContext context, StateSetter setState) {
     final hostCtrl = TextEditingController(text: _proxyConfig?.host ?? '');
-    final portCtrl = TextEditingController(text: _proxyConfig?.port.toString() ?? '');
+    final portCtrl = TextEditingController(
+      text: _proxyConfig?.port.toString() ?? '',
+    );
 
     showDialog(
       context: context,
@@ -441,7 +511,10 @@ class CaptchaService {
               children: [
                 Text(
                   '仅支持无认证代理（HTTP/SOCKS5）',
-                  style: TextStyle(fontSize: 12, color: Theme.of(ctx).hintColor),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(ctx).hintColor,
+                  ),
                 ),
                 const SizedBox(height: 16),
                 TextFormField(

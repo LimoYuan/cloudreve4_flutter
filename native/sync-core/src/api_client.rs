@@ -805,6 +805,66 @@ impl ApiClient {
             created_at_ms: data.get("created_at").and_then(|t| t.as_str()).map(parse_timestamp).unwrap_or(0),
         })
     }
+
+    /// 幂等创建多级 Cloudreve 目录路径。
+    ///
+    /// 例：cloudreve://my/DCIM/Camera 会在缺失时依次创建 DCIM 和 Camera。
+    /// 用于相册同步等需要保证深层目录存在的场景。
+    pub async fn ensure_directory_path(&self, uri: &str) -> Result<()> {
+        let normalized = uri.trim().trim_end_matches('/');
+        let (root_uri, segments) = split_cloudreve_uri(normalized)?;
+        if segments.is_empty() {
+            return Ok(());
+        }
+
+        let mut parent_uri = root_uri;
+        for segment in segments {
+            if segment.is_empty() {
+                continue;
+            }
+
+            if self.directory_child_exists(&parent_uri, segment).await? {
+                parent_uri = format!("{}/{}", parent_uri, segment);
+                continue;
+            }
+
+            match self.create_directory(&parent_uri, segment).await {
+                Ok(_) => {
+                    tracing::info!("创建云端目录: {}/{}", parent_uri, segment);
+                }
+                Err(SyncError::ObjectExisted) => {
+                    tracing::debug!("云端目录已存在: {}/{}", parent_uri, segment);
+                }
+                Err(e) => return Err(e),
+            }
+
+            parent_uri = format!("{}/{}", parent_uri, segment);
+        }
+
+        Ok(())
+    }
+
+    async fn directory_child_exists(&self, parent_uri: &str, name: &str) -> Result<bool> {
+        let page = self.list_files_page(parent_uri, 0, 2000, None).await?;
+        Ok(page.files.iter().any(|f| f.is_dir && f.name == name))
+    }
+}
+
+fn split_cloudreve_uri(uri: &str) -> Result<(String, Vec<&str>)> {
+    const PREFIX: &str = "cloudreve://";
+    if !uri.starts_with(PREFIX) {
+        return Err(SyncError::Internal(format!("不支持的云端 URI: {}", uri)));
+    }
+
+    let rest = &uri[PREFIX.len()..];
+    let mut parts = rest.split('/').filter(|part| !part.is_empty());
+    let Some(root_name) = parts.next() else {
+        return Err(SyncError::Internal(format!("无效的云端 URI: {}", uri)));
+    };
+
+    let root_uri = format!("{}{}", PREFIX, root_name);
+    let segments = parts.collect::<Vec<_>>();
+    Ok((root_uri, segments))
 }
 
 /// 解析 Cloudreve 时间戳 (ISO 8601 或 Unix ms)

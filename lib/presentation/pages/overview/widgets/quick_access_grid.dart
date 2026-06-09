@@ -17,10 +17,7 @@ import '../../files/category_files_page.dart';
 class QuickAccessGrid extends StatelessWidget {
   final bool fillHeight;
 
-  const QuickAccessGrid({
-    super.key,
-    this.fillHeight = false,
-  });
+  const QuickAccessGrid({super.key, this.fillHeight = false});
 
   @override
   Widget build(BuildContext context) {
@@ -39,7 +36,12 @@ class QuickAccessGrid extends StatelessWidget {
             children: [
               Icon(LucideIcons.zap, size: 18, color: theme.colorScheme.primary),
               const SizedBox(width: 8),
-              Text('快捷入口', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+              Text(
+                '快捷入口',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ],
           ),
         ),
@@ -94,10 +96,7 @@ class QuickAccessGrid extends StatelessWidget {
 
   void _openCategory(BuildContext context, QuickAccessConfig item) {
     final args = _argsForItem(item);
-    Navigator.of(context).pushNamed(
-      RouteNames.categoryFiles,
-      arguments: args,
-    );
+    Navigator.of(context).pushNamed(RouteNames.categoryFiles, arguments: args);
   }
 
   void _openDirectory(BuildContext context, QuickAccessConfig item) {

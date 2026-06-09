@@ -29,7 +29,9 @@ class _RecentActivityListState extends State<RecentActivityList> {
 
   @override
   void dispose() {
-    LocalRecentActivityService.instance.revision.removeListener(_onRevisionChange);
+    LocalRecentActivityService.instance.revision.removeListener(
+      _onRevisionChange,
+    );
     super.dispose();
   }
 
@@ -38,7 +40,8 @@ class _RecentActivityListState extends State<RecentActivityList> {
   }
 
   Future<void> _loadLocalActivities() async {
-    final shares = await LocalRecentActivityService.instance.getShareActivities();
+    final shares = await LocalRecentActivityService.instance
+        .getShareActivities();
     final files = await LocalRecentActivityService.instance.getFileActivities();
     if (mounted) {
       setState(() {
@@ -62,7 +65,12 @@ class _RecentActivityListState extends State<RecentActivityList> {
             children: [
               Icon(LucideIcons.activity, size: 18, color: colorScheme.primary),
               const SizedBox(width: 8),
-              Text('最近活动', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+              Text(
+                '最近活动',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ],
           ),
         ),
@@ -78,9 +86,16 @@ class _RecentActivityListState extends State<RecentActivityList> {
                   child: Center(
                     child: Column(
                       children: [
-                        Icon(LucideIcons.activity, size: 40, color: theme.hintColor.withValues(alpha: 0.5)),
+                        Icon(
+                          LucideIcons.activity,
+                          size: 40,
+                          color: theme.hintColor.withValues(alpha: 0.5),
+                        ),
                         const SizedBox(height: 12),
-                        Text('暂无活动记录', style: TextStyle(color: theme.hintColor)),
+                        Text(
+                          '暂无活动记录',
+                          style: TextStyle(color: theme.hintColor),
+                        ),
                       ],
                     ),
                   ),
@@ -97,7 +112,9 @@ class _RecentActivityListState extends State<RecentActivityList> {
                       children: [
                         for (int i = 0; i < sections.length; i += 2)
                           Padding(
-                            padding: EdgeInsets.only(bottom: i + 2 < sections.length ? 12 : 0),
+                            padding: EdgeInsets.only(
+                              bottom: i + 2 < sections.length ? 12 : 0,
+                            ),
                             child: sections[i],
                           ),
                       ],
@@ -109,7 +126,9 @@ class _RecentActivityListState extends State<RecentActivityList> {
                       children: [
                         for (int i = 1; i < sections.length; i += 2)
                           Padding(
-                            padding: EdgeInsets.only(bottom: i + 1 < sections.length ? 12 : 0),
+                            padding: EdgeInsets.only(
+                              bottom: i + 1 < sections.length ? 12 : 0,
+                            ),
                             child: sections[i],
                           ),
                       ],
@@ -123,7 +142,9 @@ class _RecentActivityListState extends State<RecentActivityList> {
               children: [
                 for (int i = 0; i < sections.length; i++)
                   Padding(
-                    padding: EdgeInsets.only(bottom: i < sections.length - 1 ? 12 : 0),
+                    padding: EdgeInsets.only(
+                      bottom: i < sections.length - 1 ? 12 : 0,
+                    ),
                     child: sections[i],
                   ),
               ],
@@ -139,73 +160,100 @@ class _RecentActivityListState extends State<RecentActivityList> {
 
     // 最近分享
     if (_shareActivities.isNotEmpty) {
-      sections.add(_buildSection(
-        context,
-        icon: LucideIcons.share2,
-        title: '最近分享的文件',
-        rows: _shareActivities.map((a) => _ActivityRow(
-              name: a.name,
-              typeLabel: a.typeLabel,
-              detail: a.isExpired ? '已过期' : '${a.visited} 次访问',
-              isExpired: a.isExpired,
-            )).toList(),
-        onMore: () => _navigateToTab(2),
-      ));
+      sections.add(
+        _buildSection(
+          context,
+          icon: LucideIcons.share2,
+          title: '最近分享的文件',
+          rows: _shareActivities
+              .map(
+                (a) => _ActivityRow(
+                  name: a.name,
+                  typeLabel: a.typeLabel,
+                  detail: a.isExpired ? '已过期' : '${a.visited} 次访问',
+                  isExpired: a.isExpired,
+                ),
+              )
+              .toList(),
+          onMore: () => _navigateToTab(2),
+        ),
+      );
     }
 
     // 最近查看/编辑
     if (_fileActivities.isNotEmpty) {
-      sections.add(_buildSection(
-        context,
-        icon: LucideIcons.eye,
-        title: '最近查看 / 编辑',
-        rows: _fileActivities.map((a) => _ActivityRow(
-              name: a.name,
-              typeLabel: a.typeLabel,
-              detail: a.actionLabel,
-            )).toList(),
-        onMore: () => _navigateToTab(1),
-      ));
+      sections.add(
+        _buildSection(
+          context,
+          icon: LucideIcons.eye,
+          title: '最近查看 / 编辑',
+          rows: _fileActivities
+              .map(
+                (a) => _ActivityRow(
+                  name: a.name,
+                  typeLabel: a.typeLabel,
+                  detail: a.actionLabel,
+                ),
+              )
+              .toList(),
+          onMore: () => _navigateToTab(1),
+        ),
+      );
     }
 
     // 最近传输
-    sections.add(Consumer2<UploadManagerProvider, DownloadManagerProvider>(
-      builder: (context, uploadProvider, downloadProvider, _) {
-        final transfers = _mergeTransfers(uploadProvider.allTasks, downloadProvider.tasks);
-        if (transfers.isEmpty) return const SizedBox.shrink();
-        return _buildSection(
-          context,
-          icon: LucideIcons.arrowUpDown,
-          title: '最近完成的上传 / 下载',
-          rows: transfers.map((t) => _ActivityRow(
-                name: t.name,
-                typeLabel: t.typeLabel,
-                detail: t.statusLabel,
-                statusColor: t.statusColor,
-              )).toList(),
-          onMore: () => _navigateToTab(2),
-        );
-      },
-    ));
+    sections.add(
+      Consumer2<UploadManagerProvider, DownloadManagerProvider>(
+        builder: (context, uploadProvider, downloadProvider, _) {
+          final transfers = _mergeTransfers(
+            uploadProvider.allTasks,
+            downloadProvider.tasks,
+          );
+          if (transfers.isEmpty) return const SizedBox.shrink();
+          return _buildSection(
+            context,
+            icon: LucideIcons.arrowUpDown,
+            title: '最近完成的上传 / 下载',
+            rows: transfers
+                .map(
+                  (t) => _ActivityRow(
+                    name: t.name,
+                    typeLabel: t.typeLabel,
+                    detail: t.statusLabel,
+                    statusColor: t.statusColor,
+                  ),
+                )
+                .toList(),
+            onMore: () => _navigateToTab(2),
+          );
+        },
+      ),
+    );
 
     // 最近同步
-    sections.add(Consumer<SyncProvider>(
-      builder: (context, syncProvider, _) {
-        final syncItems = _buildSyncActivities(syncProvider);
-        if (syncItems.isEmpty) return const SizedBox.shrink();
-        return _buildSection(
-          context,
-          icon: LucideIcons.refreshCw,
-          title: '最近同步的文件',
-          rows: syncItems.map((s) => _ActivityRow(
-                name: s.name,
-                typeLabel: s.typeLabel,
-                detail: s.actionLabel,
-              )).toList(),
-          onMore: () => _navigateToTab(4),
-        );
-      },
-    ));
+    sections.add(
+      Consumer<SyncProvider>(
+        builder: (context, syncProvider, _) {
+          final syncItems = _buildSyncActivities(syncProvider);
+          if (syncItems.isEmpty) return const SizedBox.shrink();
+          return _buildSection(
+            context,
+            icon: LucideIcons.refreshCw,
+            title: '最近同步的文件',
+            rows: syncItems
+                .map(
+                  (s) => _ActivityRow(
+                    name: s.name,
+                    typeLabel: s.typeLabel,
+                    detail: s.actionLabel,
+                  ),
+                )
+                .toList(),
+            onMore: () => _navigateToTab(4),
+          );
+        },
+      ),
+    );
 
     return sections;
   }
@@ -231,16 +279,31 @@ class _RecentActivityListState extends State<RecentActivityList> {
               children: [
                 Icon(icon, size: 16, color: colorScheme.primary),
                 const SizedBox(width: 8),
-                Expanded(child: Text(title, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700))),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
                 if (onMore != null)
                   TextButton(
                     onPressed: onMore,
                     style: TextButton.styleFrom(
                       minimumSize: Size.zero,
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
-                    child: Text('查看更多', style: theme.textTheme.bodySmall?.copyWith(color: colorScheme.primary)),
+                    child: Text(
+                      '查看更多',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.primary,
+                      ),
+                    ),
                   ),
               ],
             ),
@@ -266,9 +329,36 @@ class _RecentActivityListState extends State<RecentActivityList> {
       ),
       child: Row(
         children: [
-          Expanded(flex: 5, child: Text('文件名', style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600, color: theme.hintColor))),
-          Expanded(flex: 2, child: Text('类型', style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600, color: theme.hintColor))),
-          Expanded(flex: 2, child: Text('状态', style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600, color: theme.hintColor))),
+          Expanded(
+            flex: 5,
+            child: Text(
+              '文件名',
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: theme.hintColor,
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Text(
+              '类型',
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: theme.hintColor,
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Text(
+              '状态',
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: theme.hintColor,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -277,7 +367,9 @@ class _RecentActivityListState extends State<RecentActivityList> {
   Widget _buildTableRow(BuildContext context, _ActivityRow row) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final statusColor = row.statusColor ?? (row.isExpired ? colorScheme.error : colorScheme.primary);
+    final statusColor =
+        row.statusColor ??
+        (row.isExpired ? colorScheme.error : colorScheme.primary);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -285,11 +377,21 @@ class _RecentActivityListState extends State<RecentActivityList> {
         children: [
           Expanded(
             flex: 5,
-            child: Text(row.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: theme.textTheme.bodySmall),
+            child: Text(
+              row.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall,
+            ),
           ),
           Expanded(
             flex: 2,
-            child: Text(row.typeLabel, style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor)),
+            child: Text(
+              row.typeLabel,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.hintColor,
+              ),
+            ),
           ),
           Expanded(
             flex: 2,
@@ -303,7 +405,10 @@ class _RecentActivityListState extends State<RecentActivityList> {
                 row.detail,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.labelSmall?.copyWith(color: statusColor, fontWeight: FontWeight.w600),
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: statusColor,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ),
@@ -318,29 +423,46 @@ class _RecentActivityListState extends State<RecentActivityList> {
   ) {
     final items = <_TransferActivity>[];
 
-    for (final u in uploads.where((t) => t.status == UploadStatus.completed || t.status == UploadStatus.failed)) {
-      items.add(_TransferActivity(
-        name: u.fileName,
-        typeLabel: '上传',
-        statusLabel: u.status == UploadStatus.completed ? '完成' : '失败',
-        statusColor: u.status == UploadStatus.completed ? Colors.green : Theme.of(context).colorScheme.error,
-      ));
+    for (final u in uploads.where(
+      (t) =>
+          t.status == UploadStatus.completed || t.status == UploadStatus.failed,
+    )) {
+      items.add(
+        _TransferActivity(
+          name: u.fileName,
+          typeLabel: '上传',
+          statusLabel: u.status == UploadStatus.completed ? '完成' : '失败',
+          statusColor: u.status == UploadStatus.completed
+              ? Colors.green
+              : Theme.of(context).colorScheme.error,
+        ),
+      );
     }
 
-    for (final d in downloads.where((t) => t.status == DownloadStatus.completed || t.status == DownloadStatus.failed)) {
-      items.add(_TransferActivity(
-        name: d.fileName,
-        typeLabel: '下载',
-        statusLabel: d.status == DownloadStatus.completed ? '完成' : '失败',
-        statusColor: d.status == DownloadStatus.completed ? Colors.green : Theme.of(context).colorScheme.error,
-      ));
+    for (final d in downloads.where(
+      (t) =>
+          t.status == DownloadStatus.completed ||
+          t.status == DownloadStatus.failed,
+    )) {
+      items.add(
+        _TransferActivity(
+          name: d.fileName,
+          typeLabel: '下载',
+          statusLabel: d.status == DownloadStatus.completed ? '完成' : '失败',
+          statusColor: d.status == DownloadStatus.completed
+              ? Colors.green
+              : Theme.of(context).colorScheme.error,
+        ),
+      );
     }
 
     return items;
   }
 
   List<_SyncFileActivity> _buildSyncActivities(SyncProvider syncProvider) {
-    if (!syncProvider.isActive && syncProvider.activeWorkerCount == 0) return [];
+    if (!syncProvider.isActive && syncProvider.activeWorkerCount == 0) {
+      return [];
+    }
     // 简化：使用 SyncProvider 的最近活动数据
     return [];
   }

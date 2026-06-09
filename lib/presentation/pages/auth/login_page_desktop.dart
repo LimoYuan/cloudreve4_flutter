@@ -36,7 +36,8 @@ class LoginDesktopPage extends StatefulWidget {
 
 enum _LoginMode { qr, password, forgot, register }
 
-class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProviderStateMixin {
+class _LoginDesktopPageState extends State<LoginDesktopPage>
+    with TickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -92,15 +93,13 @@ class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProvider
       vsync: this,
       duration: const Duration(milliseconds: 4200),
     )..repeat();
-    _loginSlideAnimation = Tween<Offset>(
-      begin: const Offset(-0.28, 0),
-      end: Offset.zero,
-    ).animate(
-      CurvedAnimation(
-        parent: _entranceController,
-        curve: const Interval(0.24, 1, curve: Curves.easeOutCubic),
-      ),
-    );
+    _loginSlideAnimation =
+        Tween<Offset>(begin: const Offset(-0.28, 0), end: Offset.zero).animate(
+          CurvedAnimation(
+            parent: _entranceController,
+            curve: const Interval(0.24, 1, curve: Curves.easeOutCubic),
+          ),
+        );
     _loginFadeAnimation = CurvedAnimation(
       parent: _entranceController,
       curve: const Interval(0.18, 0.86, curve: Curves.easeOut),
@@ -156,9 +155,9 @@ class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProvider
 
     try {
       await ApiService.instance.setBaseUrl(server.baseUrl);
-      final config = await AuthService.instance
-          .getLoginConfig()
-          .timeout(const Duration(seconds: 10));
+      final config = await AuthService.instance.getLoginConfig().timeout(
+        const Duration(seconds: 10),
+      );
 
       if (!mounted) return;
       setState(() => _loginConfig = config);
@@ -170,12 +169,13 @@ class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProvider
     } catch (_) {}
   }
 
-
   Future<void> _loadSiteBrand() async {
     final server = ServerService.instance.currentServer;
     if (server == null) return;
 
-    final fallbackName = server.label.trim().isEmpty ? 'Cloudreve' : server.label.trim();
+    final fallbackName = server.label.trim().isEmpty
+        ? 'Cloudreve'
+        : server.label.trim();
     final fallbackDescription = '登录后继续管理你的云端文件。';
     final fallbackLogo = QrLoginService.faviconUrlFromCloudreve(server.baseUrl);
 
@@ -185,9 +185,9 @@ class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProvider
 
     try {
       await ApiService.instance.setBaseUrl(server.baseUrl);
-      final config = await AuthService.instance
-          .getBasicSiteConfig()
-          .timeout(const Duration(seconds: 8));
+      final config = await AuthService.instance.getBasicSiteConfig().timeout(
+        const Duration(seconds: 8),
+      );
 
       siteName = _firstString(config, const [
         'title',
@@ -227,18 +227,21 @@ class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProvider
     } catch (_) {}
 
     try {
-      final htmlBrand = await _fetchSiteHtmlBrand(server.baseUrl)
-          .timeout(const Duration(seconds: 8));
+      final htmlBrand = await _fetchSiteHtmlBrand(
+        server.baseUrl,
+      ).timeout(const Duration(seconds: 8));
       siteName = htmlBrand.title ?? siteName;
       description = htmlBrand.description ?? description;
       logo = htmlBrand.iconUrl ?? logo;
     } catch (_) {}
 
-    final resolvedLogo = _resolveSiteAssetUrl(server.baseUrl, logo) ?? fallbackLogo;
+    final resolvedLogo =
+        _resolveSiteAssetUrl(server.baseUrl, logo) ?? fallbackLogo;
     Uint8List? logoBytes;
     try {
-      logoBytes = await _fetchBytesDirect(resolvedLogo)
-          .timeout(const Duration(seconds: 8));
+      logoBytes = await _fetchBytesDirect(
+        resolvedLogo,
+      ).timeout(const Duration(seconds: 8));
     } catch (_) {}
 
     if (!mounted) return;
@@ -249,7 +252,6 @@ class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProvider
       _siteLogoBytes = logoBytes;
     });
   }
-
 
   String? _firstString(Map<String, dynamic> data, List<String> keys) {
     for (final key in keys) {
@@ -292,7 +294,6 @@ class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProvider
     return '${site.replaceFirst(RegExp(r'/+$'), '')}/$raw';
   }
 
-
   Future<_SiteHtmlBrand> _fetchSiteHtmlBrand(String baseUrl) async {
     final site = QrLoginService.cloudreveSiteBase(baseUrl);
     final uri = Uri.parse(site);
@@ -300,7 +301,10 @@ class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProvider
     client.findProxy = (_) => 'DIRECT';
     try {
       final request = await client.getUrl(uri);
-      request.headers.set(HttpHeaders.acceptHeader, 'text/html,application/xhtml+xml');
+      request.headers.set(
+        HttpHeaders.acceptHeader,
+        'text/html,application/xhtml+xml',
+      );
       final response = await request.close();
       final html = await utf8.decodeStream(response);
       return _SiteHtmlBrand(
@@ -369,7 +373,10 @@ class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProvider
       caseSensitive: false,
       dotAll: true,
     );
-    final hrefPattern = RegExp(r'''href=["']([^"']+)["']''', caseSensitive: false);
+    final hrefPattern = RegExp(
+      r'''href=["']([^"']+)["']''',
+      caseSensitive: false,
+    );
     for (final match in linkPattern.allMatches(html)) {
       final tag = match.group(0) ?? '';
       if (!tag.toLowerCase().contains('icon')) continue;
@@ -400,7 +407,11 @@ class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProvider
       builder: (context) => Dialog(
         insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-        child: const SizedBox(width: 560, height: 520, child: ServerSelectorSheet()),
+        child: const SizedBox(
+          width: 560,
+          height: 520,
+          child: ServerSelectorSheet(),
+        ),
       ),
     );
     await _loadRememberedInfo();
@@ -415,7 +426,11 @@ class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProvider
       builder: (context) => Dialog(
         insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-        child: const SizedBox(width: 620, height: 620, child: ServerManagementSheet()),
+        child: const SizedBox(
+          width: 620,
+          height: 620,
+          child: ServerManagementSheet(),
+        ),
       ),
     );
     await _loadRememberedInfo();
@@ -587,6 +602,9 @@ class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProvider
         _isQrLoading = false;
         _qrError = null;
       });
+      debugPrint(
+        '[QR][desktop] session created sid=${session.sessionId} relay=${session.relayBaseUrl}',
+      );
       _qrPollTimer = Timer.periodic(
         const Duration(milliseconds: 1500),
         (_) => _pollQrLoginResult(),
@@ -595,7 +613,8 @@ class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProvider
       if (!mounted) return;
       setState(() {
         _isQrLoading = false;
-        _qrError = '无法连接扫码登录中转服务，请确认服务器已安装 /qr-login-relay。\n${parseLoginErrorMessage(e.toString())}';
+        _qrError =
+            '无法连接扫码登录中转服务，请确认服务器已安装 /qr-login-relay。\n${parseLoginErrorMessage(e.toString())}';
       });
     }
   }
@@ -608,7 +627,12 @@ class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProvider
       final status = await QrLoginService.instance.getStatus(session);
       if (!mounted) return;
 
-      if (status.status == 'authorized') {
+      final normalizedStatus = status.status.trim().toLowerCase();
+      debugPrint(
+        '[QR][desktop] poll sid=${session.sessionId} status=$normalizedStatus message=${status.message ?? ''}',
+      );
+
+      if (_isQrAuthorizedStatus(normalizedStatus)) {
         _qrPollTimer?.cancel();
         setState(() => _isLoading = true);
         final payload = await QrLoginService.instance.getResult(session);
@@ -622,27 +646,42 @@ class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProvider
         return;
       }
 
-      if (status.status == 'expired') {
+      if (normalizedStatus == 'expired') {
         _qrPollTimer?.cancel();
         setState(() => _qrError = '二维码已过期，请重新生成');
+        return;
+      }
+
+      if (normalizedStatus == 'scanned') {
+        setState(() => _qrError = '手机已扫码，请在手机端确认登录');
         return;
       }
 
       if (status.message != null && status.message!.isNotEmpty) {
         setState(() => _qrError = status.message);
       }
-    } catch (_) {
+    } catch (e, stackTrace) {
+      debugPrint('[QR][desktop] poll failed: $e');
+      debugPrintStack(stackTrace: stackTrace);
       // 轮询失败不立刻打断二维码，避免短暂网络抖动导致界面频繁报错。
     }
+  }
+
+  bool _isQrAuthorizedStatus(String status) {
+    return const {
+      'authorized',
+      'confirmed',
+      'success',
+      'completed',
+      'done',
+    }.contains(status);
   }
 
   Future<void> _completeQrLogin(QrLoginTokenPayload payload) async {
     try {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
 
-      await ServerService.instance.updateCurrentServerLogin(
-        user: payload.user,
-      );
+      await ServerService.instance.updateCurrentServerLogin(user: payload.user);
 
       authProvider.setUser(payload.user);
       authProvider.setState(AuthState.authenticated);
@@ -666,8 +705,6 @@ class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProvider
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final canGoBack = Navigator.of(context).canPop();
-
     return Scaffold(
       backgroundColor: const Color(0xFFFFF7F8),
       body: SafeArea(
@@ -681,32 +718,14 @@ class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProvider
                       ? SingleChildScrollView(
                           padding: EdgeInsets.zero,
                           child: ConstrainedBox(
-                            constraints: BoxConstraints(minHeight: viewport.maxHeight),
+                            constraints: BoxConstraints(
+                              minHeight: viewport.maxHeight,
+                            ),
                             child: _buildLoginShell(theme, compact: true),
                           ),
                         )
                       : _buildLoginShell(theme, compact: false),
                 ),
-                if (canGoBack)
-                  Positioned(
-                    left: 16,
-                    top: 16,
-                    child: Material(
-                      color: Colors.white.withValues(alpha: 0.9),
-                      shape: const CircleBorder(),
-                      elevation: 2,
-                      child: IconButton(
-                        tooltip: '返回',
-                        icon: const Icon(LucideIcons.arrowLeft),
-                        onPressed: _isLoading
-                            ? null
-                            : () {
-                                _focusNode.unfocus();
-                                Navigator.of(context).pop();
-                              },
-                      ),
-                    ),
-                  ),
                 if (Platform.isWindows || Platform.isLinux)
                   const Positioned(
                     left: 0,
@@ -772,8 +791,11 @@ class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProvider
 
   Widget _buildBrandPanel(ThemeData theme, {required bool compact}) {
     final server = ServerService.instance.currentServer;
-    final siteName = _siteName ??
-        (server?.label.trim().isNotEmpty == true ? server!.label.trim() : 'Cloudreve');
+    final siteName =
+        _siteName ??
+        (server?.label.trim().isNotEmpty == true
+            ? server!.label.trim()
+            : 'Cloudreve');
     final siteDescription = _siteDescription ?? '登录后继续管理你的云端文件。';
 
     return LayoutBuilder(
@@ -786,10 +808,10 @@ class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProvider
             : (compact ? 360.0 : 720.0);
         final designWidth = compact ? 420.0 : 620.0;
         final designHeight = compact ? 330.0 : 560.0;
-        final brandScale = math.min(
-          availableWidth / designWidth,
-          availableHeight / designHeight,
-        ).clamp(0.62, 1.0).toDouble();
+        final brandScale = math
+            .min(availableWidth / designWidth, availableHeight / designHeight)
+            .clamp(0.62, 1.0)
+            .toDouble();
         final logoSize = (compact ? 150.0 : 238.0) * brandScale;
         final titleSize = (compact ? 30.0 : 38.0) * brandScale;
         final bodySize = 16.0 * brandScale;
@@ -803,9 +825,7 @@ class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProvider
             children: [
               AnimatedBuilder(
                 animation: _logoFloatController,
-                child: RepaintBoundary(
-                  child: _buildSiteLogo(size: logoSize),
-                ),
+                child: RepaintBoundary(child: _buildSiteLogo(size: logoSize)),
                 builder: (context, child) {
                   final t = _logoFloatController.value * math.pi * 2;
                   return Transform.translate(
@@ -904,7 +924,9 @@ class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProvider
   Widget _buildLoginPanel(ThemeData theme, {required bool compact}) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final availableWidth = constraints.maxWidth.isFinite ? constraints.maxWidth : 620.0;
+        final availableWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : 620.0;
         final availableHeight = constraints.maxHeight.isFinite
             ? constraints.maxHeight
             : (compact ? 640.0 : 720.0);
@@ -914,7 +936,9 @@ class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProvider
         final topSafePadding = compact ? 0.0 : 42.0;
         final availableContentHeight = compact
             ? availableHeight
-            : (availableHeight - topSafePadding - 18.0).clamp(300.0, availableHeight).toDouble();
+            : (availableHeight - topSafePadding - 18.0)
+                  .clamp(300.0, availableHeight)
+                  .toDouble();
         final heightScale = compact
             ? 1.0
             : (availableContentHeight / 760.0).clamp(0.54, 1.10).toDouble();
@@ -926,7 +950,9 @@ class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProvider
         };
         final modeHeightScale = compact
             ? 1.0
-            : (availableContentHeight / modeDesignHeight).clamp(0.52, 1.10).toDouble();
+            : (availableContentHeight / modeDesignHeight)
+                  .clamp(0.52, 1.10)
+                  .toDouble();
         final panelScale = compact
             ? 1.0
             : math.min(widthScale, math.min(heightScale, modeHeightScale));
@@ -957,44 +983,56 @@ class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProvider
               crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisSize: MainAxisSize.min,
               children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Expanded(
-                    child: _ServerSelector(
-                      onTap: _showServerSelector,
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: _ServerSelector(onTap: _showServerSelector),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  _ManageServersButton(
-                    onTap: _showServerManagement,
-                  ),
-                ],
-              ),
-              SizedBox(height: compact ? 22 : (22.0 * panelScale).clamp(16.0, 24.0).toDouble()),
-              ClipRect(
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 260),
-                switchInCurve: Curves.easeOutCubic,
-                switchOutCurve: Curves.easeInCubic,
-                transitionBuilder: (child, animation) {
-                  final slide = Tween<Offset>(
-                    begin: const Offset(-0.045, 0),
-                    end: Offset.zero,
-                  ).animate(animation);
-                  return FadeTransition(
-                    opacity: animation,
-                    child: SlideTransition(position: slide, child: child),
-                  );
-                },
-                  child: switch (_loginMode) {
-                    _LoginMode.qr => _buildQrLoginPanel(theme, scale: panelScale),
-                    _LoginMode.password => _buildPasswordLoginPanel(theme, scale: panelScale),
-                    _LoginMode.forgot => _buildForgotPasswordPanel(theme, scale: panelScale),
-                    _LoginMode.register => _buildRegisterPanel(theme, scale: panelScale),
-                  },
+                    const SizedBox(width: 12),
+                    _ManageServersButton(onTap: _showServerManagement),
+                  ],
                 ),
-              ),
+                SizedBox(
+                  height: compact
+                      ? 22
+                      : (22.0 * panelScale).clamp(16.0, 24.0).toDouble(),
+                ),
+                ClipRect(
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 260),
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeInCubic,
+                    transitionBuilder: (child, animation) {
+                      final slide = Tween<Offset>(
+                        begin: const Offset(-0.045, 0),
+                        end: Offset.zero,
+                      ).animate(animation);
+                      return FadeTransition(
+                        opacity: animation,
+                        child: SlideTransition(position: slide, child: child),
+                      );
+                    },
+                    child: switch (_loginMode) {
+                      _LoginMode.qr => _buildQrLoginPanel(
+                        theme,
+                        scale: panelScale,
+                      ),
+                      _LoginMode.password => _buildPasswordLoginPanel(
+                        theme,
+                        scale: panelScale,
+                      ),
+                      _LoginMode.forgot => _buildForgotPasswordPanel(
+                        theme,
+                        scale: panelScale,
+                      ),
+                      _LoginMode.register => _buildRegisterPanel(
+                        theme,
+                        scale: panelScale,
+                      ),
+                    },
+                  ),
+                ),
               ],
             ),
           ),
@@ -1002,12 +1040,17 @@ class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProvider
 
         final child = compact
             ? ScrollConfiguration(
-                behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+                behavior: ScrollConfiguration.of(
+                  context,
+                ).copyWith(scrollbars: false),
                 child: SingleChildScrollView(
                   padding: EdgeInsets.zero,
                   child: ConstrainedBox(
                     constraints: BoxConstraints(
-                      minHeight: (availableHeight - verticalPadding * 2).clamp(0.0, double.infinity),
+                      minHeight: (availableHeight - verticalPadding * 2).clamp(
+                        0.0,
+                        double.infinity,
+                      ),
                     ),
                     child: Center(child: content),
                   ),
@@ -1119,11 +1162,16 @@ class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProvider
                             color: Colors.white.withValues(alpha: 0.42),
                             alignment: Alignment.center,
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 18,
+                                vertical: 10,
+                              ),
                               decoration: BoxDecoration(
                                 color: Colors.white.withValues(alpha: 0.84),
                                 borderRadius: BorderRadius.circular(999),
-                                border: Border.all(color: const Color(0xFFE8CAD5)),
+                                border: Border.all(
+                                  color: const Color(0xFFE8CAD5),
+                                ),
                               ),
                               child: Text(
                                 '二维码过期',
@@ -1157,8 +1205,13 @@ class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProvider
         FilledButton.icon(
           onPressed: _isQrLoading ? null : _startQrLogin,
           style: FilledButton.styleFrom(
-            minimumSize: Size(double.infinity, _buttonHeight(46, scale, min: 38)),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            minimumSize: Size(
+              double.infinity,
+              _buttonHeight(46, scale, min: 38),
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
             backgroundColor: const Color(0xFFA95775),
           ),
           icon: const Icon(LucideIcons.refreshCw, size: 18),
@@ -1168,8 +1221,13 @@ class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProvider
         OutlinedButton.icon(
           onPressed: () => _switchLoginMode(_LoginMode.password),
           style: OutlinedButton.styleFrom(
-            minimumSize: Size(double.infinity, _buttonHeight(44, scale, min: 36)),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            minimumSize: Size(
+              double.infinity,
+              _buttonHeight(44, scale, min: 36),
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
           ),
           icon: const Icon(LucideIcons.mail, size: 18),
           label: const Text('使用账号密码登录'),
@@ -1250,7 +1308,8 @@ class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProvider
                   _obscurePassword ? LucideIcons.eye : LucideIcons.eyeOff,
                   size: 20,
                 ),
-                onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                onPressed: () =>
+                    setState(() => _obscurePassword = !_obscurePassword),
               ),
             ),
             onFieldSubmitted: (_) => _login(),
@@ -1298,7 +1357,9 @@ class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProvider
             onPressed: _isLoading ? null : _login,
             style: FilledButton.styleFrom(
               minimumSize: Size(double.infinity, _buttonHeight(50, scale)),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
               backgroundColor: const Color(0xFFA95775),
             ),
             child: _isLoading
@@ -1339,7 +1400,9 @@ class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProvider
         Row(
           children: [
             IconButton.filledTonal(
-              onPressed: _isLoading ? null : () => _switchLoginMode(_LoginMode.password),
+              onPressed: _isLoading
+                  ? null
+                  : () => _switchLoginMode(_LoginMode.password),
               icon: const Icon(LucideIcons.arrowLeft, size: 18),
               tooltip: '返回登录',
             ),
@@ -1401,10 +1464,7 @@ class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProvider
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _buildPanelBackButton(
-            '找回密码',
-            '输入账号邮箱后，我们会把重置链接发送到你的邮箱。',
-          ),
+          _buildPanelBackButton('找回密码', '输入账号邮箱后，我们会把重置链接发送到你的邮箱。'),
           SizedBox(height: _gap(18, scale, min: 8)),
           TextFormField(
             controller: _forgotEmailController,
@@ -1427,7 +1487,9 @@ class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProvider
             onPressed: _isLoading ? null : _sendResetEmailInline,
             style: FilledButton.styleFrom(
               minimumSize: Size(double.infinity, _buttonHeight(50, scale)),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
               backgroundColor: const Color(0xFFA95775),
             ),
             child: _isLoading
@@ -1441,7 +1503,9 @@ class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProvider
           SizedBox(height: _gap(8, scale, min: 4)),
           Center(
             child: TextButton(
-              onPressed: _isLoading ? null : () => _switchLoginMode(_LoginMode.password),
+              onPressed: _isLoading
+                  ? null
+                  : () => _switchLoginMode(_LoginMode.password),
               child: const Text('想起来了，返回登录'),
             ),
           ),
@@ -1459,10 +1523,7 @@ class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProvider
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _buildPanelBackButton(
-            '注册账号',
-            '创建新账号后即可在当前页面继续登录。',
-          ),
+          _buildPanelBackButton('注册账号', '创建新账号后即可在当前页面继续登录。'),
           SizedBox(height: _gap(18, scale, min: 8)),
           TextFormField(
             controller: _registerEmailController,
@@ -1486,7 +1547,9 @@ class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProvider
               prefixIcon: const Icon(LucideIcons.lock),
               suffixIcon: IconButton(
                 icon: Icon(
-                  _obscureRegisterPassword ? LucideIcons.eye : LucideIcons.eyeOff,
+                  _obscureRegisterPassword
+                      ? LucideIcons.eye
+                      : LucideIcons.eyeOff,
                   size: 20,
                 ),
                 onPressed: () => setState(
@@ -1500,8 +1563,12 @@ class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProvider
             controller: _registerConfirmPasswordController,
             obscureText: _obscureRegisterConfirmPassword,
             validator: (value) {
-              if (value == null || value.isEmpty) return '请确认密码';
-              if (value != _registerPasswordController.text) return '两次输入的密码不一致';
+              if (value == null || value.isEmpty) {
+                return '请确认密码';
+              }
+              if (value != _registerPasswordController.text) {
+                return '两次输入的密码不一致';
+              }
               return null;
             },
             decoration: InputDecoration(
@@ -1510,11 +1577,14 @@ class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProvider
               prefixIcon: const Icon(LucideIcons.lock),
               suffixIcon: IconButton(
                 icon: Icon(
-                  _obscureRegisterConfirmPassword ? LucideIcons.eye : LucideIcons.eyeOff,
+                  _obscureRegisterConfirmPassword
+                      ? LucideIcons.eye
+                      : LucideIcons.eyeOff,
                   size: 20,
                 ),
                 onPressed: () => setState(
-                  () => _obscureRegisterConfirmPassword = !_obscureRegisterConfirmPassword,
+                  () => _obscureRegisterConfirmPassword =
+                      !_obscureRegisterConfirmPassword,
                 ),
               ),
             ),
@@ -1528,7 +1598,9 @@ class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProvider
             onPressed: _isLoading ? null : _registerInline,
             style: FilledButton.styleFrom(
               minimumSize: Size(double.infinity, _buttonHeight(50, scale)),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
               backgroundColor: const Color(0xFFA95775),
             ),
             child: _isLoading
@@ -1542,7 +1614,9 @@ class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProvider
           SizedBox(height: _gap(8, scale, min: 4)),
           Center(
             child: TextButton(
-              onPressed: _isLoading ? null : () => _switchLoginMode(_LoginMode.password),
+              onPressed: _isLoading
+                  ? null
+                  : () => _switchLoginMode(_LoginMode.password),
               child: const Text('已有账号？返回登录'),
             ),
           ),
@@ -1594,7 +1668,8 @@ class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProvider
   Future<void> _registerInline() async {
     if (!_registerFormKey.currentState!.validate()) return;
 
-    if (_registerPasswordController.text != _registerConfirmPasswordController.text) {
+    if (_registerPasswordController.text !=
+        _registerConfirmPasswordController.text) {
       setState(() => _inlineAuthError = '两次输入的密码不一致');
       return;
     }
@@ -1643,15 +1718,18 @@ class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProvider
 
   Widget _buildSiteLogo({required double size}) {
     final server = ServerService.instance.currentServer;
-    final faviconUrl = _siteLogoUrl ??
-        (server == null ? null : QrLoginService.faviconUrlFromCloudreve(server.baseUrl));
+    final faviconUrl =
+        _siteLogoUrl ??
+        (server == null
+            ? null
+            : QrLoginService.faviconUrlFromCloudreve(server.baseUrl));
 
     Widget fallback() => Image.asset(
-          'assets/images/app_logo.png',
-          width: size,
-          height: size,
-          fit: BoxFit.contain,
-        );
+      'assets/images/app_logo.png',
+      width: size,
+      height: size,
+      fit: BoxFit.contain,
+    );
 
     final Widget image;
     if (_siteLogoBytes != null && _siteLogoBytes!.isNotEmpty) {
@@ -1680,7 +1758,6 @@ class _LoginDesktopPageState extends State<LoginDesktopPage> with TickerProvider
       child: Center(child: image),
     );
   }
-
 }
 
 class _AuroraGlassBackground extends StatelessWidget {
@@ -1728,12 +1805,11 @@ class _AuroraGlassPainter extends CustomPainter {
       required List<Color> colors,
     }) {
       final paint = Paint()
-        ..shader = ui.Gradient.radial(
-          center,
-          radius,
-          colors,
-          const [0.0, 0.56, 1.0],
-        )
+        ..shader = ui.Gradient.radial(center, radius, colors, const [
+          0.0,
+          0.56,
+          1.0,
+        ])
         ..blendMode = BlendMode.srcOver;
       canvas.drawCircle(center, radius, paint);
     }
@@ -1925,11 +2001,7 @@ class _WindowButtonState extends State<_WindowButton> {
               child: BackdropFilter(
                 filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
                 child: Center(
-                  child: Icon(
-                    widget.icon,
-                    size: 17,
-                    color: iconColor,
-                  ),
+                  child: Icon(widget.icon, size: 17, color: iconColor),
                 ),
               ),
             ),
@@ -1951,9 +2023,7 @@ class _SiteHtmlBrand {
 class _ServerSelector extends StatelessWidget {
   final VoidCallback onTap;
 
-  const _ServerSelector({
-    required this.onTap,
-  });
+  const _ServerSelector({required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -2053,7 +2123,11 @@ class _ManageServersButton extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: const [
-              Icon(LucideIcons.slidersHorizontal, size: 17, color: Color(0xFFA95775)),
+              Icon(
+                LucideIcons.slidersHorizontal,
+                size: 17,
+                color: Color(0xFFA95775),
+              ),
               SizedBox(width: 8),
               Text(
                 '管理',
@@ -2070,4 +2144,3 @@ class _ManageServersButton extends StatelessWidget {
     );
   }
 }
-

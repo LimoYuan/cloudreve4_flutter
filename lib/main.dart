@@ -60,7 +60,9 @@ void main() async {
   // 初始化日志（必须最先，否则后续任何 AppLogger 调用都会触发 fallback Logger 导致文件输出失效）
   await AppLogger.init();
   // 从持久化恢复日志级别
-  final savedLevel = await StorageService.instance.getString(StorageKeys.logLevel);
+  final savedLevel = await StorageService.instance.getString(
+    StorageKeys.logLevel,
+  );
   if (savedLevel != null) {
     final level = _parseLogLevel(savedLevel);
     AppLogger.setLevel(level);
@@ -70,12 +72,19 @@ void main() async {
   UploadForegroundService.initCommunicationPort();
 
   // 初始化 Flutter Rust Bridge
-  try {
-    await RustSyncApi.init();
-    AppLogger.i("RustSyncApi 初始化成功");
-  } catch (e) {
-    AppLogger.e("RustSyncApi 初始化失败: $e");
-    // 初始化失败不阻塞应用启动，同步功能将不可用
+  // 桌面端在启动时预加载同步核心；移动端按需在 SyncService 中懒加载。
+  // 这样 Android 不使用同步功能时不会提前加载 libsync_core.so，
+  // 也避免和同步页面里的初始化流程重复调用 FRB init。
+  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+    try {
+      await RustSyncApi.init();
+      AppLogger.i("RustSyncApi 初始化成功");
+    } catch (e) {
+      AppLogger.e("RustSyncApi 初始化失败: $e");
+      // 初始化失败不阻塞应用启动，同步功能将不可用
+    }
+  } else {
+    AppLogger.i("移动端同步核心按需初始化，启动阶段跳过 RustSyncApi 初始化");
   }
 
   // 捕获 flutter_cache_manager 在 Windows 上删除缓存文件时的文件占用异常
@@ -110,7 +119,8 @@ void main() async {
       // 退出当前新启动的进程
       exit(0);
     }
-    final String processName = await singleInstance.getProcessName(pid) ?? "Unknown";
+    final String processName =
+        await singleInstance.getProcessName(pid) ?? "Unknown";
     final File? pidFile = await singleInstance.getPidFile(processName);
     int port = FlutterSingleInstance.port;
 
@@ -120,17 +130,21 @@ void main() async {
         final Map<String, dynamic> data = jsonDecode(content);
         port = data['port'] ?? 0;
       } catch (e) {
-        AppLogger.e("Get FlutterSingleInstance port has error: ${e.toString()}");
+        AppLogger.e(
+          "Get FlutterSingleInstance port has error: ${e.toString()}",
+        );
       }
     }
 
-    AppLogger.i("processName: $processName \npid: $pid \npidFile: ${pidFile.path.toString()} \nSingleInstance RPC address:port: ${addr.address}:$port");
+    AppLogger.i(
+      "processName: $processName \npid: $pid \npidFile: ${pidFile.path.toString()} \nSingleInstance RPC address:port: ${addr.address}:$port",
+    );
 
     FlutterSingleInstance.onFocus = (metadata) async {
       AppLogger.i("收到唤醒信号: $metadata");
       await DesktopService.instance.showWindow();
     };
-    
+
     await DesktopService.instance.initialize();
   }
 
@@ -186,23 +200,26 @@ class CloudreveApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return
-        MultiProvider(
-          providers: [
-            ChangeNotifierProvider(create: (_) => ThemeProvider()..init()),
-            ChangeNotifierProvider(create: (_) => AuthProvider()..init()),
-            ChangeNotifierProvider(create: (_) => FileManagerProvider()),
-            ChangeNotifierProvider(create: (_) => NavigationProvider()),
-            ChangeNotifierProvider(create: (_) => UploadService()),
-            ChangeNotifierProvider(create: (_) => UploadManagerProvider()..initialize()),
-            ChangeNotifierProvider(create: (_) => DownloadManagerProvider()..initialize()),
-            ChangeNotifierProvider(create: (_) => UserSettingProvider()),
-            ChangeNotifierProvider(create: (_) => AdminProvider()),
-            ChangeNotifierProvider(create: (_) => QuickAccessProvider()..load()),
-            ChangeNotifierProvider(create: (_) => SyncProvider()),
-          ],
-          child: const AppView(),
-        );
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => ThemeProvider()..init()),
+        ChangeNotifierProvider(create: (_) => AuthProvider()..init()),
+        ChangeNotifierProvider(create: (_) => FileManagerProvider()),
+        ChangeNotifierProvider(create: (_) => NavigationProvider()),
+        ChangeNotifierProvider(create: (_) => UploadService()),
+        ChangeNotifierProvider(
+          create: (_) => UploadManagerProvider()..initialize(),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => DownloadManagerProvider()..initialize(),
+        ),
+        ChangeNotifierProvider(create: (_) => UserSettingProvider()),
+        ChangeNotifierProvider(create: (_) => AdminProvider()),
+        ChangeNotifierProvider(create: (_) => QuickAccessProvider()..load()),
+        ChangeNotifierProvider(create: (_) => SyncProvider()),
+      ],
+      child: const AppView(),
+    );
   }
 }
 
@@ -233,9 +250,14 @@ class AppView extends StatelessWidget {
           Widget currentWidget = child;
           if (Platform.isWindows || Platform.isLinux) {
             currentWidget = Material(
-              color: themeProvider.isDark ? Colors.black.withValues(alpha: 0.92) : Colors.white.withValues(alpha: 0.92),
+              color: themeProvider.isDark
+                  ? Colors.black.withValues(alpha: 0.92)
+                  : Colors.white.withValues(alpha: 0.92),
               child: ListenableBuilder(
-                listenable: Listenable.merge([videoFullscreenNotifier, isOnLoginPage]),
+                listenable: Listenable.merge([
+                  videoFullscreenNotifier,
+                  isOnLoginPage,
+                ]),
                 builder: (context, child) {
                   if (videoFullscreenNotifier.value || isOnLoginPage.value) {
                     return child!;
@@ -244,13 +266,9 @@ class AppView extends StatelessWidget {
                     children: [
                       const SizedBox(
                         height: 32,
-                        child: DragToMoveArea(
-                          child: DesktopTitleBar(),
-                        ),
+                        child: DragToMoveArea(child: DesktopTitleBar()),
                       ),
-                      Expanded(
-                        child: child!,
-                      ),
+                      Expanded(child: child!),
                     ],
                   );
                 },
@@ -271,12 +289,15 @@ class AppView extends StatelessWidget {
             systemNavigationBarColor: Colors.transparent,
             systemStatusBarContrastEnforced: false,
             systemNavigationBarContrastEnforced: false,
-            statusBarIconBrightness:
-                themeProvider.isDark ? Brightness.light : Brightness.dark,
-            statusBarBrightness:
-                themeProvider.isDark ? Brightness.dark : Brightness.light,
-            systemNavigationBarIconBrightness:
-                themeProvider.isDark ? Brightness.light : Brightness.dark,
+            statusBarIconBrightness: themeProvider.isDark
+                ? Brightness.light
+                : Brightness.dark,
+            statusBarBrightness: themeProvider.isDark
+                ? Brightness.dark
+                : Brightness.light,
+            systemNavigationBarIconBrightness: themeProvider.isDark
+                ? Brightness.light
+                : Brightness.dark,
           );
 
           return AnnotatedRegion<SystemUiOverlayStyle>(

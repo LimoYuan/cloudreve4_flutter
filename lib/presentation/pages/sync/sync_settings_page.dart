@@ -218,7 +218,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
                   ],
                 ),
             ],
-            if (Platform.isAndroid)
+            if (Platform.isAndroid) ...[
               SettingsSection(
                 title: '相册同步',
                 children: [
@@ -254,6 +254,32 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
                   ),
                 ],
               ),
+              SettingsSection(
+                title: '相册目录',
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.phone_android_outlined),
+                    title: const Text('手机相册目录'),
+                    subtitle: Text(
+                      _localRootController.text.isNotEmpty
+                          ? _localRootController.text
+                          : 'DCIM/Camera',
+                    ),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.cloud_upload_outlined),
+                    title: const Text('云端上传目录'),
+                    subtitle: Text(_remoteRoot),
+                    trailing: sync.isActive || sync.isPaused
+                        ? null
+                        : const Icon(Icons.chevron_right),
+                    onTap: sync.isActive || sync.isPaused
+                        ? null
+                        : () => _pickRemoteFolder(),
+                  ),
+                ],
+              ),
+            ],
             SettingsSection(
               title: '性能',
               children: [

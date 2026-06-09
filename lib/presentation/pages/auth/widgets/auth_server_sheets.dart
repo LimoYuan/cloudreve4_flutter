@@ -82,9 +82,7 @@ class ServerListItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return ListTile(
-      leading: Radio<String>(
-        value: server.label,
-      ),
+      leading: Radio<String>(value: server.label),
       title: Text(
         server.label,
         style: TextStyle(
@@ -97,8 +95,9 @@ class ServerListItem extends StatelessWidget {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
-      tileColor:
-          isSelected ? Theme.of(context).colorScheme.primaryContainer : null,
+      tileColor: isSelected
+          ? Theme.of(context).colorScheme.primaryContainer
+          : null,
       onTap: onTap,
     );
   }
@@ -218,14 +217,16 @@ class _ServerManagementSheetState extends State<ServerManagementSheet> {
 
     if (result == true && context.mounted) {
       try {
+        final label = labelController.text.trim();
+        final baseUrl = urlController.text.trim();
+
         await ServerService.instance.addServer(
-          ServerModel(
-            label: labelController.text.trim(),
-            baseUrl: urlController.text.trim(),
-          ),
+          ServerModel(label: label, baseUrl: baseUrl),
         );
+        await ServerService.instance.selectServer(label);
+
         setState(() {});
-        if (context.mounted) ToastHelper.success('服务器已添加');
+        if (context.mounted) ToastHelper.success('服务器已添加并选中');
       } catch (e) {
         if (context.mounted) ToastHelper.failure('添加失败: $e');
       }

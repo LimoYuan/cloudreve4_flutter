@@ -7,6 +7,126 @@ import 'package:dio/io.dart';
 
 import '../data/models/user_model.dart';
 
+class QrLoginPayload {
+  final String relayBaseUrl;
+  final String cloudreveBaseUrl;
+  final String sessionId;
+  final String publicKey;
+  final DateTime? expiresAt;
+  final String? winDeviceName;
+
+  QrLoginPayload({
+    required this.relayBaseUrl,
+    required this.cloudreveBaseUrl,
+    required this.sessionId,
+    required this.publicKey,
+    this.expiresAt,
+    this.winDeviceName,
+  });
+
+  factory QrLoginPayload.fromRaw(String raw) {
+    final value = raw.trim();
+    if (value.startsWith('mkwqrlogin://')) {
+      return QrLoginPayload._fromCompactUri(value);
+    }
+    return QrLoginPayload._fromLegacyJson(value);
+  }
+
+  factory QrLoginPayload._fromCompactUri(String raw) {
+    late final Uri uri;
+    try {
+      uri = Uri.parse(raw);
+    } catch (_) {
+      throw Exception('不是有效的扫码登录二维码');
+    }
+    if (uri.scheme != 'mkwqrlogin') {
+      throw Exception('二维码类型不正确');
+    }
+
+    final sessionId =
+        uri.queryParameters['sid'] ?? uri.queryParameters['session_id'];
+    final publicKey =
+        uri.queryParameters['pk'] ?? uri.queryParameters['public_key'];
+    if ([sessionId, publicKey].any((e) => e == null || e.isEmpty)) {
+      throw Exception('二维码内容不完整');
+    }
+
+    DateTime? expiresAt;
+    final rawExpiresAt =
+        uri.queryParameters['exp'] ?? uri.queryParameters['expires_at'];
+    if (rawExpiresAt != null && rawExpiresAt.isNotEmpty) {
+      final seconds = int.tryParse(rawExpiresAt);
+      expiresAt = seconds == null
+          ? DateTime.tryParse(rawExpiresAt)
+          : DateTime.fromMillisecondsSinceEpoch(seconds * 1000);
+    }
+
+    return QrLoginPayload(
+      relayBaseUrl: '',
+      cloudreveBaseUrl: '',
+      sessionId: sessionId!,
+      publicKey: publicKey!,
+      expiresAt: expiresAt,
+      winDeviceName: uri.queryParameters['device_name'],
+    );
+  }
+
+  factory QrLoginPayload._fromLegacyJson(String raw) {
+    final decoded = jsonDecode(raw);
+    if (decoded is! Map) {
+      throw Exception('不是有效的扫码登录二维码');
+    }
+    final json = Map<String, dynamic>.from(decoded);
+    if (json['type'] != 'mkw_qr_login') {
+      throw Exception('二维码类型不正确');
+    }
+
+    final relay = json['relay']?.toString();
+    final cloudreve = json['cloudreve']?.toString();
+    final sessionId = json['session_id']?.toString();
+    final publicKey = json['public_key']?.toString();
+    if ([
+      relay,
+      cloudreve,
+      sessionId,
+      publicKey,
+    ].any((e) => e == null || e.isEmpty)) {
+      throw Exception('二维码内容不完整');
+    }
+
+    DateTime? expiresAt;
+    final rawExpiresAt = json['expires_at'];
+    if (rawExpiresAt is int) {
+      expiresAt = DateTime.fromMillisecondsSinceEpoch(rawExpiresAt * 1000);
+    } else if (rawExpiresAt is String) {
+      expiresAt = DateTime.tryParse(rawExpiresAt);
+    }
+
+    return QrLoginPayload(
+      relayBaseUrl: relay!.replaceFirst(RegExp(r'/+$'), ''),
+      cloudreveBaseUrl: cloudreve!,
+      sessionId: sessionId!,
+      publicKey: publicKey!,
+      expiresAt: expiresAt,
+      winDeviceName: json['device_name']?.toString(),
+    );
+  }
+
+  QrLoginPayload resolveForServer(String serverBaseUrl) {
+    final root = QrLoginService.cloudreveSiteBase(serverBaseUrl);
+    return QrLoginPayload(
+      relayBaseUrl: relayBaseUrl.isEmpty
+          ? QrLoginService.relayBaseForCloudreve(root)
+          : relayBaseUrl.replaceFirst(RegExp(r'/+$'), ''),
+      cloudreveBaseUrl: cloudreveBaseUrl.isEmpty ? root : cloudreveBaseUrl,
+      sessionId: sessionId,
+      publicKey: publicKey,
+      expiresAt: expiresAt,
+      winDeviceName: winDeviceName,
+    );
+  }
+}
+
 class QrLoginSession {
   final String relayBaseUrl;
   final String cloudreveBaseUrl;
@@ -30,11 +150,7 @@ class QrLoginStatus {
   final DateTime? expiresAt;
   final String? message;
 
-  QrLoginStatus({
-    required this.status,
-    this.expiresAt,
-    this.message,
-  });
+  QrLoginStatus({required this.status, this.expiresAt, this.message});
 
   factory QrLoginStatus.fromJson(Map<String, dynamic> json) {
     final rawExpires = json['expires_at'];
@@ -68,7 +184,9 @@ class QrLoginTokenPayload {
     return QrLoginTokenPayload(
       cloudreveBaseUrl: json['cloudreve']?.toString() ?? '',
       user: UserModel.fromJson(Map<String, dynamic>.from(rawUser)),
-      authorizedAt: rawAuthorizedAt is String ? DateTime.tryParse(rawAuthorizedAt) : null,
+      authorizedAt: rawAuthorizedAt is String
+          ? DateTime.tryParse(rawAuthorizedAt)
+          : null,
       mobileDevice: json['mobile_device']?.toString(),
     );
   }
@@ -95,12 +213,20 @@ class QrLoginService {
     }
 
     final path = trimmedSegments.isEmpty ? '' : '/${trimmedSegments.join('/')}';
-    return '${uri.scheme}://${uri.authority}$path';
+    return '${uri.scheme}://${uri.authority}$path'.replaceFirst(
+      RegExp(r'/+$'),
+      '',
+    );
   }
+
+  static String cloudreveRootFromBaseUrl(String raw) => cloudreveSiteBase(raw);
 
   static String relayBaseForCloudreve(String rawBaseUrl) {
     return '${cloudreveSiteBase(rawBaseUrl)}/qr-login-relay';
   }
+
+  static String relayBaseUrlFromCloudreve(String raw) =>
+      relayBaseForCloudreve(raw);
 
   static String faviconUrlFromCloudreve(String rawBaseUrl) {
     return '${cloudreveSiteBase(rawBaseUrl)}/favicon.ico';
@@ -117,7 +243,9 @@ class QrLoginService {
 
   static String _ensureUrl(String raw) {
     final value = raw.trim();
-    if (value.startsWith('http://') || value.startsWith('https://')) return value;
+    if (value.startsWith('http://') || value.startsWith('https://')) {
+      return value;
+    }
     return 'https://$value';
   }
 
@@ -131,13 +259,20 @@ class QrLoginService {
         headers: {'Content-Type': 'application/json'},
       ),
     );
-    dio.httpClientAdapter = IOHttpClientAdapter(
-      createHttpClient: () {
-        final client = HttpClient();
-        client.findProxy = (_) => 'DIRECT';
-        return client;
-      },
-    );
+
+    // Desktop QR polling must bypass system/proxy environment variables.
+    // The old working Windows client used DIRECT for the relay request chain.
+    // Keep mobile using the normal platform network stack.
+    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+      dio.httpClientAdapter = IOHttpClientAdapter(
+        createHttpClient: () {
+          final client = HttpClient();
+          client.findProxy = (_) => 'DIRECT';
+          return client;
+        },
+      );
+    }
+
     return dio;
   }
 
@@ -172,7 +307,10 @@ class QrLoginService {
     final data = response.data ?? const <String, dynamic>{};
     final sessionId = data['session_id']?.toString();
     final qrPayload = data['qr_payload']?.toString();
-    if (sessionId == null || sessionId.isEmpty || qrPayload == null || qrPayload.isEmpty) {
+    if (sessionId == null ||
+        sessionId.isEmpty ||
+        qrPayload == null ||
+        qrPayload.isEmpty) {
       throw Exception('扫码中转服务返回数据异常');
     }
 
@@ -184,20 +322,25 @@ class QrLoginService {
       qrPayload: qrPayload,
       expiresAt: expiresAtRaw == null
           ? DateTime.now().add(const Duration(seconds: 120))
-          : (DateTime.tryParse(expiresAtRaw) ?? DateTime.now().add(const Duration(seconds: 120))),
+          : (DateTime.tryParse(expiresAtRaw) ??
+                DateTime.now().add(const Duration(seconds: 120))),
       keyPair: keyPair,
     );
   }
 
   Future<QrLoginStatus> getStatus(QrLoginSession session) async {
     final dio = _dio(session.relayBaseUrl);
-    final response = await dio.get<Map<String, dynamic>>('/api/session/${session.sessionId}/status');
+    final response = await dio.get<Map<String, dynamic>>(
+      '/api/session/${session.sessionId}/status',
+    );
     return QrLoginStatus.fromJson(response.data ?? const <String, dynamic>{});
   }
 
   Future<QrLoginTokenPayload> getResult(QrLoginSession session) async {
     final dio = _dio(session.relayBaseUrl);
-    final response = await dio.get<Map<String, dynamic>>('/api/session/${session.sessionId}/result');
+    final response = await dio.get<Map<String, dynamic>>(
+      '/api/session/${session.sessionId}/result',
+    );
     final data = response.data ?? const <String, dynamic>{};
 
     final encryptedPayload = data['encrypted_payload']?.toString();
@@ -205,7 +348,12 @@ class QrLoginService {
     final nonceText = data['nonce']?.toString();
     final macText = data['mac']?.toString();
 
-    if ([encryptedPayload, mobilePublicKey, nonceText, macText].any((e) => e == null || e.isEmpty)) {
+    if ([
+      encryptedPayload,
+      mobilePublicKey,
+      nonceText,
+      macText,
+    ].any((e) => e == null || e.isEmpty)) {
       throw Exception('扫码授权结果不完整');
     }
 
@@ -234,11 +382,103 @@ class QrLoginService {
     return QrLoginTokenPayload.fromJson(Map<String, dynamic>.from(decoded));
   }
 
+  Future<void> markScanned(QrLoginPayload payload) async {
+    try {
+      // Keep this lightweight: it helps verify that mobile actually touched the
+      // same relay/session that desktop is polling, without printing user token.
+      // ignore: avoid_print
+      print(
+        '[QR][mobile] markScanned sid=${payload.sessionId} relay=${payload.relayBaseUrl}',
+      );
+      final response = await _dio(payload.relayBaseUrl)
+          .post<Map<String, dynamic>>(
+            '/api/session/${payload.sessionId}/scan',
+            data: {'device_name': _deviceName()},
+          );
+      // ignore: avoid_print
+      print(
+        '[QR][mobile] markScanned response=${response.statusCode} data=${response.data}',
+      );
+    } catch (e) {
+      // 标记已扫码失败不影响后续确认流程，但要打印出来，避免误判为“电脑没反应”。
+      // ignore: avoid_print
+      print('[QR][mobile] markScanned failed: $e');
+    }
+  }
+
+  Future<void> confirmLogin({
+    required QrLoginPayload payload,
+    required UserModel user,
+    required String currentCloudreveBaseUrl,
+  }) async {
+    if (!isSameCloudreve(currentCloudreveBaseUrl, payload.cloudreveBaseUrl)) {
+      throw Exception('二维码所属站点与当前手机端登录站点不一致');
+    }
+    if (user.token == null || user.token!.isRefreshTokenExpired) {
+      throw Exception('当前手机端登录凭证已过期，请重新登录后再扫码');
+    }
+
+    final keyPair = await _keyExchange.newKeyPair();
+    final publicKey = await keyPair.extractPublicKey();
+    final winPublicKey = SimplePublicKey(
+      base64Decode(payload.publicKey),
+      type: KeyPairType.x25519,
+    );
+    final sharedSecret = await _keyExchange.sharedSecretKey(
+      keyPair: keyPair,
+      remotePublicKey: winPublicKey,
+    );
+
+    final clearPayload = utf8.encode(
+      jsonEncode({
+        'cloudreve': currentCloudreveBaseUrl,
+        'user': user.toJson(),
+        'mobile_device': _deviceName(),
+        'authorized_at': DateTime.now().toIso8601String(),
+      }),
+    );
+    final box = await _cipher.encrypt(clearPayload, secretKey: sharedSecret);
+
+    // ignore: avoid_print
+    print(
+      '[QR][mobile] confirmLogin sid=${payload.sessionId} relay=${payload.relayBaseUrl} cloudreve=${payload.cloudreveBaseUrl}',
+    );
+
+    final response = await _dio(payload.relayBaseUrl)
+        .post<Map<String, dynamic>>(
+          '/api/session/${payload.sessionId}/confirm',
+          data: {
+            'device_name': _deviceName(),
+            'mobile_public_key': base64Encode(publicKey.bytes),
+            'encrypted_payload': base64Encode(box.cipherText),
+            'nonce': base64Encode(box.nonce),
+            'mac': base64Encode(box.mac.bytes),
+          },
+        );
+
+    final data = response.data ?? const <String, dynamic>{};
+    // ignore: avoid_print
+    print(
+      '[QR][mobile] confirmLogin response=${response.statusCode} data=$data',
+    );
+    if (response.statusCode != 200 || data['ok'] != true) {
+      throw Exception(data['message']?.toString() ?? '授权失败');
+    }
+  }
+
   String _defaultDeviceName() {
     try {
       return '${Platform.operatingSystem} ${Platform.localHostname}'.trim();
     } catch (_) {
       return 'Desktop';
+    }
+  }
+
+  String _deviceName() {
+    try {
+      return 'Android ${Platform.localHostname}'.trim();
+    } catch (_) {
+      return 'Android 手机端';
     }
   }
 }

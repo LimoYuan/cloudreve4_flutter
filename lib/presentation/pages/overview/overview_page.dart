@@ -2,8 +2,10 @@ import 'package:cloudreve4_flutter/presentation/providers/auth_provider.dart';
 import 'package:cloudreve4_flutter/presentation/providers/navigation_provider.dart';
 import 'package:cloudreve4_flutter/presentation/providers/user_setting_provider.dart';
 import 'package:cloudreve4_flutter/services/avatar_cache_service.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../../router/app_router.dart';
 import 'widgets/storage_usage_card.dart';
 import 'widgets/quick_access_grid.dart';
 import 'widgets/recent_activity_list.dart';
@@ -37,16 +39,18 @@ class _OverviewEntranceState extends State<_OverviewEntrance>
       vsync: this,
       duration: const Duration(milliseconds: 520),
     );
-    _opacity = Tween<double>(begin: 0, end: 1).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
-    );
-    _scale = Tween<double>(begin: 0.92, end: 1).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.elasticOut),
-    );
-    _slide = Tween<Offset>(begin: const Offset(0, 0.03), end: Offset.zero)
-        .animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
-    );
+    _opacity = Tween<double>(
+      begin: 0,
+      end: 1,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
+    _scale = Tween<double>(
+      begin: 0.92,
+      end: 1,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.elasticOut));
+    _slide = Tween<Offset>(
+      begin: const Offset(0, 0.03),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
     Future.delayed(Duration(milliseconds: widget.delayMs), () {
       if (mounted) _controller.forward();
     });
@@ -78,10 +82,7 @@ class _OverviewEntranceState extends State<_OverviewEntrance>
       opacity: _opacity,
       child: ScaleTransition(
         scale: _scale,
-        child: SlideTransition(
-          position: _slide,
-          child: widget.child,
-        ),
+        child: SlideTransition(position: _slide, child: widget.child),
       ),
     );
   }
@@ -95,13 +96,19 @@ class OverviewPage extends StatefulWidget {
 }
 
 class _OverviewPageState extends State<OverviewPage> {
+  bool get _showQrScanEntry =>
+      defaultTargetPlatform == TargetPlatform.android ||
+      defaultTargetPlatform == TargetPlatform.iOS;
+
   @override
   void initState() {
     super.initState();
     Future.microtask(() {
       if (mounted) {
         final userSetting = Provider.of<UserSettingProvider>(
-            context, listen: false);
+          context,
+          listen: false,
+        );
         userSetting.loadCapacity();
 
         // 初始化/更新当前用户头像
@@ -130,14 +137,21 @@ class _OverviewPageState extends State<OverviewPage> {
 
   @override
   Widget build(BuildContext context) {
-    final isWide = MediaQuery
-        .of(context)
-        .size
-        .width >= 720;
+    final isWide = MediaQuery.of(context).size.width >= 720;
 
     return Scaffold(
       appBar: AppBar(
+        leading: _showQrScanEntry
+            ? IconButton(
+                icon: const Icon(Icons.qr_code_scanner),
+                tooltip: '扫码登录电脑',
+                onPressed: () {
+                  Navigator.of(context).pushNamed(RouteNames.qrLoginScan);
+                },
+              )
+            : null,
         title: const Text('概览'),
+        centerTitle: true,
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
@@ -153,7 +167,10 @@ class _OverviewPageState extends State<OverviewPage> {
       children: [
         _OverviewEntrance(delayMs: 40, child: const SearchEntryCard()),
         const SizedBox(height: 16),
-        _OverviewEntrance(delayMs: 110, child: const _WideStorageAndShortcuts()),
+        _OverviewEntrance(
+          delayMs: 110,
+          child: const _WideStorageAndShortcuts(),
+        ),
         const SizedBox(height: 16),
         _OverviewEntrance(delayMs: 180, child: const RecentActivityList()),
       ],
@@ -169,8 +186,15 @@ class _OverviewPageState extends State<OverviewPage> {
         const SizedBox(height: 16),
         _OverviewEntrance(delayMs: 110, child: const StorageUsageCard()),
         const SizedBox(height: 16),
-        _OverviewEntrance(delayMs: 180, child: Card(child: Padding(
-            padding: const EdgeInsets.all(16), child: QuickAccessGrid()))),
+        _OverviewEntrance(
+          delayMs: 180,
+          child: Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: QuickAccessGrid(),
+            ),
+          ),
+        ),
         const SizedBox(height: 16),
         _OverviewEntrance(delayMs: 260, child: const RecentActivityList()),
       ],

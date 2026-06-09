@@ -111,6 +111,10 @@ const _desktopUserAgent =
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
     '(KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36';
 
+const _androidUserAgent =
+    'Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 '
+    '(KHTML, like Gecko) Chrome/148.0.0.0 Mobile Safari/537.36';
+
 // ═════════════════════════════════════════════════════
 //  CaptchaChallengePage
 // ═════════════════════════════════════════════════════
@@ -167,6 +171,7 @@ class _CaptchaChallengePageState extends State<CaptchaChallengePage> {
       _mobileController = mobile.WebViewController()
         ..setJavaScriptMode(mobile.JavaScriptMode.unrestricted)
         ..setBackgroundColor(Colors.transparent)
+        ..setUserAgent(_androidUserAgent)
         ..addJavaScriptChannel(
           'CaptchaBridge',
           onMessageReceived: (message) {
@@ -182,6 +187,19 @@ class _CaptchaChallengePageState extends State<CaptchaChallengePage> {
               if (mounted) setState(() => _isLoading = false);
             },
             onWebResourceError: (error) {
+              AppLogger.w(
+                'Mobile captcha WebView resource error: '
+                'code=${error.errorCode}, mainFrame=${error.isForMainFrame}, '
+                'description=${error.description}',
+              );
+
+              if (_isIgnorableMobileWebViewError(error)) {
+                _keepTurnstileChallengeVisible(
+                  message: '${error.errorCode}: ${error.description}',
+                );
+                return;
+              }
+
               if (mounted) {
                 setState(() {
                   _isLoading = false;
@@ -216,6 +234,49 @@ class _CaptchaChallengePageState extends State<CaptchaChallengePage> {
     } else if (_isDesktop) {
       setState(() => _desktopKey = UniqueKey());
     }
+  }
+
+  bool _isIgnorableMobileWebViewError(mobile.WebResourceError error) {
+    final description = error.description.toLowerCase();
+
+    // Android WebView may report Cloudflare Turnstile iframe / challenge
+    // resources as -1/net::ERR_FAILED while the visible challenge is still
+    // usable. Treat these as non-fatal so the login page does not show a
+    // misleading bottom error banner.
+    if (error.errorCode == -1) return true;
+    if (error.isForMainFrame == false) return true;
+    if (widget.config.type == 'turnstile' &&
+        (description.contains('net::err_failed') ||
+            description.contains('err_failed') ||
+            description.contains('frame') ||
+            description.contains('iframe'))) {
+      return true;
+    }
+
+    return false;
+  }
+
+  bool _isIgnorableCaptchaScriptError(String message) {
+    final normalized = message.toLowerCase();
+    return widget.config.type == 'turnstile' &&
+        (normalized.contains('net::err_failed') ||
+            normalized.contains('err_failed') ||
+            normalized.contains('-1') ||
+            normalized.contains('iframe') ||
+            normalized.contains('frame') ||
+            normalized.contains('timeout') ||
+            normalized.contains('network') ||
+            normalized.contains('turnstile'));
+  }
+
+  void _keepTurnstileChallengeVisible({String? message}) {
+    AppLogger.w('Turnstile 非致命状态，保留验证码继续等待: ${message ?? ''}');
+    if (!mounted) return;
+    setState(() {
+      _isLoading = false;
+      _errorMessage = null;
+      _statusText = '请继续完成人机验证；如果长时间没有返回，请点右上角刷新。';
+    });
   }
 
   // ─── Bridge 消息处理 ─────────────────────────────────
@@ -258,9 +319,18 @@ class _CaptchaChallengePageState extends State<CaptchaChallengePage> {
       }
 
       if (type == 'error') {
+        final message = decoded['message']?.toString() ?? '验证码加载失败';
+        // Cloudflare Turnstile 在 Android WebView 中可能把一次 iframe/网络
+        // 抖动通过 error-callback 抛出来，但页面上的验证码仍可继续完成。
+        // 这里不能关闭或跳过验证码，只是不把它显示成底部红色致命错误。
+        if (_isIgnorableCaptchaScriptError(message)) {
+          _keepTurnstileChallengeVisible(message: message);
+          return;
+        }
+
         if (mounted) {
           setState(() {
-            _errorMessage = decoded['message']?.toString() ?? '验证码加载失败';
+            _errorMessage = message;
           });
         }
         return;
@@ -323,13 +393,24 @@ class _CaptchaChallengePageState extends State<CaptchaChallengePage> {
                 turnstile.render('#widget', {
                   sitekey: '${_js(config.siteKey!)}',
                   callback: function(token) { solved(token); },
-                  'error-callback': function() { failed('Turnstile 验证失败，请重试'); },
+                  // 不移除验证码。Android WebView 有时会把 Turnstile 的临时
+                  // iframe/network 状态作为 error-callback 抛出，这时仍保留
+                  // 原验证码，让用户继续等待或手动刷新。
+                  'error-callback': function(errorCode) {
+                    var message = errorCode ? String(errorCode) : 'Turnstile challenge error';
+                    markStatus('请继续完成人机验证，如长时间无响应请点右上角刷新。', false);
+                    sendBridge({ type: 'error', message: message });
+                  },
                   'expired-callback': function() { expired(); },
                   'after-interactive-callback': function() {
                     sendBridge({ type: 'debug', message: 'after-interactive fired' });
                     markStatus('正在与 Cloudflare 服务器验证，请稍候...', false);
                     sendBridge({ type: 'progress', progress: '服务器验证中' });
-                  }
+                  },
+                  retry: 'auto',
+                  'retry-interval': 3000,
+                  'refresh-expired': 'auto',
+                  'refresh-timeout': 'auto'
                 });
                 markStatus('请完成人机验证', false);
               } catch (e) {
@@ -656,6 +737,22 @@ class _CaptchaChallengePageState extends State<CaptchaChallengePage> {
         if (mounted) setState(() => _progress = progress);
       },
       onReceivedError: (controller, request, error) {
+        final description = error.description.toLowerCase();
+        final shouldIgnore = request.isForMainFrame == false ||
+            (widget.config.type == 'turnstile' &&
+                (description.contains('net::err_failed') ||
+                    description.contains('err_failed') ||
+                    description.contains('iframe') ||
+                    description.contains('frame')));
+
+        if (shouldIgnore) {
+          AppLogger.w(
+            '忽略桌面验证码 WebView 非致命错误: '
+            '${error.type}: ${error.description}',
+          );
+          return;
+        }
+
         if (mounted) {
           setState(() {
             _isLoading = false;

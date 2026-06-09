@@ -21,10 +21,16 @@ class SearchEntryCard extends StatelessWidget {
               const SizedBox(width: 12),
               Text(
                 '搜索文件...',
-                style: theme.textTheme.bodyLarge?.copyWith(color: theme.hintColor),
+                style: theme.textTheme.bodyLarge?.copyWith(
+                  color: theme.hintColor,
+                ),
               ),
               const Spacer(),
-              Icon(LucideIcons.arrowRight, size: 18, color: theme.hintColor.withValues(alpha: 0.5)),
+              Icon(
+                LucideIcons.arrowRight,
+                size: 18,
+                color: theme.hintColor.withValues(alpha: 0.5),
+              ),
             ],
           ),
         ),

@@ -23,17 +23,40 @@ class QuickFunctionsSection extends StatelessWidget {
   const QuickFunctionsSection({super.key});
 
   static final _functions = [
-    _QuickFunction(icon: LucideIcons.share2, label: '我的分享', route: RouteNames.share),
-    _QuickFunction(icon: LucideIcons.cloud, label: 'WebDAV', route: RouteNames.webdav),
-    _QuickFunction(icon: LucideIcons.download, label: '离线下载', route: RouteNames.remoteDownload),
-    _QuickFunction(icon: LucideIcons.trash2, label: '回收站', route: RouteNames.recycleBin),
+    _QuickFunction(
+      icon: LucideIcons.share2,
+      label: '我的分享',
+      route: RouteNames.share,
+    ),
+    _QuickFunction(
+      icon: LucideIcons.cloud,
+      label: 'WebDAV',
+      route: RouteNames.webdav,
+    ),
+    _QuickFunction(
+      icon: LucideIcons.download,
+      label: '离线下载',
+      route: RouteNames.remoteDownload,
+    ),
+    _QuickFunction(
+      icon: LucideIcons.trash2,
+      label: '回收站',
+      route: RouteNames.recycleBin,
+    ),
+    if (defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS)
+      _QuickFunction(
+        icon: Icons.qr_code_scanner,
+        label: '扫码登录电脑',
+        route: RouteNames.qrLoginScan,
+      ),
     _QuickFunction(
       icon: LucideIcons.refreshCw,
       label: '文件同步',
       onTap: (ctx) {
         final nav = ctx.read<NavigationProvider>();
-        // 桌面端或 Android 平板（宽屏）有同步 Tab，直接切换；手机端跳转同步详情页
-        final isDesktop = defaultTargetPlatform != TargetPlatform.android &&
+        final isDesktop =
+            defaultTargetPlatform != TargetPlatform.android &&
             defaultTargetPlatform != TargetPlatform.iOS;
         final isWideScreen = MediaQuery.of(ctx).size.width >= 800;
         if (isDesktop || isWideScreen) {
@@ -43,7 +66,11 @@ class QuickFunctionsSection extends StatelessWidget {
         }
       },
     ),
-    _QuickFunction(icon: LucideIcons.settings, label: '设置', route: RouteNames.settings),
+    _QuickFunction(
+      icon: LucideIcons.settings,
+      label: '设置',
+      route: RouteNames.settings,
+    ),
   ];
 
   static const double _spacing = 12;
@@ -64,9 +91,12 @@ class QuickFunctionsSection extends StatelessWidget {
             children: [
               Icon(LucideIcons.zap, size: 18, color: theme.colorScheme.primary),
               const SizedBox(width: 8),
-              Text('快捷功能',
-                  style: theme.textTheme.titleMedium
-                      ?.copyWith(fontWeight: FontWeight.w600)),
+              Text(
+                '快捷功能',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ],
           ),
         ),
@@ -80,7 +110,8 @@ class QuickFunctionsSection extends StatelessWidget {
               if (itemWidth < _minItemWidth) break;
               perRow = next;
             }
-            final itemWidth = (availableWidth - _spacing * (perRow - 1)) / perRow;
+            final itemWidth =
+                (availableWidth - _spacing * (perRow - 1)) / perRow;
 
             return Wrap(
               spacing: _spacing,
@@ -133,9 +164,7 @@ class _QuickFunctionCardState extends State<_QuickFunctionCard> {
     final colorScheme = theme.colorScheme;
 
     return Card(
-      color: _hovered
-          ? colorScheme.surfaceContainerHighest
-          : null,
+      color: _hovered ? colorScheme.surfaceContainerHighest : null,
       child: InkWell(
         onTap: widget.onTap,
         borderRadius: BorderRadius.circular(12),

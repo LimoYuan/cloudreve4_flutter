@@ -25,9 +25,11 @@ import '../presentation/pages/preview/cloudreve_file_app_page.dart';
 import '../presentation/pages/files/transferred_files_page.dart';
 import '../services/share_link_service.dart';
 import '../data/models/file_model.dart';
+import '../presentation/pages/auth/qr_login_scan_page.dart';
 
 /// 路由名称
 class RouteNames {
+  static const String qrLoginScan = '/qr-login-scan';
   static const String splash = '/';
   static const String login = '/login';
   static const String home = '/home';
@@ -57,6 +59,11 @@ class RouteNames {
 class AppRouter {
   static Route<dynamic> generateRoute(RouteSettings settings) {
     switch (settings.name) {
+      case RouteNames.qrLoginScan:
+        return MaterialPageRoute(
+          settings: settings,
+          builder: (context) => const QrLoginScanPage(),
+        );
       case RouteNames.splash:
         return MaterialPageRoute(
           settings: settings,
@@ -66,7 +73,8 @@ class AppRouter {
       case RouteNames.login:
         return MaterialPageRoute(
           settings: settings,
-          builder: (context) => (Platform.isWindows || Platform.isLinux || Platform.isMacOS)
+          builder: (context) =>
+              (Platform.isWindows || Platform.isLinux || Platform.isMacOS)
               ? const LoginDesktopPage()
               : const LoginPage(),
         );
@@ -233,9 +241,8 @@ class AppRouter {
         if (args is Map<String, dynamic>) {
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => CategoryFilesPage(
-              args: CategoryFilesPageArgs.fromMap(args),
-            ),
+            builder: (context) =>
+                CategoryFilesPage(args: CategoryFilesPageArgs.fromMap(args)),
           );
         }
         return MaterialPageRoute(
@@ -295,9 +302,8 @@ class AppRouter {
         final args = settings.arguments;
         return MaterialPageRoute(
           settings: settings,
-          builder: (context) => TransferredFilesPage(
-            initialUri: args is String ? args : null,
-          ),
+          builder: (context) =>
+              TransferredFilesPage(initialUri: args is String ? args : null),
         );
 
       default:

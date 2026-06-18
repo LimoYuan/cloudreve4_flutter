@@ -7,6 +7,7 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/exceptions/app_exception.dart';
 import '../../../data/models/share_model.dart';
 import '../../../router/app_router.dart';
 import '../../../services/share_link_service.dart';
@@ -281,7 +282,13 @@ class _ShareLinkPageState extends State<ShareLinkPage> {
       ToastHelper.success('已转存「$name」到 $destination');
     } catch (e) {
       if (!mounted) return;
-      ToastHelper.failure('转存失败：$e');
+      if (e is ServerException &&
+          e.code == 40081 &&
+          e.message.contains('Not supported action')) {
+        ToastHelper.failure('转存为Pro版本专属功能, 您当前版本不支持, errorcode: $e');
+      } else {
+        ToastHelper.failure('转存失败：$e');
+      }
     } finally {
       if (mounted) setState(() => _busySave = false);
     }

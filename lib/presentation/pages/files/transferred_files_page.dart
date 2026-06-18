@@ -12,6 +12,7 @@ import '../../providers/download_manager_provider.dart';
 import '../../widgets/file_grid_item.dart';
 import '../../widgets/file_list_header.dart';
 import '../../widgets/file_list_item.dart';
+import '../../widgets/pdf_action_menu.dart';
 import '../../widgets/toast_helper.dart';
 
 /// 所有转存 / 与我共享文件页面。
@@ -127,7 +128,7 @@ class _TransferredFilesPageState extends State<TransferredFilesPage> {
     if (FileTypeUtils.isImage(file.name)) {
       Navigator.of(context).pushNamed(RouteNames.imagePreview, arguments: file);
     } else if (FileTypeUtils.isPdf(file.name)) {
-      Navigator.of(context).pushNamed(RouteNames.pdfPreview, arguments: file);
+      PdfActionMenu.show(context, file);
     } else if (FileTypeUtils.isVideo(file.name)) {
       Navigator.of(context).pushNamed(RouteNames.videoPreview, arguments: file);
     } else if (FileTypeUtils.isAudio(file.name)) {

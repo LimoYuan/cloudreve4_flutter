@@ -18,6 +18,7 @@ import '../../../services/storage_service.dart';
 import '../../providers/file_manager_provider.dart';
 import '../../widgets/file_info_dialog.dart';
 import '../../widgets/file_operation_dialogs.dart';
+import '../../widgets/pdf_action_menu.dart';
 import '../../widgets/selection_toolbar.dart';
 import '../../widgets/thumbnail_image.dart';
 import '../../widgets/toast_helper.dart';
@@ -585,7 +586,7 @@ class _CategoryFilesPageState extends State<CategoryFilesPage>
     if (FileTypeUtils.isImage(file.name)) {
       Navigator.of(context).pushNamed(RouteNames.imagePreview, arguments: file);
     } else if (FileTypeUtils.isPdf(file.name)) {
-      Navigator.of(context).pushNamed(RouteNames.pdfPreview, arguments: file);
+      PdfActionMenu.show(context, file);
     } else if (FileTypeUtils.isVideo(file.name)) {
       Navigator.of(context).pushNamed(RouteNames.videoPreview, arguments: file);
     } else if (FileTypeUtils.isAudio(file.name)) {

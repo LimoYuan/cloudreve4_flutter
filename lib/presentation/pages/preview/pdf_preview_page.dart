@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:pdfrx/pdfrx.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../data/models/file_model.dart';
@@ -39,7 +40,7 @@ class _PdfPreviewPageState extends State<PdfPreviewPage> {
         if (!mounted) return;
         setState(() {
           _loading = false;
-          _error = 'Unable to get PDF URL';
+          _error = '无法获取 PDF URL';
         });
         return;
       }
@@ -73,7 +74,7 @@ class _PdfPreviewPageState extends State<PdfPreviewPage> {
     if (!ok && mounted) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Unable to open PDF')));
+      ).showSnackBar(const SnackBar(content: Text('无法打开 PDF')));
     }
   }
 
@@ -86,7 +87,7 @@ class _PdfPreviewPageState extends State<PdfPreviewPage> {
     if (!mounted) return;
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(const SnackBar(content: Text('PDF URL copied')));
+    ).showSnackBar(const SnackBar(content: Text('PDF URL 已复制')));
   }
 
   @override
@@ -97,13 +98,13 @@ class _PdfPreviewPageState extends State<PdfPreviewPage> {
         actions: [
           if (_url != null)
             IconButton(
-              tooltip: 'Copy URL',
+              tooltip: '复制 URL',
               onPressed: _copyUrl,
               icon: const Icon(Icons.copy),
             ),
           if (_url != null)
             IconButton(
-              tooltip: 'Open externally',
+              tooltip: '在外部应用打开',
               onPressed: _openExternal,
               icon: const Icon(Icons.open_in_new),
             ),
@@ -137,7 +138,7 @@ class _PdfPreviewPageState extends State<PdfPreviewPage> {
                   });
                   _loadUrl();
                 },
-                child: const Text('Retry'),
+                child: const Text('重试'),
               ),
             ],
           ),
@@ -145,38 +146,28 @@ class _PdfPreviewPageState extends State<PdfPreviewPage> {
       );
     }
 
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.picture_as_pdf_outlined, size: 80),
-            const SizedBox(height: 20),
-            Text(
-              widget.file.name,
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'PDF inline preview is temporarily disabled on Android. Open it with an external app.',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            const SizedBox(height: 24),
-            FilledButton.icon(
-              onPressed: _openExternal,
-              icon: const Icon(Icons.open_in_new),
-              label: const Text('Open externally'),
-            ),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: _copyUrl,
-              icon: const Icon(Icons.copy),
-              label: const Text('Copy URL'),
-            ),
-          ],
+    final url = _url;
+    if (url == null) {
+      return const Center(child: Text('无法加载 PDF'));
+    }
+
+    return Container(
+      color: Colors.grey.shade200,
+      child: PdfViewer.uri(
+        Uri.parse(url),
+        initialPageNumber: 1,
+        params: const PdfViewerParams(
+          activeMatchTextColor: Colors.yellow,
+          annotationRenderingMode: PdfAnnotationRenderingMode.annotationAndForms,
+          sizeDelegateProvider: PdfViewerSizeDelegateProviderLegacy(
+            maxScale: 4.0,
+            minScale: 0.8,
+          ),
+          scaleEnabled: true,
+          textSelectionParams: PdfTextSelectionParams(
+            enabled: true,
+            showContextMenuAutomatically: true,
+          ),
         ),
       ),
     );

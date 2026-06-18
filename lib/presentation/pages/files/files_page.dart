@@ -29,6 +29,7 @@ import '../../widgets/empty_folder_view.dart';
 import '../../widgets/upload_dialog.dart';
 import '../../widgets/file_operation_dialogs.dart';
 import '../../widgets/file_info_dialog.dart';
+import '../../widgets/pdf_action_menu.dart';
 import '../../widgets/search_dialog.dart';
 import '../../widgets/toast_helper.dart';
 import '../../../router/app_router.dart';
@@ -1670,7 +1671,7 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
     if (FileTypeUtils.isImage(file.name)) {
       Navigator.of(context).pushNamed(RouteNames.imagePreview, arguments: file);
     } else if (FileTypeUtils.isPdf(file.name)) {
-      Navigator.of(context).pushNamed(RouteNames.pdfPreview, arguments: file);
+      PdfActionMenu.show(context, file);
     } else if (FileTypeUtils.isVideo(file.name)) {
       Navigator.of(context).pushNamed(RouteNames.videoPreview, arguments: file);
     } else if (FileTypeUtils.isAudio(file.name)) {

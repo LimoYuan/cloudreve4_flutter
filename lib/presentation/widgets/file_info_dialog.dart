@@ -8,6 +8,7 @@ import '../../core/utils/file_type_utils.dart';
 import '../../services/file_service.dart';
 import '../../router/app_router.dart';
 import 'toast_helper.dart';
+import 'pdf_action_menu.dart';
 
 /// 文件/文件夹详情（右侧抽屉）
 class FileInfoPanel extends StatefulWidget {
@@ -536,7 +537,7 @@ class _FileInfoPanelContentState extends State<FileInfoPanelContent> {
     if (FileTypeUtils.isImage(file.name)) {
       Navigator.of(context).pushNamed(RouteNames.imagePreview, arguments: args);
     } else if (FileTypeUtils.isPdf(file.name)) {
-      Navigator.of(context).pushNamed(RouteNames.pdfPreview, arguments: args);
+      PdfActionMenu.show(context, file, entityId: entity.id);
     } else if (FileTypeUtils.isVideo(file.name)) {
       Navigator.of(context).pushNamed(RouteNames.videoPreview, arguments: args);
     } else if (FileTypeUtils.isAudio(file.name)) {

@@ -33,6 +33,7 @@ class _FolderPickerState extends State<FolderPicker> {
   }
 
   Future<void> _loadFolders() async {
+    if (!mounted) return;
     setState(() {
       _isLoading = true;
     });
@@ -44,6 +45,7 @@ class _FolderPickerState extends State<FolderPicker> {
       );
 
       final List<dynamic> filesData = response['files'] as List<dynamic>? ?? [];
+      if (!mounted) return;
       setState(() {
         _folders = filesData
             .map((f) => FileModel.fromJson(f as Map<String, dynamic>))
@@ -53,9 +55,11 @@ class _FolderPickerState extends State<FolderPicker> {
     } catch (e) {
       AppLogger.d('加载文件夹失败: $e');
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 

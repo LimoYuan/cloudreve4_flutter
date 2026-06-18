@@ -19,8 +19,8 @@ enum FileMenuAction {
 
 /// 显示文件菜单。
 ///
-/// 桌面端使用一个自定义 hover-dismiss 菜单：鼠标移出菜单区域且未选择操作时自动关闭，
-/// 避免右键后长菜单残留在文件列表上。移动端/触屏仍然可以通过点击外部关闭。
+/// 使用 showGeneralDialog 渲染圆角 Material 菜单，淡入滑入动画。
+/// 关闭方式：点击菜单项触发对应 action / 点击外部 / ESC。
 Future<FileMenuAction?> showFileMenu({
   required BuildContext context,
   required bool hasSelect,
@@ -98,36 +98,28 @@ Future<FileMenuAction?> showFileMenu({
             left: left,
             top: top,
             width: menuWidth,
-            child: MouseRegion(
-              onExit: (_) {
-                final navigator = Navigator.of(dialogContext);
-                if (navigator.canPop()) {
-                  navigator.pop();
-                }
-              },
-              child: FadeTransition(
-                opacity: CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
-                child: SlideTransition(
-                  position: Tween<Offset>(begin: const Offset(0, -0.04), end: Offset.zero)
-                      .animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
-                  child: Material(
-                    color: Theme.of(dialogContext).colorScheme.surface,
-                    elevation: 8,
-                    shadowColor: Colors.black.withValues(alpha: 0.18),
-                    borderRadius: BorderRadius.circular(12),
-                    clipBehavior: Clip.antiAlias,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 6),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          for (final item in items)
-                            _FileMenuTile(
-                              item: item,
-                              onTap: () => Navigator.of(dialogContext).pop(item.action),
-                            ),
-                        ],
-                      ),
+            child: FadeTransition(
+              opacity: CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+              child: SlideTransition(
+                position: Tween<Offset>(begin: const Offset(0, -0.04), end: Offset.zero)
+                    .animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
+                child: Material(
+                  color: Theme.of(dialogContext).colorScheme.surface,
+                  elevation: 8,
+                  shadowColor: Colors.black.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(12),
+                  clipBehavior: Clip.antiAlias,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (final item in items)
+                          _FileMenuTile(
+                            item: item,
+                            onTap: () => Navigator.of(dialogContext).pop(item.action),
+                          ),
+                      ],
                     ),
                   ),
                 ),

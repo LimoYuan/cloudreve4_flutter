@@ -733,6 +733,7 @@ class _SharesPageState extends State<SharesPage> {
             content: SizedBox(
               width: dialogWidth,
               child: SingleChildScrollView(
+                padding: const EdgeInsets.only(top: 6),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,

@@ -16,17 +16,15 @@ namespace {
 
 constexpr const wchar_t kFloatingUploadClassName[] =
     L"CloudreveFloatingUploadWindow";
-constexpr UINT_PTR kStatusTimerId = 8101;
 constexpr int kWindowCornerRadius = 15;
 
 // Compact Material 3 styled floating upload window.
-// Use the app seed color (#3B82F6) and the app light surface (#F8FAFC)
-// instead of the older high-saturation cyan/glow style.
 constexpr int kNormalWidth = 224;
 constexpr int kNormalHeight = 50;
 constexpr int kStatusHeight = 98;
 constexpr int kDragWidth = 272;
 constexpr int kDragHeight = 136;
+constexpr int kShrunkSize = 42;
 
 std::string WideToUtf8(const std::wstring& value) {
   if (value.empty()) {
@@ -84,11 +82,7 @@ void ApplyRoundedWindowRegion(HWND hwnd, int width, int height) {
   (void)hwnd;
   (void)width;
   (void)height;
-  // Keep the layered window fully rectangular at the Win32 region level.
-  // Rounded corners are rendered with per-pixel alpha in Render(), which avoids
-  // the jagged clipping artifacts caused by CreateRoundRectRgn.
 }
-
 
 void DrawFloatingText(Gdiplus::Graphics& graphics,
                       const wchar_t* text,
@@ -98,24 +92,63 @@ void DrawFloatingText(Gdiplus::Graphics& graphics,
                       Gdiplus::StringAlignment horizontal,
                       Gdiplus::StringAlignment vertical);
 
+struct IconBrightness {
+  bool valid = false;
+  bool is_bright = false;
+};
+
+IconBrightness AnalyzeIconBrightness(Gdiplus::Bitmap* bitmap) {
+  IconBrightness stats;
+  if (!bitmap) return stats;
+  const UINT w = bitmap->GetWidth();
+  const UINT h = bitmap->GetHeight();
+  if (w == 0 || h == 0) return stats;
+
+  Gdiplus::Rect rect(0, 0, static_cast<INT>(w), static_cast<INT>(h));
+  Gdiplus::BitmapData data{};
+  if (bitmap->LockBits(&rect, Gdiplus::ImageLockModeRead,
+                       PixelFormat32bppARGB, &data) != Gdiplus::Ok) {
+    return stats;
+  }
+
+  uint64_t lum_sum = 0;
+  uint32_t opaque_count = 0;
+  uint8_t* base = static_cast<uint8_t*>(data.Scan0);
+  for (UINT y = 0; y < h; ++y) {
+    uint8_t* row = base + static_cast<INT>(y) * data.Stride;
+    for (UINT x = 0; x < w; ++x) {
+      uint8_t* px = row + x * 4;
+      uint8_t b = px[0], g = px[1], r = px[2], a = px[3];
+      if (a < 128) continue;
+      uint32_t lum = (static_cast<uint32_t>(r) * 299 +
+                     static_cast<uint32_t>(g) * 587 +
+                     static_cast<uint32_t>(b) * 114) /
+                     1000;
+      lum_sum += lum;
+      ++opaque_count;
+    }
+  }
+  bitmap->UnlockBits(&data);
+
+  if (opaque_count == 0) return stats;
+  stats.valid = true;
+  uint32_t avg_lum = static_cast<uint32_t>(lum_sum / opaque_count);
+  stats.is_bright = avg_lum > 220;
+  return stats;
+}
+
 void DrawSiteIconOrFallback(Gdiplus::Graphics& graphics,
                             const std::wstring& icon_path,
                             const Gdiplus::RectF& icon_rect,
                             Gdiplus::Font& fallback_font) {
-  bool drawn = false;
+  std::unique_ptr<Gdiplus::Bitmap> bitmap;
   if (!icon_path.empty() && PathFileExistsW(icon_path.c_str())) {
-    std::unique_ptr<Gdiplus::Bitmap> bitmap(
+    std::unique_ptr<Gdiplus::Bitmap> from_file(
         Gdiplus::Bitmap::FromFile(icon_path.c_str(), FALSE));
-    if (bitmap && bitmap->GetLastStatus() == Gdiplus::Ok &&
-        bitmap->GetWidth() > 0 && bitmap->GetHeight() > 0) {
-      Gdiplus::RectF image_rect(icon_rect.X + 10.0f, icon_rect.Y + 10.0f,
-                                icon_rect.Width - 20.0f,
-                                icon_rect.Height - 20.0f);
-      graphics.DrawImage(bitmap.get(), image_rect);
-      drawn = true;
-    }
-
-    if (!drawn) {
+    if (from_file && from_file->GetLastStatus() == Gdiplus::Ok &&
+        from_file->GetWidth() > 0 && from_file->GetHeight() > 0) {
+      bitmap = std::move(from_file);
+    } else {
       HICON icon = static_cast<HICON>(
           LoadImageW(nullptr, icon_path.c_str(), IMAGE_ICON, 0, 0,
                      LR_LOADFROMFILE | LR_DEFAULTSIZE));
@@ -124,23 +157,56 @@ void DrawSiteIconOrFallback(Gdiplus::Graphics& graphics,
             Gdiplus::Bitmap::FromHICON(icon));
         if (icon_bitmap && icon_bitmap->GetLastStatus() == Gdiplus::Ok &&
             icon_bitmap->GetWidth() > 0 && icon_bitmap->GetHeight() > 0) {
-          Gdiplus::RectF image_rect(icon_rect.X + 10.0f, icon_rect.Y + 10.0f,
-                                    icon_rect.Width - 20.0f,
-                                    icon_rect.Height - 20.0f);
-          graphics.DrawImage(icon_bitmap.get(), image_rect);
-          drawn = true;
+          bitmap = std::move(icon_bitmap);
         }
         DestroyIcon(icon);
       }
     }
   }
 
-  if (!drawn) {
+  if (!bitmap) {
+    Gdiplus::LinearGradientBrush fallback_bg(
+        icon_rect,
+        Gdiplus::Color(255, 59, 130, 246),
+        Gdiplus::Color(255, 29, 78, 216),
+        Gdiplus::LinearGradientModeVertical);
+    const float fallback_radius =
+        (std::min)(icon_rect.Width, icon_rect.Height) / 2.0f;
+    FillRoundedRect(graphics, fallback_bg, icon_rect, fallback_radius);
     DrawFloatingText(graphics, L"\u2601", fallback_font, icon_rect,
-             Gdiplus::Color(255, 255, 255, 255),
-             Gdiplus::StringAlignmentCenter,
-             Gdiplus::StringAlignmentCenter);
+                     Gdiplus::Color(255, 255, 255, 255),
+                     Gdiplus::StringAlignmentCenter,
+                     Gdiplus::StringAlignmentCenter);
+    return;
   }
+
+  const auto stats = AnalyzeIconBrightness(bitmap.get());
+  const Gdiplus::Color card_color = stats.is_bright
+      ? Gdiplus::Color(255, 71, 85, 105)
+      : Gdiplus::Color(255, 255, 255, 255);
+
+  const float card_inset = 1.5f;
+  Gdiplus::RectF card_rect(icon_rect.X + card_inset,
+                           icon_rect.Y + card_inset,
+                           icon_rect.Width - card_inset * 2.0f,
+                           icon_rect.Height - card_inset * 2.0f);
+  const float card_radius = card_rect.Width * 0.30f;
+
+  Gdiplus::SolidBrush card_brush(card_color);
+  FillRoundedRect(graphics, card_brush, card_rect, card_radius);
+
+  Gdiplus::LinearGradientBrush border_brush(
+      card_rect,
+      Gdiplus::Color(255, 59, 130, 246),
+      Gdiplus::Color(255, 29, 78, 216),
+      Gdiplus::LinearGradientModeVertical);
+  Gdiplus::Pen border_pen(&border_brush, 1.4f);
+  DrawRoundedRect(graphics, border_pen, card_rect, card_radius);
+
+  Gdiplus::RectF image_rect(icon_rect.X + 5.0f, icon_rect.Y + 5.0f,
+                            icon_rect.Width - 10.0f,
+                            icon_rect.Height - 10.0f);
+  graphics.DrawImage(bitmap.get(), image_rect);
 }
 
 void DrawFloatingText(Gdiplus::Graphics& graphics,
@@ -148,10 +214,8 @@ void DrawFloatingText(Gdiplus::Graphics& graphics,
               Gdiplus::Font& font,
               const Gdiplus::RectF& rect,
               const Gdiplus::Color& color,
-              Gdiplus::StringAlignment horizontal =
-                  Gdiplus::StringAlignmentNear,
-              Gdiplus::StringAlignment vertical =
-                  Gdiplus::StringAlignmentCenter) {
+              Gdiplus::StringAlignment horizontal,
+              Gdiplus::StringAlignment vertical) {
   Gdiplus::SolidBrush brush(color);
   Gdiplus::StringFormat format;
   format.SetAlignment(horizontal);
@@ -168,59 +232,41 @@ void DrawMainPill(Gdiplus::Graphics& graphics,
                   Gdiplus::Font& cloud_font) {
   constexpr float main_height = static_cast<float>(kNormalHeight);
 
-  // A very small transparent shadow gives separation without the previous glow.
-  Gdiplus::RectF shadow_rect(3.0f, 4.0f, width - 6.0f, main_height - 7.0f);
-  for (int i = 3; i >= 1; --i) {
-    const BYTE alpha = static_cast<BYTE>(9 * i);
-    Gdiplus::Pen shadow_pen(Gdiplus::Color(alpha, 15, 23, 42),
-                            static_cast<Gdiplus::REAL>(i));
-    DrawRoundedRect(graphics, shadow_pen, shadow_rect, 14.0f);
+  for (int i = 5; i >= 1; --i) {
+    float offset = static_cast<float>(i) * 0.8f;
+    Gdiplus::RectF shadow_rect(2.0f, 2.0f + offset, width - 4.0f, main_height - 4.0f);
+    BYTE alpha = static_cast<BYTE>(2 + i * 2);
+    Gdiplus::SolidBrush shadow_brush(Gdiplus::Color(alpha, 15, 23, 42));
+    FillRoundedRect(graphics, shadow_brush, shadow_rect, 15.0f);
   }
 
-  // Main app surface: close to ThemeProvider.lightScaffoldBg (#F8FAFC),
-  // with a restrained blue border from the Material 3 seed color (#3B82F6).
-  Gdiplus::RectF outer(2.0f, 1.8f, width - 4.0f, main_height - 4.0f);
-  Gdiplus::LinearGradientBrush outer_brush(
-      outer, Gdiplus::Color(255, 255, 255, 255),
-      Gdiplus::Color(255, 241, 247, 255),
+  Gdiplus::RectF outer(2.0f, 2.0f, width - 4.0f, main_height - 4.0f);
+  Gdiplus::SolidBrush bg_brush(Gdiplus::Color(240, 248, 250, 252));
+  FillRoundedRect(graphics, bg_brush, outer, 15.0f);
+
+  Gdiplus::LinearGradientBrush border_brush(
+      outer,
+      Gdiplus::Color(140, 59, 130, 246),
+      Gdiplus::Color(35, 37, 99, 235),
       Gdiplus::LinearGradientModeVertical);
-  Gdiplus::Pen outer_pen(Gdiplus::Color(235, 59, 130, 246), 1.15f);
-  Gdiplus::Pen inner_pen(Gdiplus::Color(170, 255, 255, 255), 0.75f);
-  FillRoundedRect(graphics, outer_brush, outer, 14.0f);
-  DrawRoundedRect(graphics, outer_pen, outer, 14.0f);
+  Gdiplus::Pen border_pen(&border_brush, 1.0f);
+  DrawRoundedRect(graphics, border_pen, outer, 15.0f);
 
-  Gdiplus::RectF inner(3.4f, 3.1f, width - 6.8f, main_height - 6.6f);
-  DrawRoundedRect(graphics, inner_pen, inner, 12.8f);
-
-  // Compact primary block. It deliberately uses the app blue palette instead of
-  // the old bright cyan, making the floating window match the main UI.
-  Gdiplus::RectF icon_block(4.2f, 4.0f, 43.0f, main_height - 8.0f);
-  Gdiplus::LinearGradientBrush icon_brush(
-      icon_block, Gdiplus::Color(255, 59, 130, 246),
-      Gdiplus::Color(255, 37, 99, 235),
-      Gdiplus::LinearGradientModeVertical);
-  FillRoundedRect(graphics, icon_brush, icon_block, 11.0f);
-
-  Gdiplus::Pen icon_inner_pen(Gdiplus::Color(80, 255, 255, 255), 0.75f);
-  Gdiplus::RectF icon_inner(icon_block.X + 1.0f, icon_block.Y + 1.0f,
-                            icon_block.Width - 2.0f,
-                            icon_block.Height - 2.0f);
-  DrawRoundedRect(graphics, icon_inner_pen, icon_inner, 10.0f);
+  float icon_sz = main_height - 14.0f;
+  Gdiplus::RectF icon_block(9.0f, 7.0f, icon_sz, icon_sz);
 
   DrawSiteIconOrFallback(graphics, site_icon_path, icon_block, cloud_font);
 
-  Gdiplus::Pen divider_pen(Gdiplus::Color(95, 147, 197, 253), 0.8f);
-  graphics.DrawLine(&divider_pen, 55.0f, 12.0f, 55.0f, main_height - 12.0f);
-
-  Gdiplus::RectF title_rect(63.0f, 0.0f, width - 70.0f, main_height);
+  Gdiplus::RectF title_rect(15.0f + icon_sz + 10.0f, 0.0f, width - (15.0f + icon_sz + 20.0f), main_height);
   DrawFloatingText(graphics, L"\u62D6\u62FD\u6B64\u5904\u4E0A\u4F20", title_font,
-           title_rect, Gdiplus::Color(255, 29, 78, 216));
+                   title_rect, Gdiplus::Color(255, 30, 41, 59),
+                   Gdiplus::StringAlignmentNear, Gdiplus::StringAlignmentCenter);
 }
 
 void DrawWindowContent(Gdiplus::Graphics& graphics,
                        float width,
                        float height,
-                       bool drag_active,
+                       float drag_progress,
                        const std::wstring& status_message,
                        bool status_is_error,
                        const std::wstring& site_icon_path) {
@@ -233,40 +279,48 @@ void DrawWindowContent(Gdiplus::Graphics& graphics,
 
   Gdiplus::FontFamily yahei(L"Microsoft YaHei UI");
   Gdiplus::FontFamily segoe(L"Segoe UI Symbol");
-  Gdiplus::Font title_font(&yahei, 18.0f, Gdiplus::FontStyleBold,
-                           Gdiplus::UnitPixel);
-  Gdiplus::Font cloud_font(&segoe, 25.0f, Gdiplus::FontStyleBold,
-                           Gdiplus::UnitPixel);
-  Gdiplus::Font drag_font(&yahei, 17.0f, Gdiplus::FontStyleBold,
-                          Gdiplus::UnitPixel);
-  Gdiplus::Font status_font(&yahei, 12.5f, Gdiplus::FontStyleBold,
-                            Gdiplus::UnitPixel);
+  Gdiplus::Font title_font(&yahei, 14.5f, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+  Gdiplus::Font cloud_font(&segoe, 18.0f, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+  Gdiplus::Font drag_font(&yahei, 15.0f, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+  Gdiplus::Font status_font(&yahei, 12.5f, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+
+  // Independent rendering logic for the shrunk icon state
+  if (width <= 45.0f) {
+    Gdiplus::RectF icon_block(2.0f, 2.0f, width - 4.0f, height - 4.0f);
+    DrawSiteIconOrFallback(graphics, site_icon_path, icon_block, cloud_font);
+    return;
+  }
 
   DrawMainPill(graphics, width, site_icon_path, title_font, cloud_font);
 
-  if (drag_active) {
+  if (drag_progress > 0.0f) {
     const float panel_top = static_cast<float>(kNormalHeight) + 6.0f;
-    Gdiplus::RectF drag_rect(8.0f, panel_top, width - 16.0f,
-                             height - panel_top - 8.0f);
-    Gdiplus::SolidBrush drag_fill(Gdiplus::Color(248, 248, 250, 252));
-    Gdiplus::Pen drag_pen(Gdiplus::Color(210, 59, 130, 246), 1.25f);
+    Gdiplus::RectF drag_rect(8.0f, panel_top, width - 16.0f, height - panel_top - 8.0f);
+
+    BYTE bg_alpha = static_cast<BYTE>(248 * drag_progress);
+    BYTE border_alpha = static_cast<BYTE>(210 * drag_progress);
+    BYTE text_alpha = static_cast<BYTE>(255 * drag_progress);
+
+    Gdiplus::SolidBrush drag_fill(Gdiplus::Color(bg_alpha, 248, 248, 252));
+    Gdiplus::Pen drag_pen(Gdiplus::Color(border_alpha, 59, 130, 246), 1.25f);
     drag_pen.SetDashStyle(Gdiplus::DashStyleDash);
     FillRoundedRect(graphics, drag_fill, drag_rect, 13.0f);
     DrawRoundedRect(graphics, drag_pen, drag_rect, 13.0f);
 
     Gdiplus::RectF drag_icon(20.0f, panel_top + 15.0f, 34.0f, 34.0f);
     Gdiplus::LinearGradientBrush drag_icon_brush(
-        drag_icon, Gdiplus::Color(255, 59, 130, 246),
-        Gdiplus::Color(255, 37, 99, 235),
+        drag_icon, Gdiplus::Color(text_alpha, 59, 130, 246),
+        Gdiplus::Color(text_alpha, 37, 99, 235),
         Gdiplus::LinearGradientModeVertical);
     FillRoundedRect(graphics, drag_icon_brush, drag_icon, 9.0f);
     DrawFloatingText(graphics, L"\u21E3", cloud_font, drag_icon,
-             Gdiplus::Color(255, 255, 255, 255),
-             Gdiplus::StringAlignmentCenter);
+             Gdiplus::Color(text_alpha, 255, 255, 255),
+             Gdiplus::StringAlignmentCenter, Gdiplus::StringAlignmentCenter);
 
     Gdiplus::RectF drag_text(66.0f, panel_top + 11.0f, width - 78.0f, 42.0f);
     DrawFloatingText(graphics, L"\u677E\u5F00\u4E0A\u4F20\u6587\u4EF6", drag_font,
-             drag_text, Gdiplus::Color(255, 29, 78, 216));
+             drag_text, Gdiplus::Color(text_alpha, 29, 78, 216),
+             Gdiplus::StringAlignmentNear, Gdiplus::StringAlignmentCenter);
   } else if (!status_message.empty()) {
     const float panel_top = static_cast<float>(kNormalHeight) + 5.0f;
     Gdiplus::RectF status_rect(8.0f, panel_top, width - 16.0f,
@@ -285,7 +339,8 @@ void DrawWindowContent(Gdiplus::Graphics& graphics,
                                height - panel_top - 10.0f);
     DrawFloatingText(graphics, status_message.c_str(), status_font, status_text,
              status_is_error ? Gdiplus::Color(255, 185, 28, 28)
-                             : Gdiplus::Color(255, 37, 99, 235));
+                             : Gdiplus::Color(255, 37, 99, 235),
+             Gdiplus::StringAlignmentNear, Gdiplus::StringAlignmentCenter);
   }
 }
 
@@ -364,7 +419,6 @@ void FloatingUploadWindow::SetSiteIconPath(const std::wstring& path) {
     Render();
   }
 }
-
 
 HRESULT FloatingUploadWindow::QueryInterface(REFIID riid, void** object) {
   if (object == nullptr) {
@@ -512,24 +566,112 @@ void FloatingUploadWindow::PositionWindow(bool resize_only) {
 }
 
 int FloatingUploadWindow::CurrentWidth() const {
+  if (is_shrunk_) {
+    return kShrunkSize;
+  }
   return drag_active_ ? kDragWidth : kNormalWidth;
 }
 
 int FloatingUploadWindow::CurrentHeight() const {
-  if (drag_active_) {
-    return kDragHeight;
+  if (is_shrunk_) {
+    return kShrunkSize;
   }
-  return status_message_.empty() ? kNormalHeight : kStatusHeight;
+  int start_h = status_message_.empty() ? kNormalHeight : kStatusHeight;
+  int end_h = kDragHeight;
+  return start_h + static_cast<int>((end_h - start_h) * drag_alpha_progress_);
 }
 
 void FloatingUploadWindow::SetDragActive(bool active) {
+  if (is_shrunk_) {
+    return; // Don't animate expand states when shrunk
+  }
   if (drag_active_ == active) {
     return;
   }
-
   drag_active_ = active;
+  SetTimer(hwnd_, kAnimTimerId, 16, nullptr);
+}
+
+void FloatingUploadWindow::UpdateAnimation() {
+  constexpr float kSpeed = 0.12f;
+  bool anim_done = false;
+
+  if (drag_active_) {
+    drag_alpha_progress_ += kSpeed;
+    if (drag_alpha_progress_ >= 1.0f) {
+      drag_alpha_progress_ = 1.0f;
+      anim_done = true;
+    }
+  } else {
+    drag_alpha_progress_ -= kSpeed;
+    if (drag_alpha_progress_ <= 0.0f) {
+      drag_alpha_progress_ = 0.0f;
+      anim_done = true;
+    }
+  }
+
+  if (anim_done) {
+    KillTimer(hwnd_, kAnimTimerId);
+  }
+
   PositionWindow(true);
   Render();
+}
+
+void FloatingUploadWindow::ShowContextMenu(HWND hwnd, int x, int y) {
+  HMENU hMenu = CreatePopupMenu();
+  if (hMenu) {
+    InsertMenuW(hMenu, 0, MF_BYPOSITION | MF_STRING, 1001, L"隐藏悬浮窗");
+    SetForegroundWindow(hwnd);
+    TrackPopupMenu(hMenu, TPM_LEFTALIGN | TPM_RIGHTBUTTON, x, y, 0, hwnd, nullptr);
+    DestroyMenu(hMenu);
+  }
+}
+
+void FloatingUploadWindow::CheckScreenEdges() {
+  if (hwnd_ == nullptr) return;
+
+  RECT win_rect;
+  GetWindowRect(hwnd_, &win_rect);
+
+  HMONITOR monitor = MonitorFromWindow(hwnd_, MONITOR_DEFAULTTONEAREST);
+  MONITORINFO monitor_info{};
+  monitor_info.cbSize = sizeof(MONITORINFO);
+  GetMonitorInfoW(monitor, &monitor_info);
+  RECT work_area = monitor_info.rcWork;
+
+  constexpr int kEdgeThreshold = 35;
+  bool should_shrink = false;
+  int new_x = win_rect.left;
+  int new_y = win_rect.top;
+
+  if (win_rect.left - work_area.left < kEdgeThreshold) {
+    new_x = work_area.left;
+    should_shrink = true;
+  }
+  else if (work_area.right - win_rect.right < kEdgeThreshold) {
+    new_x = work_area.right - kShrunkSize;
+    should_shrink = true;
+  }
+
+  if (win_rect.top - work_area.top < kEdgeThreshold) {
+    new_y = work_area.top;
+    should_shrink = true;
+  }
+  else if (work_area.bottom - win_rect.bottom < kEdgeThreshold) {
+    new_y = work_area.bottom - kShrunkSize;
+    should_shrink = true;
+  }
+
+  if (should_shrink) {
+    if (!is_shrunk_) {
+      pre_shrink_x_ = win_rect.left;
+      pre_shrink_y_ = win_rect.top;
+      is_shrunk_ = true;
+    }
+    SetWindowPos(hwnd_, HWND_TOPMOST, new_x, new_y, kShrunkSize, kShrunkSize, SWP_NOACTIVATE);
+    Render();
+  }
 }
 
 std::vector<std::wstring> FloatingUploadWindow::ExtractFiles(
@@ -630,7 +772,7 @@ void FloatingUploadWindow::Render() {
   {
     Gdiplus::Graphics graphics(memory_dc);
     DrawWindowContent(graphics, static_cast<float>(width),
-                      static_cast<float>(height), drag_active_,
+                      static_cast<float>(height), drag_alpha_progress_,
                       status_message_, status_is_error_, site_icon_path_);
   }
 
@@ -666,7 +808,7 @@ void FloatingUploadWindow::Paint() {
   const float height = static_cast<float>(client.bottom - client.top);
 
   Gdiplus::Graphics graphics(hdc);
-  DrawWindowContent(graphics, width, height, drag_active_, status_message_,
+  DrawWindowContent(graphics, width, height, drag_alpha_progress_, status_message_,
                     status_is_error_, site_icon_path_);
 
   EndPaint(hwnd_, &ps);
@@ -686,6 +828,11 @@ LRESULT CALLBACK FloatingUploadWindow::WindowProc(HWND hwnd,
   }
 
   switch (message) {
+    case WM_EXITSIZEMOVE:
+      if (self != nullptr) {
+        self->CheckScreenEdges();
+      }
+      break;
     case WM_PAINT:
       if (self != nullptr) {
         self->Paint();
@@ -693,9 +840,51 @@ LRESULT CALLBACK FloatingUploadWindow::WindowProc(HWND hwnd,
       }
       break;
     case WM_LBUTTONDOWN:
-      ReleaseCapture();
-      SendMessageW(hwnd, WM_NCLBUTTONDOWN, HTCAPTION, 0);
+      if (self != nullptr) {
+        if (self->is_shrunk_) {
+          self->is_shrunk_ = false;
+
+          HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+          MONITORINFO mi{};
+          mi.cbSize = sizeof(MONITORINFO);
+          GetMonitorInfoW(monitor, &mi);
+
+          int restored_x = self->pre_shrink_x_;
+          int restored_y = self->pre_shrink_y_;
+          int normal_w = self->CurrentWidth();
+
+          if (restored_x + normal_w > mi.rcWork.right) {
+            restored_x = mi.rcWork.right - normal_w - 10;
+          }
+          if (restored_x < mi.rcWork.left) {
+            restored_x = mi.rcWork.left + 10;
+          }
+
+          SetWindowPos(hwnd, HWND_TOPMOST, restored_x, restored_y,
+                       normal_w, self->CurrentHeight(), SWP_NOACTIVATE);
+          self->Render();
+          return 0;
+        }
+
+        ReleaseCapture();
+        SendMessageW(hwnd, WM_NCLBUTTONDOWN, HTCAPTION, 0);
+        self->CheckScreenEdges();
+      }
       return 0;
+    case WM_RBUTTONUP:
+      if (self != nullptr) {
+        POINT pt;
+        GetCursorPos(&pt);
+        self->ShowContextMenu(hwnd, pt.x, pt.y);
+        return 0;
+      }
+      break;
+    case WM_COMMAND:
+      if (self != nullptr && LOWORD(wparam) == 1001) {
+        self->SetEnabled(false);
+        return 0;
+      }
+      break;
     case WM_DROPFILES:
       if (self != nullptr) {
         HDROP drop = reinterpret_cast<HDROP>(wparam);
@@ -718,12 +907,17 @@ LRESULT CALLBACK FloatingUploadWindow::WindowProc(HWND hwnd,
       }
       break;
     case WM_TIMER:
-      if (self != nullptr && wparam == kStatusTimerId) {
-        KillTimer(hwnd, kStatusTimerId);
-        self->status_message_.clear();
-        self->PositionWindow(true);
-        self->Render();
-        return 0;
+      if (self != nullptr) {
+        if (wparam == kStatusTimerId) {
+          KillTimer(hwnd, kStatusTimerId);
+          self->status_message_.clear();
+          self->PositionWindow(true);
+          self->Render();
+          return 0;
+        } else if (wparam == kAnimTimerId) {
+          self->UpdateAnimation();
+          return 0;
+        }
       }
       break;
     case WM_ERASEBKGND:

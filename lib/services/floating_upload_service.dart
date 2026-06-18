@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -6,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 
+import '../core/utils/app_logger.dart';
 import '../data/models/download_task_model.dart';
 import '../data/models/upload_task_model.dart';
 import '../presentation/providers/download_manager_provider.dart';
@@ -53,53 +55,252 @@ class FloatingUploadService {
 
     try {
       final server = ServerService.instance.currentServer;
-      if (server == null) return;
+      if (server == null) {
+        AppLogger.d('[FloatingIcon] no current server, skip');
+        return;
+      }
+      AppLogger.d('[FloatingIcon] start sync, baseUrl=${server.baseUrl}');
 
       final candidates = <String>{
         QrLoginService.faviconUrlFromCloudreve(server.baseUrl),
         '${server.baseUrl.replaceAll(RegExp(r"/+$"), "")}/favicon.ico',
       };
+      AppLogger.d('[FloatingIcon] static candidates=$candidates');
 
       for (final faviconUrl in candidates) {
         final uri = Uri.tryParse(faviconUrl);
         if (uri == null) continue;
+        if (await _tryFetchAndSaveIcon(uri)) return;
+      }
 
-        final http.Response response;
-        final client = DirectHttpClientFactory.packageHttpClient(
-          connectionTimeout: const Duration(seconds: 5),
-        );
-        try {
-          response = await client.get(uri).timeout(const Duration(seconds: 5));
-        } finally {
-          client.close();
-        }
-        if (response.statusCode < 200 ||
-            response.statusCode >= 300 ||
-            response.bodyBytes.isEmpty) {
-          continue;
-        }
-
-        final lowerPath = uri.path.toLowerCase();
-        final contentType = response.headers['content-type']?.toLowerCase() ?? '';
-        final extension = lowerPath.endsWith('.png') || contentType.contains('png')
-            ? 'png'
-            : lowerPath.endsWith('.jpg') ||
-                    lowerPath.endsWith('.jpeg') ||
-                    contentType.contains('jpeg')
-                ? 'jpg'
-                : 'ico';
-
-        final dir = await getTemporaryDirectory();
-        final file = File(
-          '${dir.path}${Platform.pathSeparator}floating_site_icon.$extension',
-        );
-        await file.writeAsBytes(response.bodyBytes, flush: true);
-        await _channel.invokeMethod<bool>('setSiteIconPath', file.path);
+      final siteBase = QrLoginService.cloudreveSiteBase(server.baseUrl);
+      final siteUri = Uri.tryParse(siteBase);
+      if (siteUri == null) {
+        AppLogger.d('[FloatingIcon] invalid siteBase=$siteBase, abort');
         return;
       }
+      AppLogger.d('[FloatingIcon] static all failed, probe HTML at $siteUri');
+
+      final hrefs = await _probeIconHrefsFromHtml(siteUri);
+      AppLogger.d('[FloatingIcon] html hrefs=$hrefs');
+      for (final href in hrefs) {
+        final resolved = siteUri.resolve(href);
+        if (candidates.contains(resolved.toString())) {
+          AppLogger.d('[FloatingIcon] skip duplicate $resolved');
+          continue;
+        }
+        if (await _tryFetchAndSaveIcon(resolved)) return;
+      }
+      AppLogger.d('[FloatingIcon] all candidates exhausted, give up');
     } catch (e) {
-      debugPrint('FloatingUploadService._syncSiteIcon failed: $e');
+      AppLogger.d('[FloatingIcon] _syncSiteIcon failed: $e');
     }
+  }
+
+  Future<bool> _tryFetchAndSaveIcon(Uri uri) async {
+    final http.Response response;
+    final client = DirectHttpClientFactory.packageHttpClient(
+      connectionTimeout: const Duration(seconds: 5),
+    );
+    try {
+      response = await client.get(uri).timeout(const Duration(seconds: 5));
+    } catch (e) {
+      AppLogger.d('[FloatingIcon] GET icon $uri threw: $e');
+      return false;
+    } finally {
+      client.close();
+    }
+    AppLogger.d(
+      '[FloatingIcon] GET icon $uri -> ${response.statusCode}, '
+      'bytes=${response.bodyBytes.length}, '
+      'content-type=${response.headers['content-type']}',
+    );
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        response.bodyBytes.isEmpty) {
+      return false;
+    }
+
+    final contentType = response.headers['content-type']?.toLowerCase() ?? '';
+    final bytes = response.bodyBytes;
+    if (!_looksLikeImage(contentType, bytes)) {
+      AppLogger.d(
+        '[FloatingIcon] $uri rejected: not an image '
+        '(ct=$contentType, magic=${_firstBytesHex(bytes)})',
+      );
+      return false;
+    }
+
+    final lowerPath = uri.path.toLowerCase();
+    final detectedExt = _detectExtension(lowerPath, contentType, bytes);
+
+    Uint8List finalBytes = bytes;
+    String finalExt = detectedExt;
+    if (detectedExt == 'webp' || detectedExt == 'unknown') {
+      final png = await _reencodeAsPng(bytes);
+      if (png == null) {
+        AppLogger.d(
+          '[FloatingIcon] $uri rejected: cannot decode '
+          '(ct=$contentType, magic=${_firstBytesHex(bytes)})',
+        );
+        return false;
+      }
+      AppLogger.d(
+        '[FloatingIcon] re-encoded $detectedExt -> png '
+        '(${bytes.length} -> ${png.length} bytes)',
+      );
+      finalBytes = png;
+      finalExt = 'png';
+    }
+
+    final dir = await getTemporaryDirectory();
+    final file = File(
+      '${dir.path}${Platform.pathSeparator}floating_site_icon.$finalExt',
+    );
+    await file.writeAsBytes(finalBytes, flush: true);
+    AppLogger.d(
+      '[FloatingIcon] saved -> ${file.path} '
+      '(ext=$finalExt, magic=${_firstBytesHex(bytes)})',
+    );
+    final ack = await _channel.invokeMethod<bool>('setSiteIconPath', file.path);
+    AppLogger.d('[FloatingIcon] setSiteIconPath ack=$ack');
+    return true;
+  }
+
+  String _detectExtension(
+    String lowerPath,
+    String contentType,
+    List<int> bytes,
+  ) {
+    if (bytes.length >= 12) {
+      final b0 = bytes[0], b1 = bytes[1], b2 = bytes[2], b3 = bytes[3];
+      if (b0 == 0x89 && b1 == 0x50 && b2 == 0x4E && b3 == 0x47) return 'png';
+      if (b0 == 0xFF && b1 == 0xD8 && b2 == 0xFF) return 'jpg';
+      if (b0 == 0x47 && b1 == 0x49 && b2 == 0x46) return 'gif';
+      if (b0 == 0x00 && b1 == 0x00 && b2 == 0x01 && b3 == 0x00) return 'ico';
+      if (b0 == 0x52 &&
+          b1 == 0x49 &&
+          b2 == 0x46 &&
+          b3 == 0x46 &&
+          bytes[8] == 0x57 &&
+          bytes[9] == 0x45 &&
+          bytes[10] == 0x42 &&
+          bytes[11] == 0x50) {
+        return 'webp';
+      }
+    }
+    if (contentType.contains('png')) return 'png';
+    if (contentType.contains('jpeg')) return 'jpg';
+    if (contentType.contains('gif')) return 'gif';
+    if (contentType.contains('webp')) return 'webp';
+    if (lowerPath.endsWith('.png')) return 'png';
+    if (lowerPath.endsWith('.jpg') || lowerPath.endsWith('.jpeg')) return 'jpg';
+    if (lowerPath.endsWith('.gif')) return 'gif';
+    if (lowerPath.endsWith('.webp')) return 'webp';
+    if (lowerPath.endsWith('.ico')) return 'ico';
+    return 'unknown';
+  }
+
+  Future<Uint8List?> _reencodeAsPng(Uint8List bytes) async {
+    ui.Codec? codec;
+    ui.FrameInfo? frame;
+    try {
+      codec = await ui.instantiateImageCodec(bytes);
+      frame = await codec.getNextFrame();
+      final data = await frame.image.toByteData(
+        format: ui.ImageByteFormat.png,
+      );
+      return data?.buffer.asUint8List();
+    } catch (e) {
+      AppLogger.d('[FloatingIcon] _reencodeAsPng failed: $e');
+      return null;
+    } finally {
+      frame?.image.dispose();
+      codec?.dispose();
+    }
+  }
+
+  bool _looksLikeImage(String contentType, List<int> bytes) {
+    if (contentType.contains('text/html') ||
+        contentType.contains('application/xhtml')) {
+      return false;
+    }
+    if (bytes.isEmpty) return false;
+    if (bytes[0] == 0x3C) return false;
+    if (contentType.startsWith('image/')) return true;
+    if (bytes.length < 4) return false;
+    final b0 = bytes[0], b1 = bytes[1], b2 = bytes[2], b3 = bytes[3];
+    if (b0 == 0x00 && b1 == 0x00 && b2 == 0x01 && b3 == 0x00) return true;
+    if (b0 == 0x89 && b1 == 0x50 && b2 == 0x4E && b3 == 0x47) return true;
+    if (b0 == 0xFF && b1 == 0xD8 && b2 == 0xFF) return true;
+    if (b0 == 0x47 && b1 == 0x49 && b2 == 0x46) return true;
+    if (bytes.length >= 12 &&
+        b0 == 0x52 &&
+        b1 == 0x49 &&
+        b2 == 0x46 &&
+        b3 == 0x46 &&
+        bytes[8] == 0x57 &&
+        bytes[9] == 0x45 &&
+        bytes[10] == 0x42 &&
+        bytes[11] == 0x50) {
+      return true;
+    }
+    return false;
+  }
+
+  String _firstBytesHex(List<int> bytes) {
+    final n = bytes.length < 8 ? bytes.length : 8;
+    return List.generate(
+      n,
+      (i) => bytes[i].toRadixString(16).padLeft(2, '0'),
+    ).join(' ');
+  }
+
+  Future<List<String>> _probeIconHrefsFromHtml(Uri siteUri) async {
+    final http.Response response;
+    final client = DirectHttpClientFactory.packageHttpClient(
+      connectionTimeout: const Duration(seconds: 5),
+    );
+    try {
+      response = await client.get(siteUri).timeout(const Duration(seconds: 5));
+    } catch (e) {
+      AppLogger.d('[FloatingIcon] GET html $siteUri threw: $e');
+      return const [];
+    } finally {
+      client.close();
+    }
+    AppLogger.d(
+      '[FloatingIcon] GET html $siteUri -> ${response.statusCode}, '
+      'bodyLen=${response.body.length}',
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      return const [];
+    }
+
+    final html = response.body;
+    final linkRe = RegExp(r'<link\b([^>]*?)/?>', caseSensitive: false);
+    final relRe = RegExp(r'''rel\s*=\s*["']([^"']+)["']''', caseSensitive: false);
+    final hrefRe = RegExp(r'''href\s*=\s*["']([^"']+)["']''', caseSensitive: false);
+
+    final shortcut = <String>[];
+    final icon = <String>[];
+    final appleTouch = <String>[];
+    for (final m in linkRe.allMatches(html)) {
+      final attrs = m.group(1) ?? '';
+      final rel = relRe.firstMatch(attrs)?.group(1)?.toLowerCase() ?? '';
+      if (!rel.contains('icon')) continue;
+      final href = hrefRe.firstMatch(attrs)?.group(1);
+      if (href == null || href.isEmpty) continue;
+      AppLogger.d('[FloatingIcon] html match rel="$rel" href="$href"');
+      if (rel.contains('shortcut')) {
+        shortcut.add(href);
+      } else if (rel.contains('apple-touch-icon')) {
+        appleTouch.add(href);
+      } else {
+        icon.add(href);
+      }
+    }
+    return [...shortcut, ...icon, ...appleTouch];
   }
 
   Future<void> refreshSiteIcon() async {

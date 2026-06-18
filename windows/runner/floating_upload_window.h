@@ -1,4 +1,4 @@
-#ifndef RUNNER_FLOATING_UPLOAD_WINDOW_H_
+﻿#ifndef RUNNER_FLOATING_UPLOAD_WINDOW_H_
 #define RUNNER_FLOATING_UPLOAD_WINDOW_H_
 
 #include <windows.h>
@@ -58,6 +58,11 @@ class FloatingUploadWindow : public IDropTarget {
   int CurrentWidth() const;
   int CurrentHeight() const;
 
+  // Added context menu, animation runner, and edge detection methods
+  void ShowContextMenu(HWND hwnd, int x, int y);
+  void UpdateAnimation();
+  void CheckScreenEdges();
+
   flutter::MethodChannel<flutter::EncodableValue>* channel_ = nullptr;
   HWND hwnd_ = nullptr;
   ULONG ref_count_ = 1;
@@ -69,6 +74,17 @@ class FloatingUploadWindow : public IDropTarget {
   std::wstring status_message_;
   std::wstring site_icon_path_;
   ULONG_PTR gdiplus_token_ = 0;
+
+  // Animation and layout states
+  float drag_alpha_progress_ = 0.0f;
+  static constexpr UINT_PTR kStatusTimerId = 8101;
+  static constexpr UINT_PTR kAnimTimerId = 8102;
+
+  // Edge shrink states
+  bool is_shrunk_ = false;
+  int pre_shrink_x_ = 0;
+  int pre_shrink_y_ = 0;
+  static constexpr int kShrunkSize = 42;
 };
 
 #endif  // RUNNER_FLOATING_UPLOAD_WINDOW_H_

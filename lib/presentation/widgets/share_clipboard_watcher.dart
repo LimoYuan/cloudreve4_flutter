@@ -25,6 +25,16 @@ class ShareClipboardWatcher extends StatefulWidget {
     required this.child,
   });
 
+  /// 持久化的"已忽略 / 已打开"指纹 key，用于设置页清理。
+  static const String ignoredKey = 'share_clipboard_ignored_fingerprint';
+  static const String lastOpenedKey = 'share_clipboard_last_opened_fingerprint';
+
+  /// 清空分享链接弹窗记录，让之前忽略/打开过的链接可以再次触发提示。
+  static Future<void> clearFingerprintCache() async {
+    await StorageService.instance.remove(ignoredKey);
+    await StorageService.instance.remove(lastOpenedKey);
+  }
+
   @override
   State<ShareClipboardWatcher> createState() => _ShareClipboardWatcherState();
 }
@@ -33,8 +43,8 @@ enum _ShareClipboardAction { open, ignore }
 
 class _ShareClipboardWatcherState extends State<ShareClipboardWatcher>
     with WidgetsBindingObserver, WindowListener {
-  static const String _ignoredKey = 'share_clipboard_ignored_fingerprint';
-  static const String _lastOpenedKey = 'share_clipboard_last_opened_fingerprint';
+  static const String _ignoredKey = ShareClipboardWatcher.ignoredKey;
+  static const String _lastOpenedKey = ShareClipboardWatcher.lastOpenedKey;
 
   bool _checking = false;
   bool _dialogShowing = false;

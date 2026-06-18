@@ -17,6 +17,7 @@ import '../../providers/download_manager_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../providers/user_setting_provider.dart';
 import '../../widgets/settings/settings_shared.dart';
+import '../../widgets/share_clipboard_watcher.dart';
 import '../../widgets/toast_helper.dart';
 import '../../widgets/desktop_constrained.dart';
 import 'log_viewer_page.dart';
@@ -282,6 +283,20 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
                       subtitle: Text('当前每个小类最多显示 $_recentActivityLimit 条'),
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () => _showRecentActivityLimitDialog(context),
+                    ),
+                  ],
+                ),
+                SettingsSection(
+                  title: '分享链接',
+                  children: [
+                    ListTile(
+                      leading: const Icon(LucideIcons.link2, color: Colors.red),
+                      title: const Text('清空分享链接弹窗记录'),
+                      subtitle: const Text(
+                        '已忽略或已打开过的剪贴板分享链接将可以再次触发提示',
+                      ),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: _clearShareClipboardFingerprints,
                     ),
                   ],
                 ),
@@ -801,6 +816,36 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
     }
   }
 
+
+  Future<void> _clearShareClipboardFingerprints() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('清空分享链接弹窗记录'),
+        content: const Text(
+          '将清空"已忽略"和"已打开"两类记录。\n清理后，复制之前忽略/打开过的链接会重新触发剪贴板提示。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('清空'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+    try {
+      await ShareClipboardWatcher.clearFingerprintCache();
+      if (mounted) ToastHelper.success('分享链接弹窗记录已清空');
+    } catch (e) {
+      if (mounted) ToastHelper.failure('清空失败：$e');
+    }
+  }
 
   Future<void> _openLogFolder() async {
     try {

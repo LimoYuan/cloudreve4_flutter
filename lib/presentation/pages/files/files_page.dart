@@ -97,6 +97,11 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
   // 桌面端首页概览折叠状态
   bool _isSummaryCollapsed = false;
 
+  // 高亮自动滚动期间屏蔽 scroll listener 的 summary 折叠触发，防止 AnimatedSize
+  // 收缩 (620ms) 与 animateTo 同时进行时 maxScrollExtent 变化导致目标偏移被 clamp，
+  // 视觉上呈现"定位后又滑回去"。
+  bool _isAutoScrollingToHighlight = false;
+
   // 桌面端首页概览区：进入子目录/分类后默认收起；只通过滚轮在顶部拉回，不再显示鼠标悬停锚点。
   String? _lastListAutoScrollHighlightPath;
   String? _lastGridAutoScrollHighlightPath;
@@ -172,11 +177,50 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
 
   void _onScrollForSummaryCollapse() {
     if (!_scrollController.hasClients) return;
+    if (_isAutoScrollingToHighlight) return;
     final pixels = _scrollController.position.pixels;
     final shouldCollapse = pixels > 96;
     if (shouldCollapse != _isSummaryCollapsed) {
       setState(() => _isSummaryCollapsed = shouldCollapse);
     }
+  }
+
+  /// 调度搜索结果高亮跳转：宽屏需先同步折叠 summary（避免 AnimatedSize 与滚动并发触发
+  /// maxScrollExtent 漂移），等折叠动画结束后再 jumpTo 直接定位；窄屏端没有 summary，
+  /// 直接 jumpTo。FileListItem / FileGridItem 自带的高亮闪烁动画提供视觉反馈。
+  void _scheduleHighlightJump(double? Function() computeOffset) {
+    void doJump() {
+      if (!mounted || !_scrollController.hasClients) {
+        _isAutoScrollingToHighlight = false;
+        return;
+      }
+      final raw = computeOffset();
+      if (raw == null) {
+        _isAutoScrollingToHighlight = false;
+        return;
+      }
+      final offset = raw.clamp(0.0, _scrollController.position.maxScrollExtent);
+      _scrollController.jumpTo(offset);
+      _isAutoScrollingToHighlight = false;
+    }
+
+    final isDesktop = MediaQuery.of(context).size.width >= 1000;
+    _isAutoScrollingToHighlight = true;
+    final needCollapse = isDesktop && !_isSummaryCollapsed;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        _isAutoScrollingToHighlight = false;
+        return;
+      }
+      if (needCollapse) {
+        setState(() => _isSummaryCollapsed = true);
+        // AnimatedSize 收缩 620ms，等结束再 jump，避免 viewport 变化导致 clamp。
+        Future.delayed(const Duration(milliseconds: 660), doJump);
+      } else {
+        doJump();
+      }
+    });
   }
 
   void _onPointerSignal(PointerSignalEvent event) {
@@ -1367,12 +1411,11 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
       final idx = fileManager.files.indexWhere((f) => f.path == highlightPath);
       if (idx >= 0) {
         _lastListAutoScrollHighlightPath = highlightPath;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted && _scrollController.hasClients) {
-            const itemHeight = 52.0;
-            final offset = (idx * itemHeight).clamp(0.0, _scrollController.position.maxScrollExtent);
-            _scrollController.animateTo(offset, duration: const Duration(milliseconds: 300), curve: Curves.easeOutCubic);
-          }
+        _scheduleHighlightJump(() {
+          final newIdx = fileManager.files.indexWhere((f) => f.path == highlightPath);
+          if (newIdx < 0) return null;
+          const itemHeight = 52.0;
+          return newIdx * itemHeight;
         });
       }
     } else if (fileManager.highlightPath == null) {
@@ -1476,13 +1519,12 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
       final idx = fileManager.files.indexWhere((f) => f.path == highlightPath);
       if (idx >= 0) {
         _lastGridAutoScrollHighlightPath = highlightPath;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted && _scrollController.hasClients) {
-            final row = idx ~/ crossAxisCount;
-            final itemHeight = tileHeight + spacing;
-            final offset = (row * itemHeight).clamp(0.0, _scrollController.position.maxScrollExtent);
-            _scrollController.animateTo(offset, duration: const Duration(milliseconds: 300), curve: Curves.easeOutCubic);
-          }
+        _scheduleHighlightJump(() {
+          final newIdx = fileManager.files.indexWhere((f) => f.path == highlightPath);
+          if (newIdx < 0) return null;
+          final row = newIdx ~/ crossAxisCount;
+          final itemHeight = tileHeight + spacing;
+          return row * itemHeight;
         });
       }
     } else if (fileManager.highlightPath == null) {

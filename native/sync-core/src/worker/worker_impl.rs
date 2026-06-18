@@ -1,6 +1,6 @@
 use crate::api_client::ApiClient;
 use crate::conflict_resolver::ConflictResolver;
-use crate::errors::Result;
+use crate::errors::{Result, SyncError};
 use crate::file_lock::FileLockRegistry;
 use crate::models::*;
 use crate::sync_db::SyncDb;
@@ -40,6 +40,7 @@ pub struct Worker {
     /// 抑制路径：上传失败清理远端碎片时，防止 SSE 删除事件误删本地文件
     suppress_paths: Arc<DashMap<String, std::time::Instant>>,
     shutdown_token: CancellationToken,
+    pause_token: CancellationToken,
     #[cfg(feature = "windows-cfapi")]
     platform_adapter: Option<Arc<dyn PlaceholderCreator>>,
 }
@@ -59,6 +60,7 @@ impl Worker {
         event_sink: Arc<crate::event_sink::EventSink>,
         suppress_paths: Arc<DashMap<String, std::time::Instant>>,
         shutdown_token: CancellationToken,
+        pause_token: CancellationToken,
         #[cfg(feature = "windows-cfapi")] platform_adapter: Option<Arc<dyn PlaceholderCreator>>,
     ) -> Self {
         Self {
@@ -74,9 +76,33 @@ impl Worker {
             event_sink,
             suppress_paths,
             shutdown_token,
+            pause_token,
             #[cfg(feature = "windows-cfapi")]
             platform_adapter,
         }
+    }
+
+    fn should_stop_work(&self) -> bool {
+        self.shutdown_token.is_cancelled() || self.pause_token.is_cancelled()
+    }
+
+    async fn mark_item_pending_after_soft_pause(
+        &self,
+        relative_path: &str,
+        action: &str,
+    ) {
+        let _ = self
+            .db
+            .update_task_item_status_by_path(
+                &self.task_id,
+                relative_path,
+                action,
+                &TaskItemStatus::Pending,
+                None,
+            )
+            .await;
+        self.emit_item_updated(&self.task_id, relative_path, action, "pending")
+            .await;
     }
 
     /// 发射任务项状态变更事件（供 UI 实时更新进度）
@@ -143,7 +169,9 @@ impl Worker {
         self.step_delete_remote(&mut summary).await;
 
         let duration_ms = start.elapsed().as_millis() as u64;
-        let final_status = if self.shutdown_token.is_cancelled() {
+        let final_status = if self.pause_token.is_cancelled() {
+            WorkerStatus::Paused
+        } else if self.shutdown_token.is_cancelled() {
             WorkerStatus::Cancelled
         } else if summary.failed > 0
             && summary.uploaded + summary.downloaded + summary.renamed + summary.moved == 0
@@ -201,7 +229,7 @@ impl Worker {
         }
         let tid = &self.task_id;
         for dir_path in &self.plan.mkdirs_remote {
-            if self.shutdown_token.is_cancelled() {
+            if self.should_stop_work() {
                 break;
             }
             match crate::uploader::ensure_remote_dirs(
@@ -229,7 +257,7 @@ impl Worker {
         }
         let tid = &self.task_id;
         for dir_path in &self.plan.mkdirs_local {
-            if self.shutdown_token.is_cancelled() {
+            if self.should_stop_work() {
                 break;
             }
             let local_path = self.config.local_root.join(dir_path);
@@ -251,7 +279,7 @@ impl Worker {
         let root_id = &self.config.sync_root_id;
 
         for rename in &self.plan.rename_remote {
-            if self.shutdown_token.is_cancelled() {
+            if self.should_stop_work() {
                 break;
             }
             let rel_path = format!(
@@ -335,7 +363,7 @@ impl Worker {
         let root_id = &self.config.sync_root_id;
 
         for mov in &self.plan.move_remote {
-            if self.shutdown_token.is_cancelled() {
+            if self.should_stop_work() {
                 break;
             }
             let rel_path = format!("{} -> {}", mov.old_relative_path, mov.new_relative_path);
@@ -414,7 +442,7 @@ impl Worker {
         );
         let scanner = crate::fs_scanner::FsScanner::new();
         for dir_rel in &self.plan.scan_dirs {
-            if self.shutdown_token.is_cancelled() {
+            if self.should_stop_work() {
                 break;
             }
             let dir_path = self.config.local_root.join(dir_rel);
@@ -536,7 +564,7 @@ impl Worker {
         let root_id = &self.config.sync_root_id;
 
         for conflict in &self.plan.conflicts {
-            if self.shutdown_token.is_cancelled() {
+            if self.should_stop_work() {
                 break;
             }
             let local_mtime = conflict
@@ -598,12 +626,27 @@ impl Worker {
                             &self.ensured_dirs,
                             transfer_semaphore,
                             root_id,
+                            &self.shutdown_token,
+                            &self.pause_token,
                         )
                         .await
                         {
                             Ok(_) => {
                                 summary.uploaded += 1;
                                 conflict_ok = true;
+                            }
+                            Err(e) if self.should_stop_work() || matches!(&e, SyncError::Cancelled) => {
+                                tracing::info!(
+                                    "[{}] 冲突上传因暂停/停止中断，保留为未完成: {}",
+                                    tid,
+                                    conflict.relative_path,
+                                );
+                                self.mark_item_pending_after_soft_pause(
+                                    &conflict.relative_path,
+                                    "conflict_resolve",
+                                )
+                                .await;
+                                break;
                             }
                             Err(e) => {
                                 tracing::error!(
@@ -634,12 +677,27 @@ impl Worker {
                             &self.file_locks,
                             transfer_semaphore,
                             root_id,
+                            &self.shutdown_token,
+                            &self.pause_token,
                         )
                         .await
                         {
                             Ok(_) => {
                                 summary.downloaded += 1;
                                 conflict_ok = true;
+                            }
+                            Err(e) if self.should_stop_work() || matches!(&e, SyncError::Cancelled) => {
+                                tracing::info!(
+                                    "[{}] 冲突下载因暂停/停止中断，保留为未完成: {}",
+                                    tid,
+                                    conflict.relative_path,
+                                );
+                                self.mark_item_pending_after_soft_pause(
+                                    &conflict.relative_path,
+                                    "conflict_resolve",
+                                )
+                                .await;
+                                break;
                             }
                             Err(e) => {
                                 tracing::error!(
@@ -693,7 +751,7 @@ impl Worker {
                                     remote_entry: Some(remote.clone()),
                                     db_mapping: None,
                                 };
-                                if let Err(e) = crate::downloader::download_file(
+                                match crate::downloader::download_file(
                                     tid,
                                     &action,
                                     &self.config,
@@ -702,12 +760,26 @@ impl Worker {
                                     &self.file_locks,
                                     transfer_semaphore,
                                     root_id,
+                                    &self.shutdown_token,
+                                    &self.pause_token,
                                 )
                                 .await
                                 {
-                                    tracing::warn!("[{}] 下载远程冲突版本失败: {}", tid, e);
-                                } else {
-                                    summary.downloaded += 1;
+                                    Ok(_) => summary.downloaded += 1,
+                                    Err(e) if self.should_stop_work() || matches!(&e, SyncError::Cancelled) => {
+                                        tracing::info!(
+                                            "[{}] 冲突保留本地后下载远程版本被暂停/停止: {}",
+                                            tid,
+                                            conflict.relative_path,
+                                        );
+                                        self.mark_item_pending_after_soft_pause(
+                                            &conflict.relative_path,
+                                            "conflict_resolve",
+                                        )
+                                        .await;
+                                        break;
+                                    }
+                                    Err(e) => tracing::warn!("[{}] 下载远程冲突版本失败: {}", tid, e),
                                 }
                             }
                         }
@@ -780,7 +852,7 @@ impl Worker {
 
         let mut upload_handles: Vec<(String, tokio::task::JoinHandle<Result<()>>)> = Vec::new();
         for action in &self.plan.uploads {
-            if self.shutdown_token.is_cancelled() {
+            if self.should_stop_work() {
                 break;
             }
             let action = action.clone();
@@ -792,6 +864,8 @@ impl Worker {
             let ensured_dirs = self.ensured_dirs.clone();
             let sem = transfer_semaphore.clone();
             let root_id_c = root_id.clone();
+            let shutdown_token = self.shutdown_token.clone();
+            let pause_token = self.pause_token.clone();
             let rel_path = action.relative_path.clone();
 
             let handle = tokio::spawn(async move {
@@ -805,6 +879,8 @@ impl Worker {
                     &ensured_dirs,
                     &sem,
                     &root_id_c,
+                    &shutdown_token,
+                    &pause_token,
                 )
                 .await
             });
@@ -829,6 +905,11 @@ impl Worker {
                         )
                         .await;
                 }
+                Ok(Err(e)) if self.should_stop_work() || matches!(&e, SyncError::Cancelled) => {
+                    tracing::info!("[{}] 上传因暂停/停止中断，保留为未完成: {}", tid, rel_path);
+                    self.mark_item_pending_after_soft_pause(&rel_path, "upload").await;
+                    continue;
+                }
                 Ok(Err(e)) => {
                     tracing::error!("[{}] 上传失败: {}: {}", tid, rel_path, e);
                     summary.failed += 1;
@@ -847,6 +928,11 @@ impl Worker {
                         .await;
                     // 清理远端碎片：强制解锁 + 删除
                     self.cleanup_failed_upload(&rel_path).await;
+                }
+                Err(_e) if self.should_stop_work() => {
+                    tracing::info!("[{}] 上传任务因暂停/停止取消，保留为未完成: {}", tid, rel_path);
+                    self.mark_item_pending_after_soft_pause(&rel_path, "upload").await;
+                    continue;
                 }
                 Err(e) => {
                     tracing::error!("[{}] 上传任务异常: {}: {}", tid, rel_path, e);
@@ -883,7 +969,7 @@ impl Worker {
         if matches!(self.config.sync_mode, SyncMode::MirrorWcf) {
             // MirrorWcf: 为每个下载项创建占位符，而非实际下载
             for action in &self.plan.downloads {
-                if self.shutdown_token.is_cancelled() {
+                if self.should_stop_work() {
                     break;
                 }
                 let relative = &action.relative_path;
@@ -1002,7 +1088,7 @@ impl Worker {
             let mut download_handles: Vec<(String, tokio::task::JoinHandle<Result<()>>)> =
                 Vec::new();
             for action in &self.plan.downloads {
-                if self.shutdown_token.is_cancelled() {
+                if self.should_stop_work() {
                     break;
                 }
                 let action = action.clone();
@@ -1013,6 +1099,8 @@ impl Worker {
                 let file_locks = self.file_locks.clone();
                 let sem = transfer_semaphore.clone();
                 let root_id_c = root_id.clone();
+                let shutdown_token = self.shutdown_token.clone();
+                let pause_token = self.pause_token.clone();
                 let rel_path = action.relative_path.clone();
 
                 let handle = tokio::spawn(async move {
@@ -1025,6 +1113,8 @@ impl Worker {
                         &file_locks,
                         &sem,
                         &root_id_c,
+                        &shutdown_token,
+                        &pause_token,
                     )
                     .await
                 });
@@ -1049,6 +1139,11 @@ impl Worker {
                             )
                             .await;
                     }
+                    Ok(Err(e)) if self.should_stop_work() || matches!(&e, SyncError::Cancelled) => {
+                        tracing::info!("[{}] 下载因暂停/停止中断，保留为未完成: {}", tid, rel_path);
+                        self.mark_item_pending_after_soft_pause(&rel_path, "download").await;
+                        continue;
+                    }
                     Ok(Err(e)) => {
                         tracing::error!("[{}] 下载失败: {}: {}", tid, rel_path, e);
                         summary.failed += 1;
@@ -1065,6 +1160,11 @@ impl Worker {
                                 Some(&e.to_string()),
                             )
                             .await;
+                    }
+                    Err(_e) if self.should_stop_work() => {
+                        tracing::info!("[{}] 下载任务因暂停/停止取消，保留为未完成: {}", tid, rel_path);
+                        self.mark_item_pending_after_soft_pause(&rel_path, "download").await;
+                        continue;
                     }
                     Err(e) => {
                         tracing::error!("[{}] 下载任务异常: {}: {}", tid, rel_path, e);
@@ -1101,7 +1201,7 @@ impl Worker {
         let root_id = &self.config.sync_root_id;
 
         for action in &self.plan.delete_local {
-            if self.shutdown_token.is_cancelled() {
+            if self.should_stop_work() {
                 break;
             }
             if let Some(ref local) = action.local_entry {
@@ -1168,7 +1268,7 @@ impl Worker {
         let root_id = &self.config.sync_root_id;
 
         for action in &self.plan.rename_local {
-            if self.shutdown_token.is_cancelled() {
+            if self.should_stop_work() {
                 break;
             }
             let old_path = self.config.local_root.join(&action.old_relative_path);
@@ -1250,7 +1350,7 @@ impl Worker {
         let root_id = &self.config.sync_root_id;
 
         for action in &self.plan.move_local {
-            if self.shutdown_token.is_cancelled() {
+            if self.should_stop_work() {
                 break;
             }
             let old_path = self.config.local_root.join(&action.old_relative_path);
@@ -1338,6 +1438,9 @@ impl Worker {
     }
 
     async fn step_delete_remote(&self, summary: &mut SyncSummary) {
+        if self.should_stop_work() {
+            return;
+        }
         let should_delete = matches!(self.config.sync_mode, SyncMode::Full)
             || (matches!(self.config.sync_mode, SyncMode::MirrorWcf)
                 && matches!(self.config.wcf_delete_mode, WcfDeleteMode::SyncRemote));

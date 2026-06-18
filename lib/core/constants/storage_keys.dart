@@ -34,6 +34,10 @@ class StorageKeys {
   static const String syncState = 'sync_state';
   static const String syncCumStats = 'sync_cum_stats';
   static const String clientId = 'client_id';
+  static const String desktopSyncWizardCompleted = 'desktop_sync_wizard_completed';
+  // v2 严格桌面同步向导标记：不再因为已有 sync_config 自动跳过向导。
+  static const String desktopSyncWizardCompletedV2 = 'desktop_sync_wizard_completed_v2';
+  static const String desktopSyncWizardCompletedV3 = 'desktop_sync_wizard_completed_v3';
 
   // 文件排序
   static const String fileSortOption = 'file_sort_option';

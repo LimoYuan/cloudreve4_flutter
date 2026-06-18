@@ -1,4 +1,5 @@
 import '../services/storage_service.dart';
+import 'brand_config.dart';
 
 /// API配置
 class ApiConfig {
@@ -11,6 +12,10 @@ class ApiConfig {
 
   /// 获取API基础URL（优先使用自定义地址，否则使用默认地址）
   static Future<String> get baseUrl async {
+    if (BrandConfig.hasFixedServer) {
+      return BrandConfig.effectiveServerBaseUrl;
+    }
+
     final customUrl = await StorageService.instance.customBaseUrl;
     return customUrl ?? defaultBaseUrl;
   }

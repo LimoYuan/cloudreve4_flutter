@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
@@ -255,6 +256,8 @@ class _MobileSyncWizardPageState extends State<MobileSyncWizardPage> {
         logLevel: SyncDefaults.defaultLogLevel,
       );
 
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('mobile_sync_wizard_completed_v1', true);
       await sync.startSync(config);
       if (mounted) ToastHelper.success('同步已开始');
 
@@ -626,3 +629,4 @@ class _SummaryRow extends StatelessWidget {
     );
   }
 }
+

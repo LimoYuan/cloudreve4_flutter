@@ -2,55 +2,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:cloudreve4_flutter/core/utils/app_logger.dart';
-import 'package:cloudreve4_flutter/core/utils/win_env.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:webview_flutter/webview_flutter.dart' as mobile;
-
-// ═════════════════════════════════════════════════════
-//  WebView 代理配置（仅 Windows，无认证）
-// ═════════════════════════════════════════════════════
-
-class CaptchaProxyConfig {
-  final String host;
-  final int port;
-
-  const CaptchaProxyConfig({required this.host, required this.port});
-
-  String get proxyArg => '--proxy-server=http://$host:$port';
-
-  @override
-  String toString() => '$host:$port';
-}
-
-// ═════════════════════════════════════════════════════
-//  WebView2 代理环境变量管理
-// ═════════════════════════════════════════════════════
-
-const _envVarName = 'WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS';
-
-/// 为 WebView2 设置代理环境变量（进程级，不影响其他程序）
-void _applyWebView2Proxy(CaptchaProxyConfig? proxy) {
-  if (!Platform.isWindows) return;
-
-  if (proxy != null) {
-    // 进程级环境变量，已有值则追加（保留用户可能通过启动参数设置的值）
-    final existing = Platform.environment[_envVarName];
-    final newValue = existing != null && existing.isNotEmpty
-        ? '$existing ${proxy.proxyArg}'
-        : proxy.proxyArg;
-    winSetEnvVar(_envVarName, newValue);
-    AppLogger.i('WebView2 代理环境变量已设置: $newValue');
-  }
-}
-
-/// 清除 WebView2 代理环境变量
-void _clearWebView2Proxy() {
-  if (!Platform.isWindows) return;
-  winSetEnvVar(_envVarName, null);
-  AppLogger.i('WebView2 代理环境变量已清除');
-}
 
 // ═════════════════════════════════════════════════════
 //  CaptchaWebConfig
@@ -122,13 +77,10 @@ const _androidUserAgent =
 class CaptchaChallengePage extends StatefulWidget {
   final CaptchaWebConfig config;
   final String baseUrl;
-  final CaptchaProxyConfig? proxyConfig;
-
   const CaptchaChallengePage({
     super.key,
     required this.config,
     required this.baseUrl,
-    this.proxyConfig,
   });
 
   @override
@@ -150,9 +102,6 @@ class _CaptchaChallengePageState extends State<CaptchaChallengePage> {
   String? _statusText;
   bool _disposed = false;
 
-  // ── 是否设置了代理环境变量（用于清理时判断）──
-  bool _proxyEnvSet = false;
-
   // ── HTML ──
   late String _currentHtml;
 
@@ -160,12 +109,6 @@ class _CaptchaChallengePageState extends State<CaptchaChallengePage> {
   void initState() {
     super.initState();
     _currentHtml = _buildHtml(widget.config);
-
-    // Windows: 在 WebView2 创建前设置代理环境变量
-    if (_isDesktop && widget.proxyConfig != null && Platform.isWindows) {
-      _applyWebView2Proxy(widget.proxyConfig);
-      _proxyEnvSet = true;
-    }
 
     if (!_isDesktop) {
       _mobileController = mobile.WebViewController()
@@ -361,10 +304,6 @@ class _CaptchaChallengePageState extends State<CaptchaChallengePage> {
       AppLogger.d('开始清理 WebView controller');
       ctrl?.dispose();
       AppLogger.d('WebView controller 已 dispose');
-      if (_proxyEnvSet) {
-        _clearWebView2Proxy();
-        _proxyEnvSet = false;
-      }
     }
   }
 

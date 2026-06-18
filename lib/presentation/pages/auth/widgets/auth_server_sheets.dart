@@ -1,15 +1,59 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
+import '../../../../config/brand_config.dart';
 import '../../../../data/models/server_model.dart';
 import '../../../../services/server_service.dart';
 import '../../../widgets/toast_helper.dart';
+
+
+Widget _buildLockedServerSheet(BuildContext context, {required String title}) {
+  final serverName = BrandConfig.effectiveServerName;
+  final serverUrl = BrandConfig.effectiveServerBaseUrl;
+  return SafeArea(
+    top: false,
+    child: Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(child: Text(title, style: Theme.of(context).textTheme.titleLarge)),
+              IconButton(
+                onPressed: () => Navigator.of(context).pop(),
+                icon: const Icon(LucideIcons.x),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(LucideIcons.lock),
+            title: Text(serverName),
+            subtitle: Text(serverUrl, maxLines: 2, overflow: TextOverflow.ellipsis),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '当前为定制构建，服务器地址由打包程序写入，应用内不能修改。',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+      ),
+    ),
+  );
+}
 
 class ServerSelectorSheet extends StatelessWidget {
   const ServerSelectorSheet({super.key});
 
   @override
   Widget build(BuildContext context) {
+    if (BrandConfig.hasFixedServer) {
+      return _buildLockedServerSheet(context, title: '固定服务器');
+    }
+
     final servers = ServerService.instance.servers;
     final currentServer = ServerService.instance.currentServer;
 
@@ -113,6 +157,10 @@ class ServerManagementSheet extends StatefulWidget {
 class _ServerManagementSheetState extends State<ServerManagementSheet> {
   @override
   Widget build(BuildContext context) {
+    if (BrandConfig.hasFixedServer) {
+      return _buildLockedServerSheet(context, title: '服务器已锁定');
+    }
+
     final servers = ServerService.instance.servers;
     final theme = Theme.of(context);
 
@@ -166,6 +214,7 @@ class _ServerManagementSheetState extends State<ServerManagementSheet> {
   }
 
   Future<void> _showAddServerDialog(BuildContext context) async {
+    if (BrandConfig.hasFixedServer) return;
     final labelController = TextEditingController();
     final urlController = TextEditingController();
 
@@ -237,6 +286,7 @@ class _ServerManagementSheetState extends State<ServerManagementSheet> {
     BuildContext context,
     ServerModel server,
   ) async {
+    if (BrandConfig.hasFixedServer) return;
     final labelController = TextEditingController(text: server.label);
     final urlController = TextEditingController(text: server.baseUrl);
 
@@ -305,6 +355,7 @@ class _ServerManagementSheetState extends State<ServerManagementSheet> {
     BuildContext context,
     ServerModel server,
   ) async {
+    if (BrandConfig.hasFixedServer) return;
     final colorScheme = Theme.of(context).colorScheme;
     final result = await showDialog<bool>(
       context: context,

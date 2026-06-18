@@ -6,6 +6,7 @@ use crate::sync_db::SyncDb;
 use dashmap::DashMap;
 use std::path::Path;
 use tokio::sync::Semaphore;
+use tokio_util::sync::CancellationToken;
 
 /// 上传单个文件（含重试），受并发信号量控制
 /// 逐块读取文件，避免全量加载到内存
@@ -20,12 +21,22 @@ pub async fn upload_file(
     ensured_dirs: &DashMap<String, ()>,
     semaphore: &Semaphore,
     root_id: &str,
+    shutdown_token: &CancellationToken,
+    pause_token: &CancellationToken,
 ) -> Result<()> {
+    if shutdown_token.is_cancelled() || pause_token.is_cancelled() {
+        return Err(SyncError::Cancelled);
+    }
+
     let local = action.local_entry.as_ref().ok_or_else(|| {
         SyncError::Internal("上传操作缺少本地文件信息".into())
     })?;
 
     let _lock = file_locks.acquire(&action.relative_path).await;
+
+    if shutdown_token.is_cancelled() || pause_token.is_cancelled() {
+        return Err(SyncError::Cancelled);
+    }
 
     if local.is_dir {
         let remote_uri = format!("{}/{}", config.remote_root, action.relative_path);
@@ -53,6 +64,10 @@ pub async fn upload_file(
 
     let _permit = semaphore.acquire().await
         .map_err(|e| SyncError::Internal(format!("获取传输信号量失败: {}", e)))?;
+
+    if shutdown_token.is_cancelled() || pause_token.is_cancelled() {
+        return Err(SyncError::Cancelled);
+    }
 
     // 信号量获取后标记为 Running（实际开始传输）
     let _ = db
@@ -113,6 +128,9 @@ pub async fn upload_file(
     let mut index: u32 = 0;
 
     loop {
+        if shutdown_token.is_cancelled() || pause_token.is_cancelled() {
+            return Err(SyncError::Cancelled);
+        }
         use tokio::io::AsyncReadExt;
         let mut filled = 0usize;
         loop {
@@ -126,6 +144,9 @@ pub async fn upload_file(
         let chunk = &buf[..filled];
         let mut chunk_retries = 0u32;
         loop {
+            if shutdown_token.is_cancelled() || pause_token.is_cancelled() {
+                return Err(SyncError::Cancelled);
+            }
             match api.upload_chunk(&session, index, chunk, local.size, task_id).await {
                 Ok(_) => break,
                 Err(SyncError::Auth(_)) => return Err(SyncError::Auth("Token 过期".into())),
@@ -140,6 +161,9 @@ pub async fn upload_file(
                     let delay = crate::utils::retry_delay_ms(chunk_retries, 1000, 30000);
                     tracing::warn!("[{}] 上传重试 ({}/{}): {}: {}", task_id, chunk_retries, max_retries, action.relative_path, e);
                     tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+                    if shutdown_token.is_cancelled() || pause_token.is_cancelled() {
+                        return Err(SyncError::Cancelled);
+                    }
                 }
                 Err(e) => return Err(e),
             }

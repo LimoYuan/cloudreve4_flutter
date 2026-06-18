@@ -5,6 +5,7 @@ import '../../../data/models/share_model.dart';
 import '../../../services/share_service.dart';
 import '../../../core/utils/file_type_utils.dart';
 import '../../widgets/toast_helper.dart';
+import '../../widgets/share/share_dialog.dart';
 
 class SharesPage extends StatefulWidget {
   const SharesPage({super.key});
@@ -135,106 +136,742 @@ class _SharesPageState extends State<SharesPage> {
     }
   }
 
+
+  int _decodeSharePermissionMask(String? encoded) {
+    const values = <String, int>{
+      'AQ==': 1,
+      'Ag==': 2,
+      'Aw==': 3,
+      'BA==': 4,
+      'BQ==': 5,
+      'Bg==': 6,
+      'Bw==': 7,
+      'CA==': 8,
+      'CQ==': 9,
+      'Cg==': 10,
+      'Cw==': 11,
+      'DA==': 12,
+      'DQ==': 13,
+      'Dg==': 14,
+      'Dw==': 15,
+    };
+    return (values[encoded] ?? SharePermissionMask.read) | SharePermissionMask.read;
+  }
+
+  List<SharePermissionEntry> _initialSharePermissionEntries(ShareModel share) {
+    final setting = share.permissionSetting;
+    final entries = <SharePermissionEntry>[];
+
+    SharePermissionEntry regular({
+      required String id,
+      required String title,
+      required String subtitle,
+      required IconData icon,
+      required Color color,
+      required String? encoded,
+      required bool removable,
+    }) {
+      return SharePermissionEntry.regular(
+        id: id,
+        title: title,
+        subtitle: subtitle,
+        icon: icon,
+        color: color,
+        mask: _decodeSharePermissionMask(encoded),
+        removable: removable,
+      );
+    }
+
+    SharePermissionEntry builtin({
+      required String id,
+      required String title,
+      required String subtitle,
+      required IconData icon,
+      required Color color,
+      required String? encoded,
+    }) {
+      final entry = SharePermissionEntry.builtin(
+        id: id,
+        title: title,
+        subtitle: subtitle,
+        icon: icon,
+        color: color,
+      );
+      entry.mask = _decodeSharePermissionMask(encoded);
+      return entry;
+    }
+
+    if (setting == null) {
+      entries.add(regular(
+        id: 'anonymous',
+        title: '匿名访客',
+        subtitle: '无需登录即可访问',
+        icon: Icons.account_circle,
+        color: Colors.grey,
+        encoded: 'BQ==',
+        removable: true,
+      ));
+      entries.add(regular(
+        id: 'everyone',
+        title: '其他所有人',
+        subtitle: '已登录用户',
+        icon: Icons.public,
+        color: Theme.of(context).colorScheme.primary,
+        encoded: 'AQ==',
+        removable: false,
+      ));
+      return entries;
+    }
+
+    if (setting.anonymous != null) {
+      entries.add(regular(
+        id: 'anonymous',
+        title: '匿名访客',
+        subtitle: '无需登录即可访问',
+        icon: Icons.account_circle,
+        color: Colors.grey,
+        encoded: setting.anonymous,
+        removable: true,
+      ));
+    }
+    if (setting.everyone != null) {
+      entries.add(regular(
+        id: 'everyone',
+        title: '其他所有人',
+        subtitle: '已登录用户',
+        icon: Icons.public,
+        color: Theme.of(context).colorScheme.primary,
+        encoded: setting.everyone,
+        removable: false,
+      ));
+    }
+    if (setting.sameGroup != null) {
+      entries.add(builtin(
+        id: 'same_group',
+        title: '和我同一用户组',
+        subtitle: '当前用户组内成员',
+        icon: Icons.group_add,
+        color: Colors.green,
+        encoded: setting.sameGroup,
+      ));
+    }
+    if (setting.other != null) {
+      entries.add(builtin(
+        id: 'other_group',
+        title: '其他用户组',
+        subtitle: '其他已登录用户组',
+        icon: Icons.groups,
+        color: Colors.orange,
+        encoded: setting.other,
+      ));
+    }
+
+    setting.groupExplicit?.forEach((id, encoded) {
+      entries.add(SharePermissionEntry(
+        id: id,
+        title: '用户组 $id',
+        subtitle: '用户组',
+        icon: Icons.group,
+        color: Colors.deepPurple,
+        kind: SharePermissionKind.group,
+        mask: _decodeSharePermissionMask(encoded),
+        removable: true,
+      ));
+    });
+
+    setting.userExplicit?.forEach((id, encoded) {
+      entries.add(SharePermissionEntry(
+        id: id,
+        title: '用户 $id',
+        subtitle: '用户',
+        icon: Icons.person,
+        color: Colors.blue,
+        kind: SharePermissionKind.user,
+        mask: _decodeSharePermissionMask(encoded),
+        removable: true,
+      ));
+    });
+
+    if (entries.isEmpty) {
+      entries.add(regular(
+        id: 'everyone',
+        title: '其他所有人',
+        subtitle: '已登录用户',
+        icon: Icons.public,
+        color: Theme.of(context).colorScheme.primary,
+        encoded: 'AQ==',
+        removable: false,
+      ));
+    }
+
+    return entries;
+  }
+
   Future<void> _editShare(ShareModel share) async {
     final parts = share.url.split('/');
-    if (parts.length < 5) {
+    final shareId = share.id.isNotEmpty
+        ? share.id
+        : (parts.length >= 5 ? parts[4] : '');
+    if (shareId.isEmpty) {
       if (mounted) ToastHelper.error('分享链接格式错误');
       return;
     }
-    final shareId = parts[4];
 
-    final expireDaysController = TextEditingController(text: '7');
+    int? currentExpireDays;
+    if (share.expires != null) {
+      final diff = share.expires!.difference(DateTime.now());
+      currentExpireDays = diff.inSeconds <= 0
+          ? 1
+          : (diff.inSeconds / 86400).ceil();
+    }
+
+    final passwordController = TextEditingController(text: share.password ?? '');
+    final expireDaysController = TextEditingController(
+      text: currentExpireDays?.toString() ?? '',
+    );
     final downloadsController = TextEditingController();
+    final priceController = TextEditingController(
+      text: share.price != null && share.price! > 0 ? share.price.toString() : '',
+    );
+    final permissionSearchController = TextEditingController();
+
+    var passwordProtected = share.isPrivate ?? share.passwordProtected ?? false;
+    var timeoutExpire = share.expires != null;
+    var downloadExpire = false;
+    var paidDownload = share.price != null && share.price! > 0;
+    var shareView = share.shareView ?? true;
+    var showReadme = share.showReadme ?? share.isFolder;
+    var permissionSearchOpen = false;
+    var permissionSearching = false;
+    String? permissionSearchError;
+    var permissionSearchEntries = <SharePermissionEntry>[];
+    List<SharePrincipal>? cachedGroups;
+
+    final permissionEntries = _initialSharePermissionEntries(share);
+
+    int? parsePositiveInt(TextEditingController controller) {
+      final raw = controller.text.trim();
+      if (raw.isEmpty) return null;
+      final value = int.tryParse(raw);
+      if (value == null || value <= 0) return null;
+      return value;
+    }
+
+    Map<String, dynamic> buildPermissions() {
+      final permissions = <String, dynamic>{};
+      final userExplicit = <String, String>{};
+      final groupExplicit = <String, String>{};
+
+      for (final entry in permissionEntries) {
+        final encoded = entry.encodedPermission;
+        switch (entry.kind) {
+          case SharePermissionKind.anonymous:
+            permissions['anonymous'] = encoded;
+            break;
+          case SharePermissionKind.everyone:
+            permissions['everyone'] = encoded;
+            break;
+          case SharePermissionKind.sameGroup:
+            permissions['same_group'] = encoded;
+            break;
+          case SharePermissionKind.otherGroup:
+            permissions['other_group'] = encoded;
+            break;
+          case SharePermissionKind.user:
+            userExplicit[entry.id] = encoded;
+            break;
+          case SharePermissionKind.group:
+            groupExplicit[entry.id] = encoded;
+            break;
+        }
+      }
+
+      if (userExplicit.isNotEmpty) permissions['user_explicit'] = userExplicit;
+      if (groupExplicit.isNotEmpty) permissions['group_explicit'] = groupExplicit;
+      return permissions;
+    }
+
+    List<SharePermissionEntry> builtInPermissionEntries() {
+      return <SharePermissionEntry>[
+        SharePermissionEntry.builtin(
+          id: 'same_group',
+          title: '和我同一用户组',
+          subtitle: '当前用户组内成员',
+          icon: Icons.group_add,
+          color: Colors.green,
+        ),
+        SharePermissionEntry.builtin(
+          id: 'other_group',
+          title: '其他用户组',
+          subtitle: '其他已登录用户组',
+          icon: Icons.groups,
+          color: Colors.orange,
+        ),
+      ];
+    }
+
+    bool permissionAlreadyAdded(SharePermissionEntry candidate) {
+      return permissionEntries.any(
+        (entry) => entry.kind == candidate.kind && entry.id == candidate.id,
+      );
+    }
+
+    Future<void> refreshPermissionSearch(StateSetter update) async {
+      final keyword = permissionSearchController.text.trim().toLowerCase();
+      update(() {
+        permissionSearching = true;
+        permissionSearchOpen = true;
+        permissionSearchError = null;
+      });
+
+      try {
+        final service = ShareService();
+        final usersFuture = keyword.isEmpty
+            ? Future<List<SharePrincipal>>.value(const [])
+            : service.searchUsers(keyword);
+
+        cachedGroups ??= await service.listGroups();
+        final users = await usersFuture;
+        final groups = cachedGroups ?? const <SharePrincipal>[];
+
+        final builtIns = builtInPermissionEntries()
+            .where((item) => keyword.isEmpty || item.title.toLowerCase().contains(keyword))
+            .where((item) => !permissionAlreadyAdded(item))
+            .toList();
+        final groupEntries = groups
+            .where((group) => keyword.isEmpty || group.name.toLowerCase().contains(keyword))
+            .map(SharePermissionEntry.principal)
+            .where((item) => !permissionAlreadyAdded(item))
+            .toList();
+        final userEntries = users
+            .map(SharePermissionEntry.principal)
+            .where((item) => !permissionAlreadyAdded(item))
+            .toList();
+
+        update(() {
+          permissionSearchEntries = <SharePermissionEntry>[
+            ...builtIns,
+            ...groupEntries,
+            ...userEntries,
+          ];
+          permissionSearchError = permissionSearchEntries.isEmpty
+              ? (keyword.isEmpty ? '没有可添加的用户组/用户' : '没有找到用户或用户组')
+              : null;
+          permissionSearching = false;
+        });
+      } catch (e) {
+        update(() {
+          permissionSearchEntries = const [];
+          permissionSearchError = '加载用户组/用户失败: $e';
+          permissionSearching = false;
+        });
+      }
+    }
+
+    void addPermissionEntry(SharePermissionEntry candidate, StateSetter update) {
+      if (permissionAlreadyAdded(candidate)) {
+        ToastHelper.info('已添加过 ${candidate.title}');
+        return;
+      }
+      update(() {
+        permissionEntries.add(candidate.copyForEntry());
+        permissionSearchController.clear();
+        permissionSearchEntries = const [];
+        permissionSearchOpen = false;
+        permissionSearchError = null;
+      });
+      FocusManager.instance.primaryFocus?.unfocus();
+    }
+
+    Widget buildPermissionMaskSelector(SharePermissionEntry entry, StateSetter update) {
+      final theme = Theme.of(context);
+      return DropdownButtonHideUnderline(
+        child: DropdownButton<int>(
+          value: entry.mask | SharePermissionMask.read,
+          borderRadius: BorderRadius.circular(12),
+          isDense: true,
+          items: const <DropdownMenuItem<int>>[
+            DropdownMenuItem(value: 1, child: Text('查看')),
+            DropdownMenuItem(value: 3, child: Text('查看、创建')),
+            DropdownMenuItem(value: 5, child: Text('查看、修改')),
+            DropdownMenuItem(value: 9, child: Text('查看、删除')),
+            DropdownMenuItem(value: 15, child: Text('完全权限')),
+          ],
+          onChanged: (value) {
+            if (value == null) return;
+            update(() => entry.mask = value | SharePermissionMask.read);
+          },
+          style: theme.textTheme.labelMedium?.copyWith(
+            color: theme.colorScheme.primary,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      );
+    }
+
+    Widget buildPermissionRow(SharePermissionEntry entry, StateSetter update) {
+      final theme = Theme.of(context);
+      final isDark = theme.brightness == Brightness.dark;
+      return Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 18,
+              backgroundColor: entry.color.withValues(alpha: isDark ? 0.24 : 0.15),
+              child: Icon(entry.icon, color: entry.color, size: 18),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    entry.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    entry.subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor),
+                  ),
+                ],
+              ),
+            ),
+            buildPermissionMaskSelector(entry, update),
+            if (entry.removable)
+              IconButton(
+                icon: const Icon(Icons.close, size: 18),
+                onPressed: () => update(() => permissionEntries.remove(entry)),
+                tooltip: '移除',
+              ),
+          ],
+        ),
+      );
+    }
+
+    Widget buildPermissionSection(StateSetter update) {
+      final theme = Theme.of(context);
+      return ExpansionTile(
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: EdgeInsets.zero,
+        leading: const Icon(Icons.groups_outlined),
+        title: const Text('访问权限 / 用户组', style: TextStyle(fontWeight: FontWeight.w700)),
+        subtitle: const Text('和旧 Windows 分享权限面板保持一致'),
+        initiallyExpanded: true,
+        children: [
+          const SizedBox(height: 8),
+          TextField(
+            controller: permissionSearchController,
+            textInputAction: TextInputAction.search,
+            decoration: InputDecoration(
+              hintText: '搜索用户或用户组...',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: permissionSearching
+                  ? const Padding(
+                      padding: EdgeInsets.all(14),
+                      child: SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  : IconButton(
+                      icon: Icon(permissionSearchOpen ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down),
+                      onPressed: () {
+                        if (permissionSearchOpen) {
+                          update(() {
+                            permissionSearchOpen = false;
+                            permissionSearchEntries = const [];
+                            permissionSearchError = null;
+                          });
+                        } else {
+                          refreshPermissionSearch(update);
+                        }
+                      },
+                    ),
+              filled: true,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide.none,
+              ),
+            ),
+            onTap: () => refreshPermissionSearch(update),
+            onChanged: (_) => refreshPermissionSearch(update),
+            onSubmitted: (_) => refreshPermissionSearch(update),
+          ),
+          if (permissionSearchError != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  permissionSearchError!,
+                  style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor),
+                ),
+              ),
+            ),
+          if (permissionSearchOpen && permissionSearchEntries.isNotEmpty)
+            Container(
+              margin: const EdgeInsets.only(top: 8, bottom: 10),
+              constraints: const BoxConstraints(maxHeight: 220),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surface,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: theme.dividerColor.withValues(alpha: 0.25)),
+              ),
+              child: ListView.separated(
+                shrinkWrap: true,
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                itemCount: permissionSearchEntries.length,
+                separatorBuilder: (_, _) => Divider(height: 1, color: theme.dividerColor.withValues(alpha: 0.2)),
+                itemBuilder: (_, index) {
+                  final item = permissionSearchEntries[index];
+                  return ListTile(
+                    dense: true,
+                    leading: CircleAvatar(
+                      backgroundColor: item.color.withValues(alpha: 0.15),
+                      child: Icon(item.icon, color: item.color),
+                    ),
+                    title: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    subtitle: Text(item.searchSubtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    trailing: const Icon(Icons.add_circle_outline),
+                    onTap: () => addPermissionEntry(item, update),
+                  );
+                },
+              ),
+            ),
+          const SizedBox(height: 10),
+          ...permissionEntries.map((entry) => buildPermissionRow(entry, update)),
+        ],
+      );
+    }
+
+    Widget buildOptionSwitch({
+      required IconData icon,
+      required String title,
+      required bool value,
+      required ValueChanged<bool> onChanged,
+      String? subtitle,
+      Widget? child,
+    }) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            secondary: Icon(icon),
+            title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+            subtitle: subtitle == null ? null : Text(subtitle),
+            value: value,
+            onChanged: onChanged,
+          ),
+          if (value && child != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(56, 0, 0, 12),
+              child: child,
+            ),
+        ],
+      );
+    }
+
+    Widget buildCompactField({
+      required TextEditingController controller,
+      required String hint,
+      String? suffix,
+      bool obscure = false,
+    }) {
+      return TextField(
+        controller: controller,
+        obscureText: obscure,
+        keyboardType: suffix == null ? TextInputType.text : TextInputType.number,
+        decoration: InputDecoration(
+          isDense: true,
+          hintText: hint,
+          suffixText: suffix,
+          filled: true,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none,
+          ),
+        ),
+      );
+    }
 
     final edited = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Row(
-          children: [
-            const Text('编辑分享'),
-            const Spacer(),
-            IconButton(
-              icon: const Icon(LucideIcons.copy),
-              onPressed: () {
-                Clipboard.setData(ClipboardData(text: share.url));
-                Navigator.of(dialogContext).pop();
-                ToastHelper.success('分享链接已复制');
-              },
-              tooltip: '复制分享链接',
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, update) {
+          final screenWidth = MediaQuery.sizeOf(dialogContext).width;
+          final dialogWidth = screenWidth >= 720 ? 680.0 : screenWidth - 32.0;
+
+          return AlertDialog(
+            titlePadding: const EdgeInsets.fromLTRB(24, 20, 12, 0),
+            contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
+            title: Row(
+              children: [
+                const Expanded(child: Text('编辑分享')),
+                IconButton(
+                  icon: const Icon(LucideIcons.copy),
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: share.url));
+                    ToastHelper.success('分享链接已复制');
+                  },
+                  tooltip: '复制分享链接',
+                ),
+              ],
             ),
-          ],
-        ),
-        content: SizedBox(
-          width: 400,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                decoration: InputDecoration(
-                  labelText: '文件名',
-                  prefixIcon: const Icon(LucideIcons.fileText),
-                  suffixIcon: IconButton(
-                    icon: const Icon(LucideIcons.copy, size: 18),
-                    onPressed: () {
-                      Clipboard.setData(ClipboardData(text: share.name));
-                      ToastHelper.success('文件名已复制');
-                    },
-                    tooltip: '复制文件名',
-                    style: IconButton.styleFrom(
-                      padding: EdgeInsets.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            content: SizedBox(
+              width: dialogWidth,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    TextField(
+                      decoration: InputDecoration(
+                        labelText: '文件名',
+                        prefixIcon: const Icon(LucideIcons.fileText),
+                        suffixIcon: IconButton(
+                          icon: const Icon(LucideIcons.copy, size: 18),
+                          onPressed: () {
+                            Clipboard.setData(ClipboardData(text: share.name));
+                            ToastHelper.success('文件名已复制');
+                          },
+                          tooltip: '复制文件名',
+                        ),
+                      ),
+                      controller: TextEditingController(text: share.name),
+                      readOnly: true,
                     ),
-                  ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      decoration: InputDecoration(
+                        labelText: '分享链接',
+                        prefixIcon: const Icon(LucideIcons.link),
+                        suffixIcon: IconButton(
+                          icon: const Icon(LucideIcons.copy, size: 18),
+                          onPressed: () {
+                            Clipboard.setData(ClipboardData(text: share.url));
+                            ToastHelper.success('分享链接已复制');
+                          },
+                          tooltip: '复制分享链接',
+                        ),
+                      ),
+                      controller: TextEditingController(text: share.url),
+                      readOnly: true,
+                    ),
+                    const SizedBox(height: 18),
+                    buildPermissionSection(update),
+                    const SizedBox(height: 16),
+                    buildOptionSwitch(
+                      icon: LucideIcons.lock,
+                      title: '使用密码保护链接',
+                      subtitle: '和旧 Windows 分享权限面板保持一致',
+                      value: passwordProtected,
+                      onChanged: (value) => update(() => passwordProtected = value),
+                      child: buildCompactField(
+                        controller: passwordController,
+                        hint: '分享密码，留空则由服务端保留/生成',
+                      ),
+                    ),
+                    buildOptionSwitch(
+                      icon: LucideIcons.timer,
+                      title: '超时自动过期',
+                      value: timeoutExpire,
+                      onChanged: (value) => update(() => timeoutExpire = value),
+                      child: buildCompactField(
+                        controller: expireDaysController,
+                        hint: '有效期',
+                        suffix: '天',
+                      ),
+                    ),
+                    buildOptionSwitch(
+                      icon: LucideIcons.download,
+                      title: '下载后自动过期',
+                      value: downloadExpire,
+                      onChanged: (value) => update(() => downloadExpire = value),
+                      child: buildCompactField(
+                        controller: downloadsController,
+                        hint: '下载次数',
+                        suffix: '次',
+                      ),
+                    ),
+                    buildOptionSwitch(
+                      icon: Icons.account_balance_wallet_outlined,
+                      title: '付费下载',
+                      value: paidDownload,
+                      onChanged: (value) => update(() => paidDownload = value),
+                      child: buildCompactField(
+                        controller: priceController,
+                        hint: '价格',
+                        suffix: '积分',
+                      ),
+                    ),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      secondary: const Icon(LucideIcons.eye),
+                      title: const Text('启用分享视图', style: TextStyle(fontWeight: FontWeight.w700)),
+                      subtitle: const Text('允许使用分享页面预览文件'),
+                      value: shareView,
+                      onChanged: (value) => update(() => shareView = value),
+                    ),
+                    if (share.isFolder)
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        secondary: const Icon(LucideIcons.bookOpen),
+                        title: const Text('显示 README', style: TextStyle(fontWeight: FontWeight.w700)),
+                        subtitle: const Text('文件夹分享中展示说明文件'),
+                        value: showReadme,
+                        onChanged: (value) => update(() => showReadme = value),
+                      ),
+                  ],
                 ),
-                controller: TextEditingController(text: share.name),
-                readOnly: true,
               ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: expireDaysController,
-                decoration: const InputDecoration(
-                  labelText: '有效期（天）',
-                  hintText: '留空则永久有效',
-                  prefixIcon: Icon(LucideIcons.timer),
-                  suffixText: '天',
-                ),
-                keyboardType: TextInputType.number,
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('取消'),
               ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: downloadsController,
-                decoration: const InputDecoration(
-                  labelText: '下载次数限制',
-                  hintText: '留空则不限制',
-                  prefixIcon: Icon(LucideIcons.download),
-                  suffixText: '次',
-                ),
-                keyboardType: TextInputType.number,
+              FilledButton(
+                onPressed: () {
+                  if (timeoutExpire && parsePositiveInt(expireDaysController) == null) {
+                    ToastHelper.failure('请输入有效的过期天数');
+                    return;
+                  }
+                  if (downloadExpire && parsePositiveInt(downloadsController) == null) {
+                    ToastHelper.failure('请输入有效的下载次数');
+                    return;
+                  }
+                  if (paidDownload && parsePositiveInt(priceController) == null) {
+                    ToastHelper.failure('请输入有效的付费金额');
+                    return;
+                  }
+                  Navigator.of(dialogContext).pop(true);
+                },
+                child: const Text('保存'),
               ),
             ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('保存'),
-          ),
-        ],
+          );
+        },
       ),
     );
 
     if (edited == true) {
-      final expireDaysText = expireDaysController.text.trim();
-      final expireDays =
-          expireDaysText.isEmpty ? null : int.tryParse(expireDaysText);
-      final downloadsText = downloadsController.text.trim();
-      final downloads =
-          downloadsText.isEmpty ? null : int.tryParse(downloadsText);
-      final expireSeconds = expireDays != null ? expireDays * 24 * 60 * 60 : null;
+      final expireDays = timeoutExpire ? parsePositiveInt(expireDaysController) : null;
+      final downloads = downloadExpire ? parsePositiveInt(downloadsController) : null;
+      final price = paidDownload ? parsePositiveInt(priceController) : null;
+      final expireSeconds = expireDays == null ? null : expireDays * 24 * 60 * 60;
 
       setState(() => _isLoading = true);
 
@@ -244,28 +881,36 @@ class _SharesPageState extends State<SharesPage> {
           password: share.password,
           ownerExtended: true,
         );
-        if (shareInfo.sourceUri == null) {
+        final sourceUri = shareInfo.sourceUri ?? share.sourceUri;
+        if (sourceUri == null) {
           setState(() => _isLoading = false);
           if (mounted) ToastHelper.error('无法获取文件信息');
           return;
         }
 
-        final uri = '${shareInfo.sourceUri}/${share.name}';
+        final uri = sourceUri.endsWith('/${share.name}')
+            ? sourceUri
+            : '$sourceUri/${share.name}';
         final newUrl = await ShareService().editShare(
           id: shareId,
           uri: uri,
-          isPrivate: share.isPrivate,
-          password: share.password,
-          shareView: share.shareView,
+          permissions: buildPermissions(),
+          isPrivate: passwordProtected,
+          password: passwordProtected && passwordController.text.trim().isNotEmpty
+              ? passwordController.text.trim()
+              : null,
+          shareView: shareView,
           downloads: downloads,
           expire: expireSeconds,
+          price: price,
+          showReadme: share.isFolder ? showReadme : null,
         );
 
         setState(() => _isLoading = false);
         if (mounted) await _loadShares();
         if (mounted) {
           ToastHelper.success('修改成功');
-          showDialog(
+          await showDialog<void>(
             context: context,
             builder: (dialogContext) => AlertDialog(
               title: const Text('分享链接'),
@@ -273,7 +918,7 @@ class _SharesPageState extends State<SharesPage> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(newUrl, style: const TextStyle(fontSize: 12)),
+                  SelectableText(newUrl, style: const TextStyle(fontSize: 12)),
                   const SizedBox(height: 16),
                   FilledButton.icon(
                     icon: const Icon(LucideIcons.copy, size: 16),
@@ -300,6 +945,12 @@ class _SharesPageState extends State<SharesPage> {
         if (mounted) ToastHelper.failure('修改失败: $e');
       }
     }
+
+    passwordController.dispose();
+    expireDaysController.dispose();
+    downloadsController.dispose();
+    priceController.dispose();
+    permissionSearchController.dispose();
   }
 
   @override

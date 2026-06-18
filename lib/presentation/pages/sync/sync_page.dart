@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -7,6 +8,7 @@ import '../../../data/models/sync_task_model.dart';
 import '../../providers/sync_provider.dart';
 import '../../widgets/sync_stats_card.dart';
 import '../../widgets/toast_helper.dart';
+import 'desktop_sync_wizard_page.dart';
 import 'sync_settings_page.dart';
 
 /// 同步 Tab 页 - 展示实时同步状态、活跃任务和已完成任务
@@ -23,6 +25,8 @@ class _SyncPageState extends State<SyncPage> {
   // 正在加载详情的任务 ID
   final Set<String> _loadingDetails = {};
 
+  bool get _isDesktop => Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+
   @override
   void initState() {
     super.initState();
@@ -35,6 +39,10 @@ class _SyncPageState extends State<SyncPage> {
   Widget build(BuildContext context) {
     final sync = context.watch<SyncProvider>();
     final theme = Theme.of(context);
+
+    if (_isDesktop && !sync.desktopSyncWizardCompleted) {
+      return _buildDesktopWizardGate(sync, theme);
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -107,6 +115,145 @@ class _SyncPageState extends State<SyncPage> {
   void _navigateToSettings() {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const SyncSettingsPage()),
+    );
+  }
+
+
+  // AI_DESKTOP_SYNC_WIZARD_GATE_WIDGET_V3
+  Widget _buildDesktopWizardGate(SyncProvider sync, ThemeData theme) {
+    final colorScheme = theme.colorScheme;
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('文件同步'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: () => _navigateToSettings(),
+            tooltip: '同步设置',
+          ),
+        ],
+      ),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 760),
+          child: Card(
+            margin: const EdgeInsets.all(24),
+            child: Padding(
+              padding: const EdgeInsets.all(28),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 52,
+                        height: 52,
+                        decoration: BoxDecoration(
+                          color: colorScheme.primaryContainer,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Icon(
+                          LucideIcons.workflow,
+                          color: colorScheme.onPrimaryContainer,
+                          size: 28,
+                        ),
+                      ),
+                      const SizedBox(width: 18),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '先完成桌面同步向导',
+                              style: theme.textTheme.headlineSmall?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              '这是文件同步的软强制配置。未完成前不会开放开始同步、暂停、恢复等操作；你仍然可以离开本页，继续使用文件、分享、设置等其它功能。',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 22),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: const [
+                      _WizardGateChip(icon: Icons.folder_open_outlined, label: '本地目录'),
+                      _WizardGateChip(icon: Icons.cloud_outlined, label: '云端目录'),
+                      _WizardGateChip(icon: Icons.sync_alt_outlined, label: '同步模式'),
+                      _WizardGateChip(icon: Icons.tune_outlined, label: '桌面专属设置'),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.55),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.info_outline, size: 20, color: colorScheme.primary),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            '向导完成后会保存配置并开始同步。需要修改配置时，可以稍后进入同步设置页调整。',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Row(
+                    children: [
+                      TextButton.icon(
+                        onPressed: _navigateToSettings,
+                        icon: const Icon(Icons.settings_outlined),
+                        label: const Text('打开同步设置'),
+                      ),
+                      const Spacer(),
+                      OutlinedButton(
+                        onPressed: () => Navigator.maybePop(context),
+                        child: const Text('稍后再说'),
+                      ),
+                      const SizedBox(width: 12),
+                      FilledButton.icon(
+                        onPressed: () async {
+                          final completed = await Navigator.of(context).push<bool>(
+                            MaterialPageRoute(
+                              builder: (_) => const DesktopSyncWizardPage(),
+                            ),
+                          );
+                          if (!mounted) return;
+                          if (completed == true) {
+                            await context.read<SyncProvider>().loadRecentTasks();
+                          }
+                        },
+                        icon: const Icon(Icons.arrow_forward_rounded),
+                        label: const Text('开始设置向导'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -690,5 +837,33 @@ class _SyncPageState extends State<SyncPage> {
     if (confirmed == true) {
       await sync.stop();
     }
+  }
+}
+
+
+class _WizardGateChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+
+  const _WizardGateChip({required this.icon, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: colorScheme.primaryContainer.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: colorScheme.primary),
+          const SizedBox(width: 6),
+          Text(label, style: Theme.of(context).textTheme.bodySmall),
+        ],
+      ),
+    );
   }
 }

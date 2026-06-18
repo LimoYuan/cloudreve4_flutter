@@ -13,9 +13,9 @@ class StorageUsageCard extends StatefulWidget {
 
 class _StorageUsageCardState extends State<StorageUsageCard>
     with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  double _targetPercentage = 0;
-  double _lastTarget = -1;
+  late final AnimationController _controller;
+  late Animation<double> _progressAnimation;
+  double _targetProgress = 0;
   bool _hasRealData = false;
 
   @override
@@ -23,9 +23,11 @@ class _StorageUsageCardState extends State<StorageUsageCard>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1120),
-    );
-    _controller.addListener(() => setState(() {}));
+      duration: const Duration(milliseconds: 980),
+    )..addListener(() {
+        if (mounted) setState(() {});
+      });
+    _progressAnimation = const AlwaysStoppedAnimation<double>(0);
   }
 
   @override
@@ -34,36 +36,28 @@ class _StorageUsageCardState extends State<StorageUsageCard>
     super.dispose();
   }
 
-  double get _animatedProgress {
-    final t = _controller.value;
-    // Phase 1 (0-0.46): easeOutCubic 0→1
-    // Phase 2 (0.46-1.0): easeOutBack 1→target
-    if (t <= 0.0) return 0;
-    if (t <= 0.46) {
-      final local = t / 0.46;
-      final eased = 1 - pow(1 - local, 3).toDouble();
-      return eased * _targetPercentage / 100;
-    }
-    final local = (t - 0.46) / 0.54;
-    // easeOutBack
-    final c1 = 1.70158;
-    final c3 = c1 + 1;
-    final eased = 1 + c3 * pow(local - 1, 3) + c1 * pow(local - 1, 2);
-    return _targetPercentage / 100 * eased;
-  }
+  double get _animatedProgress =>
+      _progressAnimation.value.clamp(0.0, 1.0).toDouble();
 
-  void _restartIfNeeded(double percentage, bool hasCapacity) {
+  void _animateTo(double percentage, bool hasCapacity) {
     if (!hasCapacity && !_hasRealData) return;
     if (hasCapacity) _hasRealData = true;
-    if (percentage != _lastTarget) {
-      _lastTarget = percentage;
-      _targetPercentage = percentage;
-      // 必须延迟到 build 完成后启动动画，否则 controller listener 中的
-      // setState() 会在 build 阶段被调用而抛异常
-      Future.microtask(() {
-        if (mounted) _controller.forward(from: 0);
-      });
-    }
+
+    final nextTarget = (percentage / 100).clamp(0.0, 1.0).toDouble();
+    if ((nextTarget - _targetProgress).abs() < 0.001 && _hasRealData) return;
+
+    final begin = _progressAnimation.value.clamp(0.0, 1.0).toDouble();
+    _targetProgress = nextTarget;
+    _progressAnimation = Tween<double>(
+      begin: begin,
+      end: nextTarget,
+    ).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
+    );
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _controller.forward(from: 0);
+    });
   }
 
   @override
@@ -74,12 +68,16 @@ class _StorageUsageCardState extends State<StorageUsageCard>
     return Consumer<UserSettingProvider>(
       builder: (context, userSetting, _) {
         final capacity = userSetting.capacity;
+        final used = capacity?.used ?? 0;
         final total = capacity?.total ?? 0;
         final percentage = capacity?.usagePercentage ?? 0;
 
-        _restartIfNeeded(percentage, capacity != null);
+        _animateTo(percentage, capacity != null);
 
-        final displayUsed = (total * _animatedProgress).round();
+        final animatedProgress = _animatedProgress;
+        final displayUsed = total > 0
+            ? (total * animatedProgress).round()
+            : (_hasRealData ? used : 0);
 
         return Card(
           child: Padding(
@@ -110,7 +108,7 @@ class _StorageUsageCardState extends State<StorageUsageCard>
                     height: 90,
                     child: CustomPaint(
                       painter: _SemiCircleProgressPainter(
-                        progress: _animatedProgress.clamp(0.0, 1.0),
+                        progress: animatedProgress,
                         color: colorScheme.primary,
                         backgroundColor: colorScheme.primary.withValues(
                           alpha: 0.12,
@@ -131,7 +129,7 @@ class _StorageUsageCardState extends State<StorageUsageCard>
                 const SizedBox(height: 4),
                 Center(
                   child: Text(
-                    '已使用 ${(_animatedProgress * 100).toStringAsFixed(1)}%',
+                    '已使用 ${(animatedProgress * 100).toStringAsFixed(1)}%',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.hintColor,
                     ),
@@ -192,7 +190,7 @@ class _SemiCircleProgressPainter extends CustomPainter {
       ..strokeCap = StrokeCap.round
       ..style = PaintingStyle.stroke;
 
-    final sweepAngle = pi * progress.clamp(0.0, 1.0);
+    final sweepAngle = pi * progress.clamp(0.0, 1.0).toDouble();
     if (sweepAngle > 0) {
       canvas.drawArc(
         Rect.fromCircle(center: center, radius: radius),
@@ -206,6 +204,8 @@ class _SemiCircleProgressPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _SemiCircleProgressPainter oldDelegate) {
-    return oldDelegate.progress != progress || oldDelegate.color != color;
+    return oldDelegate.progress != progress ||
+        oldDelegate.color != color ||
+        oldDelegate.backgroundColor != backgroundColor;
   }
 }

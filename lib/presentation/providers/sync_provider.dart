@@ -1,12 +1,13 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 
-import '../../../core/utils/app_logger.dart';
-import '../../../data/models/sync_config_model.dart';
-import '../../../data/models/sync_event_model.dart';
-import '../../../data/models/sync_task_model.dart';
-import '../../../services/storage_service.dart';
-import '../../../services/sync_service.dart';
+import '../../core/constants/storage_keys.dart';
+import '../../core/utils/app_logger.dart';
+import '../../data/models/sync_config_model.dart';
+import '../../data/models/sync_event_model.dart';
+import '../../data/models/sync_task_model.dart';
+import '../../services/storage_service.dart';
+import '../../services/sync_service.dart';
 
 enum SyncState {
   idle,
@@ -19,6 +20,11 @@ enum SyncState {
 }
 
 class SyncProvider extends ChangeNotifier {
+
+  bool get _isDesktopPlatform => !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.windows ||
+          defaultTargetPlatform == TargetPlatform.linux ||
+          defaultTargetPlatform == TargetPlatform.macOS);
 
   SyncState _state = SyncState.idle;
   String? _errorMessage;
@@ -58,6 +64,14 @@ class SyncProvider extends ChangeNotifier {
   int _cumDeletedLocal = 0;
   int _cumDeletedRemote = 0;
   int _cumSkipped = 0;
+
+  bool _desktopSyncWizardCompleted = false;
+  // AI_DESKTOP_SYNC_WIZARD_ONCE_GATE_FINAL: production behavior.
+  // The desktop wizard is shown only while the explicit completion flag is absent/false.
+  // Finishing the wizard writes the completion flag, so the gate is not shown again for the same app data.
+  static const bool _forceShowDesktopSyncWizardForTesting = false;
+  bool get desktopSyncWizardCompleted => _forceShowDesktopSyncWizardForTesting ? false : _desktopSyncWizardCompleted;
+  // AI_DESKTOP_SYNC_WIZARD_STRICT_GATE_V3: only explicit desktop wizard completion key unlocks desktop sync.
 
   SyncState get state => _state;
   String? get errorMessage => _errorMessage;
@@ -165,6 +179,13 @@ class SyncProvider extends ChangeNotifier {
       }
     }
 
+    final wizardCompleted = await StorageService.instance.getBool(
+      StorageKeys.desktopSyncWizardCompletedV3,
+    );
+    // 桌面端向导是显式软强制：只能由向导完成标记放行。
+    // 不能因为旧同步配置存在就自动视为完成，否则老配置会绕过向导。
+    _desktopSyncWizardCompleted = wizardCompleted == true;
+
     final savedState = await StorageService.instance.getSyncState();
     if (savedState != null && savedState != 'idle' && savedState != 'stopped') {
       AppLogger.i('恢复同步状态: $savedState');
@@ -263,6 +284,14 @@ class SyncProvider extends ChangeNotifier {
 
   /// 初始化并启动同步
   Future<void> startSync(SyncConfigModel config) async {
+    if (_isDesktopPlatform && !_desktopSyncWizardCompleted) {
+      _state = SyncState.idle;
+      _errorMessage = '请先完成桌面端文件同步向导';
+      AppLogger.w('AI_DESKTOP_SYNC_WIZARD_START_GUARD: desktop wizard not completed; blocked startSync');
+      notifyListeners();
+      return;
+    }
+
     _state = SyncState.initializing;
     _errorMessage = null;
     _syncedFiles = 0;
@@ -297,6 +326,10 @@ class SyncProvider extends ChangeNotifier {
 
       // 启动初始同步（后台运行）
       SyncService.instance.startInitialSync().then((summary) async {
+        if (_state == SyncState.paused || _state == SyncState.stopped) {
+          AppLogger.i('初始同步结束回调被忽略：当前状态=$_state');
+          return;
+        }
         _lastSummary = summary;
         // 不再覆盖 cum — TaskItemUpdated 事件已实时递增
         // 初始同步完成后从 DB 重新校准（避免事件遗漏）
@@ -309,6 +342,10 @@ class SyncProvider extends ChangeNotifier {
         // 自动启动持续同步
         SyncService.instance.startContinuousSync();
       }).catchError((e) async {
+        if (_state == SyncState.paused || _state == SyncState.stopped) {
+          AppLogger.i('初始同步因暂停/停止中断，保持当前状态: $_state');
+          return;
+        }
         _state = SyncState.error;
         _errorMessage = e.toString();
         await _persistState(SyncState.error);
@@ -334,8 +371,23 @@ class SyncProvider extends ChangeNotifier {
     }
     if (_persistedConfig == null) return;
 
+    final wizardCompleted = await StorageService.instance.getBool(
+      StorageKeys.desktopSyncWizardCompletedV3,
+    );
+    // 桌面端向导是显式软强制：只能由向导完成标记放行。
+    // 不能因为旧同步配置存在就自动视为完成，否则老配置会绕过向导。
+    _desktopSyncWizardCompleted = wizardCompleted == true;
+
     final savedState = await StorageService.instance.getSyncState();
     if (savedState == null || savedState == 'idle' || savedState == 'stopped' || savedState == 'error') {
+      return;
+    }
+
+    if (savedState == 'paused') {
+      _state = SyncState.paused;
+      _errorMessage = null;
+      AppLogger.i('检测到上次为软暂停状态，启动时保持暂停，等待用户手动恢复');
+      notifyListeners();
       return;
     }
 
@@ -352,17 +404,68 @@ class SyncProvider extends ChangeNotifier {
     await startSync(config);
   }
 
-  /// 更新配置（持久化 + 推送到 Rust 引擎）
+  /// 更新配置（持久化 + 可选推送到 Rust 引擎）
   Future<void> updateConfig(SyncConfigModel config) async {
     await _persistConfig(config);
+    notifyListeners();
 
-    // 引擎已初始化时（无论是否运行中），推送配置到 Rust
+    // The wizard/settings page may save config before the native engine is initialized.
+    // In that case persistence is enough; pushing to Rust would fail or be ignored.
+    if (!_engineInitialized) {
+      AppLogger.i('AI_DESKTOP_SYNC_WIZARD_CONFIG_SAVED_ONLY: engine not initialized, saved config only');
+      return;
+    }
+
     try {
       await SyncService.instance.updateConfig(config);
       AppLogger.i('同步配置已更新到引擎: 模式=${config.syncMode}');
     } catch (e) {
       AppLogger.e('更新配置到引擎失败: $e');
     }
+  }
+
+  /// Persist the desktop wizard config before marking the wizard as completed.
+  ///
+  /// This is intentionally separate from startSync(): startSync is guarded by
+  /// desktopSyncWizardCompleted, so saving the wizard config must happen before
+  /// completeDesktopSyncWizard() unlocks the sync page.
+  Future<SyncConfigModel> saveDesktopSyncWizardConfig(SyncConfigModel config) async {
+    final clientId = config.clientId.isNotEmpty
+        ? config.clientId
+        : await StorageService.instance.getOrCreateClientId();
+    final savedConfig = config.copyWith(clientId: clientId);
+    await updateConfig(savedConfig);
+    return savedConfig;
+  }
+
+  /// 标记桌面端同步向导已完成。
+  ///
+  /// 这是软强制入口的持久化标记：未完成时桌面端同步页只显示向导入口，
+  /// 完成后才允许进入正常同步状态。不会影响 Android 的移动端向导。
+  Future<void> markDesktopSyncWizardCompleted() async {
+    _desktopSyncWizardCompleted = true;
+    await StorageService.instance.setBool(
+      StorageKeys.desktopSyncWizardCompletedV3,
+      true,
+    );
+    notifyListeners();
+  }
+
+  /// 完成桌面端同步向导。
+  ///
+  /// 保留这个方法名给同步页/安装校验使用；内部复用
+  /// markDesktopSyncWizardCompleted，避免两个完成标记分叉。
+  Future<void> completeDesktopSyncWizard() async {
+    await markDesktopSyncWizardCompleted();
+  }
+
+  Future<void> resetDesktopSyncWizardCompleted() async {
+    _desktopSyncWizardCompleted = false;
+    await StorageService.instance.setBool(
+      StorageKeys.desktopSyncWizardCompletedV3,
+      false,
+    );
+    notifyListeners();
   }
 
   /// 热修改日志级别（立即生效，无需重启引擎）
@@ -743,17 +846,39 @@ class SyncProvider extends ChangeNotifier {
 
   /// 暂停同步
   Future<void> pause() async {
-    await SyncService.instance.pause();
+    if (_engineInitialized) {
+      await SyncService.instance.pause();
+    }
     _state = SyncState.paused;
+    _errorMessage = null;
     await _persistState(SyncState.paused);
     notifyListeners();
+    _adjustPollInterval();
   }
 
   /// 恢复同步
   Future<void> resume() async {
+    if (!_engineInitialized) {
+      if (_persistedConfig == null) {
+        await restoreFromStorage();
+      }
+      final config = _persistedConfig;
+      if (config == null) {
+        _state = SyncState.error;
+        _errorMessage = '没有可恢复的同步配置';
+        await _persistState(SyncState.error);
+        notifyListeners();
+        return;
+      }
+      await startSync(config);
+      return;
+    }
+
     await SyncService.instance.resume();
-    _state = SyncState.continuous;
-    await _persistState(SyncState.continuous);
+    _state = SyncState.initialSync;
+    _errorMessage = null;
+    await _persistState(SyncState.initialSync);
+    _startPolling();
     notifyListeners();
   }
 

@@ -411,9 +411,12 @@ class FileManagerProvider extends ChangeNotifier {
   /// 导航到指定文件夹并高亮目标文件
   Future<void> navigateAndHighlight(String folderPath, String filePath) async {
     _currentPath = folderPath;
+    _activeCategory = null;
     _selectedFiles.clear();
     _highlightPath = null;
     _highlightTimer?.cancel();
+    _nextPageToken = null;
+    _contextHint = null;
     await loadFiles();
     setHighlightPath(filePath);
   }

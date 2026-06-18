@@ -1,3 +1,4 @@
+// AI_PATCH_FORCE_PREVIEW_NO_SECOND_REQUEST_V3_20260611
 import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -7,6 +8,50 @@ import '../../data/models/file_model.dart';
 import '../../services/cache_manager_service.dart';
 import '../../services/thumbnail_service.dart';
 import '../../core/utils/file_icon_utils.dart';
+
+
+class ThumbnailImageSizeCache {
+  static final Map<String, Size> _sizes = <String, Size>{};
+
+  static String keyFor(FileModel file) {
+    final fileId = file.id.toString();
+    final identity = fileId.isNotEmpty ? fileId : file.relativePath;
+    final updatedAt = file.updatedAt.millisecondsSinceEpoch;
+    return 'cloudreve_thumb_${Uri.encodeComponent(identity)}_$updatedAt';
+  }
+
+  static Size? get(FileModel file) => _sizes[keyFor(file)];
+
+  static double? aspectRatioFor(FileModel file) {
+    final size = get(file);
+    if (size == null || size.width <= 0 || size.height <= 0) return null;
+    return size.width / size.height;
+  }
+
+  static void remember(FileModel file, Size size) {
+    if (size.width <= 0 || size.height <= 0) return;
+    _sizes[keyFor(file)] = size;
+  }
+}
+
+/// Compatibility stub for older hover-preview code.
+///
+/// Hover previews must not call /file/url. They reuse the thumbnail cache only,
+/// so moving the mouse over the same image does not trigger a second API
+/// request or a thumbnail -> original-image swap flicker.
+class PreviewImageUrlCache {
+  static Future<String?> getOriginalImageUrl({
+    required FileModel file,
+    String? contextHint,
+  }) {
+    // Keep parameters intentionally referenced to avoid accidental future
+    // cleanup changing this API surface while category pages still call it.
+    Object.hash(file.id, file.updatedAt, contextHint);
+    return Future<String?>.value(null);
+  }
+}
+
+
 
 /// 缩略图加载组件
 ///
@@ -20,12 +65,14 @@ class ThumbnailImage extends StatefulWidget {
   final FileModel file;
   final String? contextHint;
   final double borderRadius;
+  final BoxFit fit;
 
   const ThumbnailImage({
     super.key,
     required this.file,
     this.contextHint,
     this.borderRadius = 10,
+    this.fit = BoxFit.cover,
   });
 
   @override
@@ -37,6 +84,7 @@ class _ThumbnailImageState extends State<ThumbnailImage> {
   File? _cachedFile;
   bool _isLoading = true;
   bool _hasError = false;
+  String? _lastResolvedSizeKey;
 
   /// 稳定的缩略图缓存 key。
   ///
@@ -112,6 +160,29 @@ class _ThumbnailImageState extends State<ThumbnailImage> {
     });
   }
 
+
+  void _rememberImageProviderSize(ImageProvider provider) {
+    final cacheKey = _thumbnailCacheKey;
+    if (_lastResolvedSizeKey == cacheKey) return;
+    _lastResolvedSizeKey = cacheKey;
+
+    final stream = provider.resolve(const ImageConfiguration());
+    late final ImageStreamListener listener;
+    listener = ImageStreamListener(
+      (ImageInfo info, bool synchronousCall) {
+        ThumbnailImageSizeCache.remember(
+          widget.file,
+          Size(info.image.width.toDouble(), info.image.height.toDouble()),
+        );
+        stream.removeListener(listener);
+      },
+      onError: (Object error, StackTrace? stackTrace) {
+        stream.removeListener(listener);
+      },
+    );
+    stream.addListener(listener);
+  }
+
   Widget _buildPlaceholder(BuildContext context) {
     return Center(
       child: FileIconUtils.buildIconWidget(
@@ -125,13 +196,17 @@ class _ThumbnailImageState extends State<ThumbnailImage> {
   }
 
   Widget _buildLocalCachedImage(BuildContext context, File file) {
+    final provider = FileImage(file);
+    _rememberImageProviderSize(provider);
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(widget.borderRadius),
-      child: Image.file(
-        file,
+      child: Image(
+        image: provider,
         width: double.infinity,
         height: double.infinity,
-        fit: BoxFit.cover,
+        fit: widget.fit,
+        gaplessPlayback: true,
         errorBuilder: (context, error, stackTrace) => _buildPlaceholder(context),
       ),
     );
@@ -144,9 +219,16 @@ class _ThumbnailImageState extends State<ThumbnailImage> {
         imageUrl: _imageUrl!,
         cacheKey: _thumbnailCacheKey,
         cacheManager: CacheManagerService.instance.manager,
-        width: double.infinity,
-        height: double.infinity,
-        fit: BoxFit.cover,
+        imageBuilder: (context, provider) {
+          _rememberImageProviderSize(provider);
+          return Image(
+            image: provider,
+            width: double.infinity,
+            height: double.infinity,
+            fit: widget.fit,
+            gaplessPlayback: true,
+          );
+        },
         fadeInDuration: const Duration(milliseconds: 120),
         fadeOutDuration: const Duration(milliseconds: 80),
         placeholder: (context, url) => _buildPlaceholder(context),

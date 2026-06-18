@@ -223,17 +223,45 @@ class _SecuritySettingsPageState extends State<SecuritySettingsPage> {
     }
   }
 
+  String _normalizeTwoFactorSecret(String? value) {
+    final raw = value?.trim() ?? '';
+    if (raw.isEmpty) return '';
+
+    if (!raw.startsWith('{') && !raw.startsWith('[')) {
+      return raw;
+    }
+
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) {
+        final data = decoded['data'];
+        if (data is String) return data.trim();
+        if (data is Map) {
+          final nested = Map<String, dynamic>.from(data);
+          final secret = nested['secret'] ?? nested['data'];
+          return secret?.toString().trim() ?? '';
+        }
+        final secret = decoded['secret'];
+        return secret?.toString().trim() ?? '';
+      }
+    } catch (e) {
+      AppLogger.d('解析2FA密钥响应失败: $e');
+    }
+
+    return '';
+  }
+
   // ---- 启用2FA ----
   Future<void> _showEnable2FADialog(BuildContext context) async {
     final codeCtrl = TextEditingController();
     String secret = '';
     try {
-      // 先获取 TOTP secret
-      final secretJsonString = await context.read<UserSettingProvider>().prepare2FA();
-      final Map<String, dynamic> secretMap = jsonDecode(secretJsonString!);
-      secret = secretMap['data'];
+      // UserSettingService.prepare2FA() 正常会直接返回 Cloudreve data 字段里的 TOTP secret。
+      // 兼容旧实现：如果返回的是原始 JSON 字符串，也尝试从 data/secret 字段提取。
+      final prepared = await context.read<UserSettingProvider>().prepare2FA();
+      secret = _normalizeTwoFactorSecret(prepared);
     } catch (e) {
-      secret = e.toString();
+      AppLogger.d('准备启用2FA失败: $e');
     }
     AppLogger.d("2FA API Response --> $secret");
     if (secret.isEmpty || !mounted) {

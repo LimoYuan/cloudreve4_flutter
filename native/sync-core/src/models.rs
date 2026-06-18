@@ -480,6 +480,7 @@ impl WorkerTrigger {
 pub enum WorkerStatus {
     Pending,
     Running,
+    Paused,
     Completed,
     Failed,
     Cancelled,
@@ -490,6 +491,7 @@ impl WorkerStatus {
         match self {
             WorkerStatus::Pending => "pending",
             WorkerStatus::Running => "running",
+            WorkerStatus::Paused => "paused",
             WorkerStatus::Completed => "completed",
             WorkerStatus::Failed => "failed",
             WorkerStatus::Cancelled => "cancelled",
@@ -504,6 +506,7 @@ impl std::str::FromStr for WorkerStatus {
         match s {
             "pending" => Ok(WorkerStatus::Pending),
             "running" => Ok(WorkerStatus::Running),
+            "paused" => Ok(WorkerStatus::Paused),
             "completed" => Ok(WorkerStatus::Completed),
             "failed" => Ok(WorkerStatus::Failed),
             "cancelled" => Ok(WorkerStatus::Cancelled),

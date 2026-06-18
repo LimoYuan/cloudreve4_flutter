@@ -47,6 +47,8 @@ pub struct SyncEngine {
     conflict: RwLock<ConflictResolver>,
     sync_root_id: Option<String>,
     shutdown_token: std::sync::Mutex<CancellationToken>,
+    /// 软暂停 token：pause 时取消，resume 时刷新；用于区分“用户暂停”和“停止/重置”。
+    pause_token: std::sync::Mutex<CancellationToken>,
     /// 同步操作互斥锁：防止 force_sync / run_initial_sync 并发
     sync_lock: tokio::sync::Mutex<()>,
     worker_pool: WorkerPool,
@@ -102,6 +104,7 @@ impl SyncEngine {
         };
 
         let shutdown_token = CancellationToken::new();
+        let pause_token = CancellationToken::new();
         let file_locks = Arc::new(FileLockRegistry::new());
         let ensured_dirs = Arc::new(DashMap::new());
         let event_sink = Arc::new(EventSink::new());
@@ -126,6 +129,7 @@ impl SyncEngine {
             ensured_dirs.clone(),
             event_sink.clone(),
             shutdown_token.clone(),
+            pause_token.clone(),
             max_workers,
             &client_id,
         );
@@ -138,6 +142,7 @@ impl SyncEngine {
             conflict: RwLock::new(conflict),
             sync_root_id,
             shutdown_token: std::sync::Mutex::new(shutdown_token),
+            pause_token: std::sync::Mutex::new(pause_token),
             sync_lock: tokio::sync::Mutex::new(()),
             worker_pool,
             file_locks,
@@ -177,7 +182,7 @@ impl SyncEngine {
         }
     }
 
-    /// 确保 shutdown token 未被取消（stop 后重新启动时使用）
+    /// 确保 shutdown token 未被取消（stop/pause 后重新启动时使用）
     pub fn ensure_token_fresh(&self) {
         let token = lock_recover(&self.shutdown_token).clone();
         if token.is_cancelled() {
@@ -187,20 +192,50 @@ impl SyncEngine {
         }
     }
 
+    /// 确保 pause token 未被取消（resume/force_sync 后重新启动 Worker 时使用）
+    pub fn ensure_pause_token_fresh(&self) {
+        let token = lock_recover(&self.pause_token).clone();
+        if token.is_cancelled() {
+            let new_token = tokio_util::sync::CancellationToken::new();
+            self.worker_pool.update_pause_token(new_token.clone());
+            *lock_recover(&self.pause_token) = new_token;
+        }
+    }
+
     pub async fn stop(&self) -> Result<()> {
         lock_recover(&self.shutdown_token).cancel();
         *self.state.write().await = SyncState::Stopped;
         Ok(())
     }
 
+    /// 软暂停：取消当前 watcher/worker，但不清空 DB、不删除本地文件、不重置映射。
+    /// resume 时会刷新 token 并重新跑一次差异扫描，从已有映射和 .sync_tmp 继续。
     pub async fn pause(&self) -> Result<()> {
+        lock_recover(&self.pause_token).cancel();
+        lock_recover(&self.shutdown_token).cancel();
         *self.state.write().await = SyncState::Paused;
+        tracing::info!("同步已软暂停：当前 worker 将尽快退出，检查点数据保留");
         Ok(())
     }
 
     pub async fn resume(&self) -> Result<()> {
+        self.ensure_token_fresh();
+        self.ensure_pause_token_fresh();
         *self.state.write().await = SyncState::Continuous;
+        tracing::info!("同步从软暂停恢复：已刷新 token，等待重新扫描差异");
         Ok(())
+    }
+
+    pub fn is_shutdown_cancelled(&self) -> bool {
+        lock_recover(&self.shutdown_token).is_cancelled()
+    }
+
+    pub fn is_soft_paused(&self) -> bool {
+        lock_recover(&self.pause_token).is_cancelled()
+    }
+
+    pub async fn set_error_state(&self, message: String) {
+        *self.state.write().await = SyncState::Error { message };
     }
 
     pub async fn force_sync(&self) -> Result<SyncSummary> {
@@ -211,6 +246,7 @@ impl SyncEngine {
         let new_token = tokio_util::sync::CancellationToken::new();
         *lock_recover(&self.shutdown_token) = new_token.clone();
         self.worker_pool.update_shutdown_token(new_token);
+        self.ensure_pause_token_fresh();
 
         // run_initial_sync 会等待 sync_lock（旧同步的 worker 检测到取消后快速退出，释放锁）
         self.run_initial_sync().await

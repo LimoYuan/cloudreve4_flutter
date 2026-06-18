@@ -7,6 +7,7 @@ import 'package:cloudreve4_flutter/services/file_service.dart';
 import 'package:cloudreve4_flutter/services/storage_service.dart';
 import 'package:cloudreve4_flutter/services/upload_service.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import '../../../core/utils/file_utils.dart';
 import '../../../core/constants/sort_options.dart';
@@ -24,7 +25,6 @@ import '../../widgets/file_list_item.dart';
 import '../../widgets/file_grid_item.dart';
 import '../../widgets/file_list_header.dart';
 import '../../widgets/file_breadcrumb.dart';
-import '../../widgets/selection_toolbar.dart';
 import '../../widgets/empty_folder_view.dart';
 import '../../widgets/upload_dialog.dart';
 import '../../widgets/file_operation_dialogs.dart';
@@ -67,7 +67,7 @@ const _desktopCategories = <_DesktopCategoryTab>[
   _DesktopCategoryTab(3, '图片', 'image'),
   _DesktopCategoryTab(4, '视频', 'video'),
   _DesktopCategoryTab(5, '音频', 'audio'),
-  _DesktopCategoryTab(6, '转存', 'transferred', isNavigation: true),
+  _DesktopCategoryTab(6, '转存', 'transferred'),
   _DesktopCategoryTab(7, '我的分享', 'shares', isNavigation: true),
   _DesktopCategoryTab(8, '回收站', 'recycle', isNavigation: true),
 ];
@@ -96,6 +96,13 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
 
   // 桌面端首页概览折叠状态
   bool _isSummaryCollapsed = false;
+
+  // 桌面端首页概览区：进入子目录/分类后默认收起；只通过滚轮在顶部拉回，不再显示鼠标悬停锚点。
+  String? _lastListAutoScrollHighlightPath;
+  String? _lastGridAutoScrollHighlightPath;
+
+  // 文件夹精准拖拽上传：子文件夹 DropTarget 命中时，抑制外层当前目录 DropTarget。
+  int _explicitFolderDropSerial = 0;
 
   // 桌面端分类 Tab 下划线动画控制器
   late final AnimationController _tabUnderlineController;
@@ -166,9 +173,26 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
   void _onScrollForSummaryCollapse() {
     if (!_scrollController.hasClients) return;
     final pixels = _scrollController.position.pixels;
-    final shouldCollapse = pixels > 60;
+    final shouldCollapse = pixels > 96;
     if (shouldCollapse != _isSummaryCollapsed) {
       setState(() => _isSummaryCollapsed = shouldCollapse);
+    }
+  }
+
+  void _onPointerSignal(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent || !_scrollController.hasClients) return;
+
+    final nearTop = _scrollController.position.pixels <= 8;
+    // 只在文件列表区域监听滚轮。顶部最近/转存模块有横向滚动，不能用它触发展开/收起。
+    // 在列表顶部继续向上滚动时，才把最近/转存模块拉下来。
+    if (_isSummaryCollapsed && nearTop && event.scrollDelta.dy < 0) {
+      setState(() => _isSummaryCollapsed = false);
+      return;
+    }
+
+    // 在文件列表区域向下浏览时收起顶部概览区。
+    if (!_isSummaryCollapsed && event.scrollDelta.dy > 0) {
+      setState(() => _isSummaryCollapsed = true);
     }
   }
 
@@ -216,30 +240,99 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
     });
   }
 
-  void _showSelectionMore(
-    FileModel file,
-    FileManagerProvider fileManager,
-  ) {
+  void _showSelectionMoreMenu({
+    required FileManagerProvider fileManager,
+    required List<FileModel> selectedFiles,
+    FileModel? anchorFile,
+  }) {
+    final hasFolder = selectedFiles.any((file) => file.isFolder);
+    final singleFile = selectedFiles.length == 1 ? (anchorFile ?? selectedFiles.first) : null;
+
     showModalBottomSheet<void>(
       context: context,
       builder: (sheetContext) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (singleFile != null) ...[
+              if (!singleFile.isFolder) ...[
+                ListTile(
+                  leading: const Icon(Icons.open_in_browser),
+                  title: const Text('在浏览器中打开'),
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    _openInBrowser(context, singleFile);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.web_asset),
+                  title: const Text('在 Cloudreve 中打开'),
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    _openInCloudreveApp(context, singleFile);
+                  },
+                ),
+                const Divider(height: 1),
+              ],
+              ListTile(
+                leading: const Icon(Icons.edit),
+                title: const Text('重命名'),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  FileOperationDialogs.showRenameDialog(context, fileManager, singleFile);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.info_outline),
+                title: const Text('查看详情'),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _showFileInfo(singleFile);
+                },
+              ),
+            ],
             ListTile(
-              leading: const Icon(Icons.edit),
-              title: const Text('重命名'),
+              leading: const Icon(Icons.drive_file_move_outline),
+              title: const Text('移动'),
               onTap: () {
                 Navigator.of(sheetContext).pop();
-                FileOperationDialogs.showRenameDialog(context, fileManager, file);
+                FileOperationDialogs.showBatchMoveDialog(
+                  context,
+                  fileManager,
+                  selectedFiles.map((file) => file.path).toList(),
+                  false,
+                );
               },
             ),
             ListTile(
-              leading: const Icon(Icons.info_outline),
-              title: const Text('查看详情'),
+              leading: const Icon(Icons.content_copy),
+              title: const Text('复制'),
               onTap: () {
                 Navigator.of(sheetContext).pop();
-                _showFileInfo(file);
+                FileOperationDialogs.showBatchMoveDialog(
+                  context,
+                  fileManager,
+                  selectedFiles.map((file) => file.path).toList(),
+                  true,
+                );
+              },
+            ),
+            if (hasFolder)
+              ListTile(
+                leading: const Icon(Icons.drive_folder_upload_outlined),
+                title: const Text('导出目录'),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _exportSelectedDirectories(fileManager, selectedFiles);
+                },
+              ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.close),
+              title: const Text('取消选择'),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                fileManager.clearSelection();
               },
             ),
           ],
@@ -256,16 +349,34 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
       _handleNavigationTab(tab.key);
       return;
     }
-    setState(() => _desktopCategoryIndex = index);
+
+    final shouldShowSummary = tab.key == null;
+
+    setState(() {
+      _desktopCategoryIndex = index;
+      // “全部”是首页视图，必须直接展开最近文件/转存文件模块；
+      // 其它分类仍默认收起，等用户在列表顶部向上滚轮时再拉出。
+      _isSummaryCollapsed = !shouldShowSummary;
+    });
+
+    if (_scrollController.hasClients) {
+      if (shouldShowSummary) {
+        _scrollController.animateTo(
+          0,
+          duration: const Duration(milliseconds: 360),
+          curve: Curves.easeOutCubic,
+        );
+      } else {
+        _scrollController.jumpTo(0);
+      }
+    }
+
     final fileManager = Provider.of<FileManagerProvider>(context, listen: false);
     fileManager.setActiveCategory(tab.key);
   }
 
   void _handleNavigationTab(String? key) {
     switch (key) {
-      case 'transferred':
-        Navigator.of(context).pushNamed(RouteNames.transferredFiles);
-        break;
       case 'shares':
         Navigator.of(context).pushNamed(RouteNames.share);
         break;
@@ -273,6 +384,20 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
         Navigator.of(context).pushNamed(RouteNames.recycleBin);
         break;
     }
+  }
+
+  void _enterFolderFromCurrentContext(
+    FileManagerProvider fileManager,
+    FileModel file,
+  ) {
+    final path = fileManager.activeCategory == 'transferred'
+        ? file.path
+        : file.relativePath;
+    setState(() => _isSummaryCollapsed = true);
+    if (_scrollController.hasClients) {
+      _scrollController.jumpTo(0);
+    }
+    fileManager.enterFolder(path);
   }
 
   // ---- 构建方法 ----
@@ -296,13 +421,35 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
   }
 
   PreferredSizeWidget _buildMobileAppBar(BuildContext context) {
-    return AppBar(
-      title: Consumer<FileManagerProvider>(
+    return PreferredSize(
+      preferredSize: const Size.fromHeight(kToolbarHeight),
+      child: Consumer<FileManagerProvider>(
         builder: (context, fileManager, child) {
-          return _buildMobileBreadcrumb(context, fileManager);
+          if (fileManager.hasSelection) {
+            return AppBar(
+              automaticallyImplyLeading: false,
+              leading: IconButton(
+                icon: const Icon(LucideIcons.x),
+                tooltip: '取消选择',
+                onPressed: () => fileManager.clearSelection(),
+              ),
+              centerTitle: true,
+              title: Text('已选中 ${fileManager.selectedFiles.length} 个文件'),
+              actions: [
+                TextButton(
+                  onPressed: () => fileManager.selectAll(),
+                  child: const Text('全选'),
+                ),
+              ],
+            );
+          }
+
+          return AppBar(
+            title: _buildMobileBreadcrumb(context, fileManager),
+            actions: _buildMobileActions(),
+          );
         },
       ),
-      actions: _buildMobileActions(),
     );
   }
 
@@ -318,28 +465,12 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
 
     final column = Column(
       children: [
-        // 顶栏：仅子目录显示（根目录操作按钮移至 Category Tabs 右侧）
-        if (!isAtRoot) _buildDesktopTopBar(context, fileManager),
-        // Home Summary Panel（仅根目录，可折叠）
-        if (isAtRoot)
-          AnimatedSize(
-            duration: const Duration(milliseconds: 220),
-            curve: Curves.easeOutCubic,
-            alignment: Alignment.topCenter,
-            child: _isSummaryCollapsed
-                ? const SizedBox.shrink()
-                : DesktopSummaryPanel(
-                    onRecentMore: fileManager.activeCategory == null
-                        ? () {
-                            setState(() => _desktopCategoryIndex = 1);
-                            fileManager.setActiveCategory('recent');
-                          }
-                        : null,
-                    onOpenFile: (file) => _openFile(context, file),
-                  ),
-          ),
-        // Category Tabs（仅根目录）
-        if (isAtRoot) _buildDesktopCategoryTabs(context, Theme.of(context).colorScheme, fileManager),
+        // 顶部概览区：进入子目录/分类时收起，不再生成独立大页面；通过滚轮回到顶部时再展开。
+        _buildDesktopSummaryAnchor(context, fileManager),
+        // 分类栏始终留在同一页面顶部，子目录只刷新下面的文件列表。
+        _buildDesktopCategoryTabs(context, Theme.of(context).colorScheme, fileManager),
+        // 上传 / 新建文件夹 / 新建文件 + 右侧工具栏始终固定在第二行。
+        _buildDesktopRootMutationRow(context, fileManager),
         // 文件列表
         Expanded(child: _buildDesktopFileList(context)),
       ],
@@ -352,124 +483,494 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
     );
   }
 
-  /// Inline selection action buttons for the desktop action bar.
+  Widget _buildDesktopSummaryAnchor(
+    BuildContext context,
+    FileManagerProvider fileManager,
+  ) {
+    final showSummary = !_isSummaryCollapsed;
+
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 620),
+      reverseDuration: const Duration(milliseconds: 520),
+      curve: Curves.easeInOutCubic,
+      alignment: Alignment.topCenter,
+      child: showSummary
+          ? AnimatedOpacity(
+              duration: const Duration(milliseconds: 520),
+              curve: Curves.easeInOutCubic,
+              opacity: 1,
+              child: DesktopSummaryPanel(
+                onRecentMore: fileManager.activeCategory == null
+                    ? () {
+                        setState(() {
+                          _desktopCategoryIndex = 1;
+                          _isSummaryCollapsed = true;
+                        });
+                        fileManager.setActiveCategory('recent');
+                      }
+                    : null,
+                onTransferredMore: () {
+                  setState(() {
+                    _desktopCategoryIndex = 6;
+                    _isSummaryCollapsed = true;
+                  });
+                  fileManager.setActiveCategory('transferred');
+                },
+                onOpenFile: (file) => _openFile(context, file),
+              ),
+            )
+          : const SizedBox.shrink(),
+    );
+  }
+
+  /// Inline selection action buttons for the desktop category action bar.
+  ///
+  /// Compact Windows-style capsule. The cancel X stays outside the capsule so it
+  /// does not replace the old cancel-selection affordance.
   Widget _buildDesktopSelectionActions(FileManagerProvider fileManager) {
     final colorScheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
     final selectedFiles = fileManager.files
         .where((file) => fileManager.selectedFiles.contains(file.path))
         .toList();
-    final hasFolder = selectedFiles.any((file) => file.isFolder);
+    final selectionCount = selectedFiles.length;
 
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          '${fileManager.selectedFiles.length} 已选',
-          style: TextStyle(
-            color: colorScheme.primary,
-            fontWeight: FontWeight.w600,
-            fontSize: 13,
-          ),
-        ),
-        const SizedBox(width: 8),
-        IconButton(
-          icon: Icon(LucideIcons.share2, size: 18, color: colorScheme.primary),
-          onPressed: () {
-            final selectedPath = fileManager.selectedFiles.first;
-            final file = fileManager.files.firstWhere((f) => f.path == selectedPath);
-            FileOperationDialogs.showShareDialog(context, file);
-          },
-          tooltip: '分享',
-          style: IconButton.styleFrom(
-            backgroundColor: colorScheme.primary.withValues(alpha: 0.08),
-          ),
-        ),
-        IconButton(
-          icon: Icon(LucideIcons.download, size: 18, color: colorScheme.primary),
-          onPressed: () => _downloadSelectedFiles(fileManager),
-          tooltip: '下载',
-          style: IconButton.styleFrom(
-            backgroundColor: colorScheme.primary.withValues(alpha: 0.08),
-          ),
-        ),
-        if (hasFolder)
-          IconButton(
-            icon: Icon(
-              Icons.drive_folder_upload_outlined,
-              size: 18,
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '已选择 ',
+              style: TextStyle(
+                color: colorScheme.primary,
+                fontWeight: FontWeight.w700,
+                fontSize: 12.5,
+              ),
+            ),
+            _RollingSelectionCount(
+              value: selectionCount,
               color: colorScheme.primary,
             ),
-            onPressed: () => _exportSelectedDirectories(
-              fileManager,
-              selectedFiles,
+            Text(
+              ' 项',
+              style: TextStyle(
+                color: colorScheme.primary,
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+              ),
             ),
-            tooltip: '导出目录',
-            style: IconButton.styleFrom(
-              backgroundColor: colorScheme.primary.withValues(alpha: 0.08),
+          ],
+        ),
+        const SizedBox(width: 6),
+        Container(
+          height: 26,
+          decoration: BoxDecoration(
+            color: colorScheme.surface,
+            borderRadius: BorderRadius.circular(5),
+            border: Border.all(
+              color: theme.dividerColor.withValues(alpha: 0.45),
             ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.025),
+                blurRadius: 4,
+                offset: const Offset(0, 1),
+              ),
+            ],
           ),
-        IconButton(
-          icon: Icon(LucideIcons.trash2, size: 18, color: colorScheme.error),
-          onPressed: () => FileOperationDialogs.showDeleteConfirmation(
-            context,
-            fileManager,
-            fileManager.selectedFiles,
-          ),
-          tooltip: '删除',
-          style: IconButton.styleFrom(
-            backgroundColor: colorScheme.error.withValues(alpha: 0.08),
+          clipBehavior: Clip.antiAlias,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildDesktopSelectionTextButton(
+                icon: LucideIcons.share2,
+                label: '分享',
+                tooltip: selectionCount == 1 ? '分享' : '只能分享单个文件',
+                onPressed: selectionCount == 1
+                    ? () => FileOperationDialogs.showShareDialog(
+                          context,
+                          selectedFiles.first,
+                        )
+                    : null,
+              ),
+              _buildDesktopSelectionDivider(),
+              _buildDesktopSelectionTextButton(
+                icon: LucideIcons.download,
+                label: _buildSelectionDownloadLabel(selectedFiles),
+                tooltip: '下载选中项',
+                onPressed: selectionCount > 0
+                    ? () => _downloadSelectedFiles(fileManager)
+                    : null,
+              ),
+              _buildDesktopSelectionDivider(),
+              _buildDesktopSelectionTextButton(
+                icon: LucideIcons.trash2,
+                label: '删除',
+                tooltip: '删除选中项',
+                foregroundColor: colorScheme.error,
+                hoverColor: colorScheme.error.withValues(alpha: 0.08),
+                onPressed: selectionCount > 0
+                    ? () => FileOperationDialogs.showDeleteConfirmation(
+                          context,
+                          fileManager,
+                          fileManager.selectedFiles,
+                        )
+                    : null,
+              ),
+              _buildDesktopSelectionDivider(),
+              _buildDesktopSelectionMoreButton(
+                fileManager,
+                selectedFiles,
+              ),
+            ],
           ),
         ),
-        IconButton(
-          icon: Icon(LucideIcons.x, size: 18, color: colorScheme.onSurface),
-          onPressed: () => fileManager.clearSelection(),
-          tooltip: '取消选择',
+        const SizedBox(width: 5),
+        Tooltip(
+          message: '取消选择',
+          waitDuration: const Duration(milliseconds: 450),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(15),
+            onTap: fileManager.clearSelection,
+            child: Padding(
+              padding: const EdgeInsets.all(3),
+              child: Icon(
+                LucideIcons.x,
+                size: 14,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
         ),
       ],
     );
   }
 
-  /// Desktop category tab bar at root directory, with action buttons on the right.
-  Widget _buildDesktopCategoryTabs(BuildContext context, ColorScheme colorScheme, FileManagerProvider fileManager) {
-    final theme = Theme.of(context);
-    final hasSelection = fileManager.hasSelection;
+  Widget _buildDesktopSelectionTextButton({
+    required IconData icon,
+    required String label,
+    required String tooltip,
+    required VoidCallback? onPressed,
+    Color? foregroundColor,
+    Color? hoverColor,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final enabled = onPressed != null;
+    final effectiveColor = enabled
+        ? (foregroundColor ?? colorScheme.onSurfaceVariant)
+        : colorScheme.onSurfaceVariant.withValues(alpha: 0.38);
 
-    return Container(
-      height: 48,
-      padding: const EdgeInsets.only(left: 16, right: 8),
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(color: theme.dividerColor.withValues(alpha: 0.15)),
-        ),
-      ),
-      child: Row(
-        children: [
-          // Left: category tabs
-          for (int i = 0; i < _desktopCategories.length; i++) ...[
-            if (i == 6) // divider before navigation tabs
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                child: SizedBox(
-                  height: 20,
-                  child: VerticalDivider(width: 1, color: theme.dividerColor.withValues(alpha: 0.3)),
+    return Tooltip(
+      message: tooltip,
+      waitDuration: const Duration(milliseconds: 450),
+      child: InkWell(
+        onTap: onPressed,
+        hoverColor: hoverColor ?? colorScheme.primary.withValues(alpha: 0.06),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 5),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 13, color: effectiveColor),
+              const SizedBox(width: 3),
+              Text(
+                label,
+                style: TextStyle(
+                  color: effectiveColor,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
-            _buildDesktopCategoryTab(context, _desktopCategories[i], colorScheme),
-          ],
-          const Spacer(),
-          // Right: action buttons (from top bar)
-          if (hasSelection) ...[
-            _buildDesktopSelectionActions(fileManager),
-            const SizedBox(width: 4),
-            const VerticalDivider(width: 1, indent: 14, endIndent: 14),
-            const SizedBox(width: 4),
-          ],
-          DesktopActionButtons(
-            fileManager: fileManager,
-            hasSelection: hasSelection,
-            onShowCreateTextFile: () => _showCreateTextFileDialog(context, fileManager),
+            ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDesktopSelectionMoreButton(
+    FileManagerProvider fileManager,
+    List<FileModel> selectedFiles,
+  ) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Tooltip(
+      message: '更多',
+      waitDuration: const Duration(milliseconds: 450),
+      child: InkWell(
+        onTap: selectedFiles.isEmpty
+            ? null
+            : () => _showSelectionMoreMenu(
+                  fileManager: fileManager,
+                  selectedFiles: selectedFiles,
+                  anchorFile: selectedFiles.length == 1 ? selectedFiles.first : null,
+                ),
+        hoverColor: colorScheme.primary.withValues(alpha: 0.06),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          child: Icon(
+            Icons.more_horiz,
+            size: 17,
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDesktopSelectionDivider() {
+    return Builder(
+      builder: (context) => SizedBox(
+        height: 18,
+        child: VerticalDivider(
+          width: 1,
+          thickness: 1,
+          color: Theme.of(context).dividerColor.withValues(alpha: 0.35),
+        ),
+      ),
+    );
+  }
+
+  String _buildSelectionDownloadLabel(List<FileModel> selectedFiles) {
+    if (selectedFiles.isEmpty) return '下载';
+
+    final regularFiles = selectedFiles.where((file) => !file.isFolder).toList();
+    if (regularFiles.isEmpty) {
+      return '下载(${selectedFiles.length}项)';
+    }
+
+    final totalSize = regularFiles.fold<int>(
+      0,
+      (sum, file) => sum + (file.size < 0 ? 0 : file.size),
+    );
+    return '下载(${_formatCompactFileSize(totalSize)})';
+  }
+
+  String _formatCompactFileSize(int bytes) {
+    if (bytes <= 0) return '0B';
+
+    const units = ['B', 'K', 'M', 'G', 'T'];
+    var size = bytes.toDouble();
+    var unitIndex = 0;
+
+    while (size >= 1024 && unitIndex < units.length - 1) {
+      size /= 1024;
+      unitIndex++;
+    }
+
+    final fixed = unitIndex == 0 ? size.toStringAsFixed(0) : size.toStringAsFixed(1);
+    final compact = fixed.endsWith('.0') ? fixed.substring(0, fixed.length - 2) : fixed;
+    return '$compact${units[unitIndex]}';
+  }
+
+
+  /// Desktop action row below category tabs and above table header.
+  ///
+  /// Left side is always upload / create folder / create file. Right side is
+  /// search / sort / view / refresh when there is no selection, and is replaced
+  /// by selected count / share / download / delete / more / cancel when files
+  /// are selected.
+  Widget _buildDesktopRootMutationRow(
+    BuildContext context,
+    FileManagerProvider fileManager,
+  ) {
+    return Container(
+      height: 38,
+      padding: const EdgeInsets.fromLTRB(22, 1, 16, 2),
+      alignment: Alignment.center,
+      child: Row(
+        children: [
+          _buildDesktopRootMutationButtons(context, fileManager),
+          const Spacer(),
+          _buildDesktopRightToolbar(context, fileManager),
         ],
+      ),
+    );
+  }
+
+  Widget _buildDesktopRootMutationButtons(
+    BuildContext context,
+    FileManagerProvider fileManager,
+  ) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildDesktopInlineActionButton(
+          context,
+          icon: LucideIcons.upload,
+          label: '上传',
+          filled: true,
+          onPressed: () => showUploadDialog(context),
+        ),
+        const SizedBox(width: 6),
+        _buildDesktopInlineActionButton(
+          context,
+          icon: LucideIcons.folderPlus,
+          label: '新建文件夹',
+          color: colorScheme.primary,
+          onPressed: () => FileOperationDialogs.showCreateDialog(context, fileManager),
+        ),
+        const SizedBox(width: 6),
+        _buildDesktopInlineActionButton(
+          context,
+          icon: Icons.note_add_outlined,
+          label: '新建文件',
+          color: colorScheme.primary,
+          onPressed: () => _showCreateTextFileDialog(context, fileManager),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDesktopInlineActionButton(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+    Color? color,
+    bool filled = false,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final baseColor = color ?? colorScheme.primary;
+    final foreground = filled ? colorScheme.onPrimary : baseColor;
+    final background = filled ? baseColor : baseColor.withValues(alpha: 0.08);
+
+    return FilledButton.icon(
+      onPressed: onPressed,
+      icon: Icon(icon, size: 16.5, color: foreground),
+      label: Text(
+        label,
+        style: TextStyle(
+          color: foreground,
+          fontSize: 13.2,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      style: FilledButton.styleFrom(
+        elevation: 0,
+        backgroundColor: background,
+        foregroundColor: foreground,
+        padding: const EdgeInsets.symmetric(horizontal: 17, vertical: 7),
+        minimumSize: const Size(0, 34),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        visualDensity: VisualDensity.compact,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+    );
+  }
+
+  Widget _buildDesktopRightToolbar(
+    BuildContext context,
+    FileManagerProvider fileManager,
+  ) {
+    return ClipRect(
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 240),
+        reverseDuration: const Duration(milliseconds: 200),
+        switchInCurve: Curves.easeOutCubic,
+        switchOutCurve: Curves.easeInCubic,
+        layoutBuilder: (currentChild, previousChildren) {
+          return Stack(
+            alignment: Alignment.centerRight,
+            children: <Widget>[
+              ...previousChildren,
+              ...?(currentChild == null ? null : <Widget>[currentChild]),
+            ],
+          );
+        },
+        transitionBuilder: (child, animation) {
+          final isSelection = child.key == const ValueKey('desktop-selection-actions');
+          final beginOffset = isSelection
+              ? const Offset(-0.16, 0)
+              : const Offset(0.16, 0);
+          final curved = CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutCubic,
+            reverseCurve: Curves.easeInCubic,
+          );
+
+          return SizeTransition(
+            axis: Axis.horizontal,
+            axisAlignment: 1.0,
+            sizeFactor: curved,
+            child: FadeTransition(
+              opacity: curved,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: beginOffset,
+                  end: Offset.zero,
+                ).animate(curved),
+                child: child,
+              ),
+            ),
+          );
+        },
+        child: fileManager.hasSelection
+            ? KeyedSubtree(
+                key: const ValueKey('desktop-selection-actions'),
+                child: _buildDesktopSelectionActions(fileManager),
+              )
+            : KeyedSubtree(
+                key: const ValueKey('desktop-default-actions'),
+                child: DesktopActionButtons(
+                  fileManager: fileManager,
+                  hasSelection: false,
+                  showFileMutations: false,
+                  onShowCreateTextFile: () => _showCreateTextFileDialog(context, fileManager),
+                ),
+              ),
+      ),
+    );
+  }
+
+
+  /// Compatibility slot used by the legacy desktop AppBar wrapper.
+  ///
+  /// The active desktop file page now uses [_buildDesktopRightToolbar] for the
+  /// right side of the second toolbar row. Some older desktop app-bar code still
+  /// calls this method, so keep it as a thin wrapper to avoid analyzer/build
+  /// failures while preserving the same animated selection/default toolbar logic.
+  Widget _buildDesktopAnimatedSelectionSlot(FileManagerProvider fileManager) {
+    return _buildDesktopRightToolbar(context, fileManager);
+  }
+
+
+  /// Desktop category tab bar at root directory.
+  ///
+  /// This top row contains only category tabs. The right side intentionally
+  /// stays empty; all file actions live in the second toolbar row.
+  Widget _buildDesktopCategoryTabs(BuildContext context, ColorScheme colorScheme, FileManagerProvider fileManager) {
+    final theme = Theme.of(context);
+
+    return Container(
+      height: 36,
+      padding: const EdgeInsets.only(left: 16, right: 16),
+      decoration: const BoxDecoration(),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          physics: const BouncingScrollPhysics(),
+          child: Row(
+            children: [
+              for (int i = 0; i < _desktopCategories.length; i++) ...[
+                if (i == 7)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    child: SizedBox(
+                      height: 20,
+                      child: VerticalDivider(width: 1, color: theme.dividerColor.withValues(alpha: 0.3)),
+                    ),
+                  ),
+                _buildDesktopCategoryTab(context, _desktopCategories[i], colorScheme),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -486,8 +987,8 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
       onTap: () => _onDesktopCategoryTap(tab.index),
       borderRadius: BorderRadius.circular(8),
       child: Container(
-        height: 44,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
+        height: 34,
+        padding: const EdgeInsets.symmetric(horizontal: 11),
         alignment: Alignment.center,
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -500,7 +1001,7 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
                 color: isActive ? colorScheme.primary : theme.hintColor,
               ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 3),
             AnimatedContainer(
               duration: const Duration(milliseconds: 220),
               curve: Curves.easeOutCubic,
@@ -606,7 +1107,7 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (icon != null) ...[
-              Icon(icon, size: 14, color: color),
+              Icon(icon, size: 13, color: color),
               const SizedBox(width: 3),
             ],
             Text(
@@ -690,6 +1191,9 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
   Widget _buildSpeedDialFAB() {
     return Consumer<FileManagerProvider>(
       builder: (context, fileManager, _) {
+        // 手机端进入多选后隐藏悬浮加号，避免遮挡底部多选工具栏和勾选操作。
+        if (fileManager.hasSelection) return const SizedBox.shrink();
+
         return SpeedDialFab(
           key: _fabKey,
           isListView: fileManager.viewType == FileViewType.list,
@@ -721,20 +1225,69 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
   }
 
   void _handleDroppedFiles(List<XFile> droppedFiles) {
+    final serialAtDrop = _explicitFolderDropSerial;
+
+    // Nested folder DropTarget and the page DropTarget can both receive the same
+    // desktop drop event. Delay the page-level upload briefly so an exact folder
+    // target can mark the event as consumed first.
+    Future<void>.delayed(const Duration(milliseconds: 120), () {
+      if (!mounted || serialAtDrop != _explicitFolderDropSerial) return;
+      final fileManager = Provider.of<FileManagerProvider>(context, listen: false);
+      _startDroppedFileUpload(
+        droppedFiles,
+        fileManager.currentPath,
+        displayTargetName: '当前目录',
+      );
+    });
+  }
+
+  void _handleDroppedFilesToFolder(FileModel folder, List<XFile> droppedFiles) {
+    _explicitFolderDropSerial++;
+    _startDroppedFileUpload(
+      droppedFiles,
+      folder.path,
+      displayTargetName: folder.name,
+    );
+  }
+
+  Future<void> _startDroppedFileUpload(
+    List<XFile> droppedFiles,
+    String targetPath, {
+    required String displayTargetName,
+  }) async {
     final files = <File>[];
+    var skipped = 0;
+
     for (final xFile in droppedFiles) {
       final path = xFile.path;
-      if (path.isNotEmpty) {
+      if (path.isEmpty) {
+        skipped++;
+        continue;
+      }
+
+      final entityType = FileSystemEntity.typeSync(path, followLinks: true);
+      if (entityType == FileSystemEntityType.file) {
         files.add(File(path));
+      } else {
+        skipped++;
       }
     }
-    if (files.isEmpty) return;
 
-    final uploadManager = Provider.of<UploadManagerProvider>(context, listen: false);
-    final fileManager = Provider.of<FileManagerProvider>(context, listen: false);
-    uploadManager.markShouldShowDialog();
-    uploadManager.startUpload(files, fileManager.currentPath);
-    ToastHelper.info('已添加 ${files.length} 个文件到上传队列');
+    if (files.isEmpty) {
+      ToastHelper.warning('没有可上传的文件；暂不支持直接拖拽文件夹');
+      return;
+    }
+
+    try {
+      final uploadManager = Provider.of<UploadManagerProvider>(context, listen: false);
+      uploadManager.markShouldShowDialog();
+      await uploadManager.startUpload(files, targetPath);
+
+      final skippedText = skipped > 0 ? '，已跳过 $skipped 个文件夹或不可读项目' : '';
+      ToastHelper.info('已添加 ${files.length} 个文件到「$displayTargetName」上传队列$skippedText');
+    } catch (error) {
+      ToastHelper.error('拖拽上传失败：$error');
+    }
   }
 
   Widget _buildFileList(BuildContext context) {
@@ -808,17 +1361,22 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
     final itemCount = fileManager.files.length + (fileManager.hasMore || fileManager.isLoadingMore ? 1 : 0);
 
     // 高亮文件时滚动到对应位置
-    if (fileManager.highlightPath != null) {
-      final idx = fileManager.files.indexWhere((f) => f.path == fileManager.highlightPath);
+    if (fileManager.highlightPath != null &&
+        fileManager.highlightPath != _lastListAutoScrollHighlightPath) {
+      final highlightPath = fileManager.highlightPath!;
+      final idx = fileManager.files.indexWhere((f) => f.path == highlightPath);
       if (idx >= 0) {
+        _lastListAutoScrollHighlightPath = highlightPath;
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (_scrollController.hasClients) {
+          if (mounted && _scrollController.hasClients) {
             const itemHeight = 52.0;
             final offset = (idx * itemHeight).clamp(0.0, _scrollController.position.maxScrollExtent);
             _scrollController.animateTo(offset, duration: const Duration(milliseconds: 300), curve: Curves.easeOutCubic);
           }
         });
       }
+    } else if (fileManager.highlightPath == null) {
+      _lastListAutoScrollHighlightPath = null;
     }
 
     return Column(
@@ -827,14 +1385,20 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
           showCheckbox: showCheckbox,
           currentSort: fileManager.sortOption,
           onSort: (option) => fileManager.setSortOption(option),
+          totalCount: fileManager.files.length,
+          selectedCount: fileManager.selectedFiles.length,
+          onSelectAll: fileManager.selectAll,
+          onClearSelection: fileManager.clearSelection,
         ),
         Expanded(
           child: RefreshIndicator(
             onRefresh: () => _onRefresh(fileManager),
             child: NotificationListener<ScrollNotification>(
               onNotification: _fabKey.currentState?.onScrollNotification ?? ((_) => false),
-              child: ListView.builder(
-                controller: _scrollController,
+              child: Listener(
+                onPointerSignal: _onPointerSignal,
+                child: ListView.builder(
+                  controller: _scrollController,
                 key: PageStorageKey('files_list_${fileManager.currentPath}'),
                 cacheExtent: 900,
                 keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
@@ -852,6 +1416,7 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
                     isSelected: isSelected,
                     isHighlighted: file.path == fileManager.highlightPath,
                     showCheckbox: showCheckbox,
+                    alwaysShowMobileCheckbox: !isDesktop,
                     index: index,
                     isDesktop: isDesktop,
                     onTap: () {
@@ -860,7 +1425,7 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
                       if (showCheckbox) {
                         fileManager.toggleSelection(file.path);
                       } else if (file.isFolder) {
-                        fileManager.enterFolder(file.relativePath);
+                        _enterFolderFromCurrentContext(fileManager, file);
                       } else {
                         _openFile(context, file);
                       }
@@ -875,9 +1440,13 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
                     onShare: () => FileOperationDialogs.showShareDialog(context, file),
                     onDelete: () => FileOperationDialogs.showDeleteSingleConfirmation(context, fileManager, file),
                     onInfo: () => _showFileInfo(file),
+                    onDropFiles: file.isFolder
+                        ? (files) => _handleDroppedFilesToFolder(file, files)
+                        : null,
                   );
                 },
               ),
+            ),
             ),
           ),
         ),
@@ -887,56 +1456,56 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
 
   Widget _buildGridView(BuildContext context, FileManagerProvider fileManager) {
     final screenWidth = MediaQuery.sizeOf(context).width;
-    final padding = 16.0;
-    final spacing = 16.0;
-    final availableWidth = screenWidth - padding * 2;
+    final isDesktop = screenWidth >= 1000;
+    final spacing = screenWidth >= 900 ? 14.0 : 10.0;
+    final horizontalPadding = screenWidth >= 900 ? 16.0 : 10.0;
+    const maxTileWidth = 176.0;
+    const tileHeight = 188.0;
 
-    int crossAxisCount;
-    if (screenWidth < 400) {
-      crossAxisCount = 2;
-    } else if (screenWidth < 600) {
-      crossAxisCount = 3;
-    } else if (screenWidth < 900) {
-      crossAxisCount = 4;
-    } else {
-      crossAxisCount = 5;
-    }
-
-    final itemWidth = (availableWidth - spacing * (crossAxisCount - 1)) / crossAxisCount;
-    final childAspectRatio = itemWidth / 160;
+    final availableWidth = screenWidth - horizontalPadding * 2;
+    final crossAxisCount = (availableWidth / (maxTileWidth + spacing))
+        .floor()
+        .clamp(screenWidth < 420 ? 2 : 3, 9);
     final showCheckbox = fileManager.hasSelection;
     final itemCount = fileManager.files.length + (fileManager.hasMore || fileManager.isLoadingMore ? 1 : 0);
 
     // 高亮文件时滚动到对应位置
-    if (fileManager.highlightPath != null) {
-      final idx = fileManager.files.indexWhere((f) => f.path == fileManager.highlightPath);
+    if (fileManager.highlightPath != null &&
+        fileManager.highlightPath != _lastGridAutoScrollHighlightPath) {
+      final highlightPath = fileManager.highlightPath!;
+      final idx = fileManager.files.indexWhere((f) => f.path == highlightPath);
       if (idx >= 0) {
+        _lastGridAutoScrollHighlightPath = highlightPath;
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (_scrollController.hasClients) {
+          if (mounted && _scrollController.hasClients) {
             final row = idx ~/ crossAxisCount;
-            final itemHeight = itemWidth / childAspectRatio + spacing / 2;
+            final itemHeight = tileHeight + spacing;
             final offset = (row * itemHeight).clamp(0.0, _scrollController.position.maxScrollExtent);
             _scrollController.animateTo(offset, duration: const Duration(milliseconds: 300), curve: Curves.easeOutCubic);
           }
         });
       }
+    } else if (fileManager.highlightPath == null) {
+      _lastGridAutoScrollHighlightPath = null;
     }
 
     return RefreshIndicator(
       onRefresh: () => _onRefresh(fileManager),
       child: NotificationListener<ScrollNotification>(
         onNotification: _fabKey.currentState?.onScrollNotification ?? ((_) => false),
-        child: GridView.builder(
-          controller: _scrollController,
+        child: Listener(
+          onPointerSignal: _onPointerSignal,
+          child: GridView.builder(
+            controller: _scrollController,
           key: PageStorageKey('files_grid_${fileManager.currentPath}'),
           cacheExtent: 1100,
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          padding: const EdgeInsets.all(8),
+          padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 8),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: crossAxisCount,
-            mainAxisSpacing: spacing / 2,
-            crossAxisSpacing: spacing / 2,
-            childAspectRatio: childAspectRatio,
+            mainAxisSpacing: spacing,
+            crossAxisSpacing: spacing,
+            mainAxisExtent: tileHeight,
           ),
           itemCount: itemCount,
           itemBuilder: (context, index) {
@@ -952,6 +1521,7 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
               isSelected: isSelected,
               isHighlighted: file.path == fileManager.highlightPath,
               showCheckbox: showCheckbox,
+              alwaysShowMobileCheckbox: !isDesktop,
               contextHint: fileManager.contextHint,
               onTap: () {
                 _fabKey.currentState?.hide();
@@ -959,7 +1529,7 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
                 if (showCheckbox) {
                   fileManager.toggleSelection(file.path);
                 } else if (file.isFolder) {
-                  fileManager.enterFolder(file.relativePath);
+                  _enterFolderFromCurrentContext(fileManager, file);
                 } else {
                   _openFile(context, file);
                 }
@@ -974,8 +1544,12 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
               onShare: () => FileOperationDialogs.showShareDialog(context, file),
               onDelete: () => FileOperationDialogs.showDeleteSingleConfirmation(context, fileManager, file),
               onInfo: () => _showFileInfo(file),
+              onDropFiles: file.isFolder
+                  ? (files) => _handleDroppedFilesToFolder(file, files)
+                  : null,
             );
           },
+        ),
         ),
       ),
     );
@@ -1033,44 +1607,15 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
     final screenWidth = MediaQuery.of(context).size.width;
     final isDesktop = screenWidth >= 1000;
 
+    if (!isDesktop) {
+      // 手机端的选择操作不再额外叠加一行底部栏。
+      // 进入选择态后，由 AppShell 直接把主底部导航栏替换为
+      // 下载 / 分享 / 删除 / 重命名 / 更多。
+      return const SizedBox.shrink();
+    }
+
     return Consumer<FileManagerProvider>(
       builder: (context, fileManager, child) {
-        if (fileManager.hasSelection) {
-          return SelectionToolbar(
-            selectionCount: fileManager.selectedFiles.length,
-            totalCount: fileManager.files.length,
-            onCancel: () => fileManager.clearSelection(),
-            onSelectAll: () => fileManager.selectAll(),
-            onMore: fileManager.selectedFiles.length == 1
-                ? () => _showSelectionMore(
-                      fileManager.files.firstWhere(
-                        (f) => f.path == fileManager.selectedFiles.first,
-                      ),
-                      fileManager,
-                    )
-                : null,
-            onMove: () => FileOperationDialogs.showBatchMoveDialog(
-                  context,
-                  fileManager,
-                  fileManager.selectedFiles,
-                  false,
-                ),
-            onCopy: () => FileOperationDialogs.showBatchMoveDialog(
-                  context,
-                  fileManager,
-                  fileManager.selectedFiles,
-                  true,
-                ),
-            onDelete: () => FileOperationDialogs.showDeleteConfirmation(
-                  context,
-                  fileManager,
-                  fileManager.selectedFiles,
-                ),
-          );
-        }
-
-        if (!isDesktop) return const SizedBox.shrink();
-
         return FileBreadcrumb(
           currentPath: fileManager.currentPath,
           onPathTap: (path) => fileManager.enterFolder(path),
@@ -1567,6 +2112,7 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
   }
 
   /// Build the desktop AppBar content (called from [_DesktopAppBarWrapper]).
+  // ignore: unused_element
   Widget _buildDesktopTopBar(BuildContext context, FileManagerProvider fileManager) {
     final theme = Theme.of(context);
     final isAtRoot = fileManager.currentPath == '/';
@@ -1598,16 +2144,14 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
             ),
           ),
           const Spacer(),
-          if (hasSelection) ...[
-            _buildDesktopSelectionActions(fileManager),
-            const SizedBox(width: 4),
-            const VerticalDivider(width: 1, indent: 14, endIndent: 14),
-            const SizedBox(width: 4),
-          ],
-          DesktopActionButtons(
-            fileManager: fileManager,
-            onShowCreateTextFile: () => _showCreateTextFileDialog(context, fileManager),
-          ),
+          _buildDesktopAnimatedSelectionSlot(fileManager),
+          if (hasSelection) const SizedBox(width: 6),
+          if (!hasSelection)
+            DesktopActionButtons(
+              fileManager: fileManager,
+              hasSelection: false,
+              onShowCreateTextFile: () => _showCreateTextFileDialog(context, fileManager),
+            ),
         ],
       ),
     );
@@ -1676,3 +2220,73 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
   }
 }
 
+
+
+class _RollingSelectionCount extends StatefulWidget {
+  final int value;
+  final Color color;
+
+  const _RollingSelectionCount({
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  State<_RollingSelectionCount> createState() => _RollingSelectionCountState();
+}
+
+class _RollingSelectionCountState extends State<_RollingSelectionCount> {
+  bool _increasing = true;
+
+  @override
+  void initState() {
+    super.initState();
+  }
+
+  @override
+  void didUpdateWidget(covariant _RollingSelectionCount oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.value != oldWidget.value) {
+      _increasing = widget.value > oldWidget.value;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 18,
+      height: 18,
+      child: ClipRect(
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 180),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInCubic,
+          transitionBuilder: (child, animation) {
+            final begin = _increasing ? const Offset(0, 1) : const Offset(0, -1);
+            final outBegin = _increasing ? const Offset(0, -1) : const Offset(0, 1);
+            final isCurrent = child.key == ValueKey<int>(widget.value);
+            final tween = Tween<Offset>(
+              begin: isCurrent ? begin : outBegin,
+              end: Offset.zero,
+            );
+            return SlideTransition(
+              position: tween.animate(animation),
+              child: FadeTransition(opacity: animation, child: child),
+            );
+          },
+          child: Text(
+            '${widget.value}',
+            key: ValueKey<int>(widget.value),
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: widget.color,
+              fontWeight: FontWeight.w800,
+              fontSize: 12,
+              height: 1.1,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}

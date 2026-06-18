@@ -4,6 +4,7 @@ use crate::file_lock::FileLockRegistry;
 use crate::models::*;
 use crate::sync_db::SyncDb;
 use tokio::sync::Semaphore;
+use tokio_util::sync::CancellationToken;
 
 /// 下载单个文件（含重试 + 断点续传），受并发信号量控制
 #[allow(clippy::too_many_arguments)]
@@ -16,12 +17,22 @@ pub async fn download_file(
     file_locks: &FileLockRegistry,
     semaphore: &Semaphore,
     root_id: &str,
+    shutdown_token: &CancellationToken,
+    pause_token: &CancellationToken,
 ) -> Result<()> {
+    if shutdown_token.is_cancelled() || pause_token.is_cancelled() {
+        return Err(SyncError::Cancelled);
+    }
+
     let remote = action.remote_entry.as_ref().ok_or_else(|| {
         SyncError::Internal("下载操作缺少远程文件信息".into())
     })?;
 
     let _lock = file_locks.acquire(&action.relative_path).await;
+
+    if shutdown_token.is_cancelled() || pause_token.is_cancelled() {
+        return Err(SyncError::Cancelled);
+    }
 
     if remote.is_dir {
         let local_path = config.local_root.join(&action.relative_path);
@@ -34,6 +45,10 @@ pub async fn download_file(
 
     let _permit = semaphore.acquire().await
         .map_err(|e| SyncError::Internal(format!("获取传输信号量失败: {}", e)))?;
+
+    if shutdown_token.is_cancelled() || pause_token.is_cancelled() {
+        return Err(SyncError::Cancelled);
+    }
 
     // 信号量获取后标记为 Running（实际开始传输）
     let _ = db
@@ -60,6 +75,9 @@ pub async fn download_file(
     let tmp_path = local_path.with_extension(".sync_tmp");
 
     loop {
+        if shutdown_token.is_cancelled() || pause_token.is_cancelled() {
+            return Err(SyncError::Cancelled);
+        }
         attempt += 1;
 
         // 检查临时文件已有大小，用于断点续传
@@ -72,6 +90,7 @@ pub async fn download_file(
         let urls = match api.get_download_url(&[&remote.uri]).await {
             Ok(urls) => urls,
             Err(SyncError::Auth(_)) => return Err(SyncError::Auth("Token 过期".into())),
+            Err(SyncError::Cancelled) => return Err(SyncError::Cancelled),
             Err(e) if attempt <= max_retries => {
                 let delay = crate::utils::retry_delay_ms(attempt, 1000, 30000);
                 tracing::warn!("[{}] 下载重试 ({}/{}): {} 获取链接失败: {}", task_id, attempt, max_retries, action.relative_path, e);
@@ -101,7 +120,7 @@ pub async fn download_file(
             Err(e) => return Err(e),
         };
 
-        match stream_to_file(resp, &tmp_path, config.bandwidth_limit, resume_offset).await {
+        match stream_to_file_cancellable(resp, &tmp_path, config.bandwidth_limit, resume_offset, shutdown_token, pause_token).await {
             Ok(_) => {
                 tracing::debug!("[{}] 下载写入完成: {} ({}bytes)", task_id, tmp_path.display(), remote.size);
                 tokio::fs::rename(&tmp_path, &local_path).await?;
@@ -131,6 +150,7 @@ pub async fn download_file(
                 tracing::info!("[{}] 下载完成: {}", task_id, action.relative_path);
                 return Ok(());
             }
+            Err(SyncError::Cancelled) => return Err(SyncError::Cancelled),
             Err(e) if attempt <= max_retries => {
                 let delay = crate::utils::retry_delay_ms(attempt, 1000, 30000);
                 // 保留临时文件用于断点续传
@@ -165,6 +185,28 @@ pub async fn stream_to_file(
     bandwidth_limit: Option<u64>,
     resume_offset: u64,
 ) -> Result<()> {
+    let shutdown_token = CancellationToken::new();
+    let pause_token = CancellationToken::new();
+    stream_to_file_cancellable(
+        resp,
+        tmp_path,
+        bandwidth_limit,
+        resume_offset,
+        &shutdown_token,
+        &pause_token,
+    )
+    .await
+}
+
+/// 流式写入文件（可由同步控制 token 中断，保留 .sync_tmp 供恢复续传）
+pub async fn stream_to_file_cancellable(
+    resp: reqwest::Response,
+    tmp_path: &std::path::Path,
+    bandwidth_limit: Option<u64>,
+    resume_offset: u64,
+    shutdown_token: &CancellationToken,
+    pause_token: &CancellationToken,
+) -> Result<()> {
     use tokio::io::{AsyncWriteExt, AsyncSeekExt};
     use futures_util::StreamExt;
 
@@ -187,6 +229,9 @@ pub async fn stream_to_file(
     match bandwidth_limit {
         None => {
             while let Some(chunk) = stream.next().await {
+                if shutdown_token.is_cancelled() || pause_token.is_cancelled() {
+                    return Err(SyncError::Cancelled);
+                }
                 let chunk = chunk.map_err(|e| SyncError::Network(e.to_string()))?;
                 file.write_all(&chunk).await?;
             }
@@ -199,6 +244,9 @@ pub async fn stream_to_file(
                     tmp_path.display()
                 );
                 while let Some(chunk) = stream.next().await {
+                    if shutdown_token.is_cancelled() || pause_token.is_cancelled() {
+                        return Err(SyncError::Cancelled);
+                    }
                     let chunk = chunk.map_err(|e| SyncError::Network(e.to_string()))?;
                     file.write_all(&chunk).await?;
                 }
@@ -208,6 +256,9 @@ pub async fn stream_to_file(
             let transfer_start = std::time::Instant::now();
 
             while let Some(chunk) = stream.next().await {
+                if shutdown_token.is_cancelled() || pause_token.is_cancelled() {
+                    return Err(SyncError::Cancelled);
+                }
                 let chunk = chunk.map_err(|e| SyncError::Network(e.to_string()))?;
                 total_bytes += chunk.len() as u64;
                 file.write_all(&chunk).await?;

@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:cryptography/cryptography.dart';
 import 'package:dio/dio.dart';
-import 'package:dio/io.dart';
+import '../core/utils/direct_http_client.dart';
 
 import '../data/models/user_model.dart';
 
@@ -259,19 +259,12 @@ class QrLoginService {
         headers: {'Content-Type': 'application/json'},
       ),
     );
-
-    // Desktop QR polling must bypass system/proxy environment variables.
-    // The old working Windows client used DIRECT for the relay request chain.
-    // Keep mobile using the normal platform network stack.
-    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-      dio.httpClientAdapter = IOHttpClientAdapter(
-        createHttpClient: () {
-          final client = HttpClient();
-          client.findProxy = (_) => 'DIRECT';
-          return client;
-        },
-      );
-    }
+    dio.httpClientAdapter = DirectHttpClientFactory.dioAdapter(
+      connectionTimeout: const Duration(seconds: 10),
+    );
+    dio.httpClientAdapter = DirectHttpClientFactory.dioAdapter(
+      connectionTimeout: const Duration(seconds: 10),
+    );
 
     return dio;
   }

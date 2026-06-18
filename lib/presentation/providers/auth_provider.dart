@@ -206,7 +206,9 @@ Future<bool> passwordLogin({
     } catch (e) {
       _errorMessage = e.toString();
       _user = null;
-      setState(AuthState.error);
+      // 2FA 验证失败仍然停留在登录流程，不应把全局认证状态切到 error，
+      // 否则登录页/弹窗可能被错误状态打断。
+      setState(AuthState.unauthenticated);
       return false;
     }
   }

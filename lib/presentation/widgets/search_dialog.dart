@@ -153,8 +153,8 @@ class _SearchDialogState extends State<SearchDialog> {
     final navProvider = Provider.of<NavigationProvider>(context, listen: false);
     final fileManager =
         Provider.of<FileManagerProvider>(context, listen: false);
-    final parentPath = _extractParentPath(file.path);
-    final filePath = file.path;
+    final filePath = _normalizeSearchResultPath(file.path);
+    final parentPath = _extractParentPath(filePath);
 
     if (query.isNotEmpty) {
       await StorageService.instance.addToSearchHistory(query);
@@ -165,7 +165,14 @@ class _SearchDialogState extends State<SearchDialog> {
     Navigator.of(context).pop();
 
     navProvider.setIndex(1);
-    fileManager.navigateAndHighlight(parentPath, filePath);
+    await fileManager.navigateAndHighlight(parentPath, filePath);
+  }
+
+  String _normalizeSearchResultPath(String path) {
+    if (path.startsWith('cloudreve://')) return path;
+    if (path == '/' || path.isEmpty) return 'cloudreve://my';
+    if (path.startsWith('/')) return 'cloudreve://my$path';
+    return 'cloudreve://my/$path';
   }
 
   String? _extractParentPath(String filePath) {

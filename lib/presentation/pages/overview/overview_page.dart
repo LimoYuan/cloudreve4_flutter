@@ -37,18 +37,18 @@ class _OverviewEntranceState extends State<_OverviewEntrance>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 520),
+      duration: const Duration(milliseconds: 680),
     );
     _opacity = Tween<double>(
       begin: 0,
       end: 1,
     ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
     _scale = Tween<double>(
-      begin: 0.92,
+      begin: 0.96,
       end: 1,
-    ).animate(CurvedAnimation(parent: _controller, curve: Curves.elasticOut));
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
     _slide = Tween<Offset>(
-      begin: const Offset(0, 0.03),
+      begin: const Offset(0, 0.045),
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
     Future.delayed(Duration(milliseconds: widget.delayMs), () {
@@ -71,7 +71,7 @@ class _OverviewEntranceState extends State<_OverviewEntrance>
     final currentTab = context.watch<NavigationProvider>().currentIndex;
 
     if (!_firstBuild && currentTab == 0 && _lastTabIndex != 0) {
-      Future.microtask(() {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _replay();
       });
     }

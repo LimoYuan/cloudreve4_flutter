@@ -12,8 +12,10 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
+import '../../../config/brand_config.dart';
 import '../../../core/exceptions/app_exception.dart';
 import '../../../core/validators/string_validator.dart';
+import '../../../core/utils/direct_http_client.dart';
 import '../../../router/app_router.dart';
 import '../../../services/api_service.dart';
 import '../../../services/auth_service.dart';
@@ -280,7 +282,11 @@ class _LoginPageState extends State<LoginPage> {
 
   Future<_SiteHtmlBrand> _fetchSiteHtmlBrand(String baseUrl) async {
     final site = QrLoginService.cloudreveSiteBase(baseUrl);
-    final response = await Dio().get<String>(
+    final dio = Dio();
+    dio.httpClientAdapter = DirectHttpClientFactory.dioAdapter(
+      connectionTimeout: const Duration(seconds: 8),
+    );
+    final response = await dio.get<String>(
       site,
       options: Options(
         responseType: ResponseType.plain,
@@ -298,7 +304,11 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<Uint8List?> _fetchLogoBytes(String url) async {
-    final response = await Dio().get<List<int>>(
+    final dio = Dio();
+    dio.httpClientAdapter = DirectHttpClientFactory.dioAdapter(
+      connectionTimeout: const Duration(seconds: 8),
+    );
+    final response = await dio.get<List<int>>(
       url,
       options: Options(
         responseType: ResponseType.bytes,
@@ -451,6 +461,8 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _showServerSelector() async {
+    if (BrandConfig.hasFixedServer) return;
+
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -462,6 +474,8 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _showServerManagement() async {
+    if (BrandConfig.hasFixedServer) return;
+
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -794,11 +808,13 @@ class _LoginPageState extends State<LoginPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _ServerSelector(
-              onTap: _showServerSelector,
-              onManage: _showServerManagement,
-            ),
-            const SizedBox(height: 16),
+            if (!BrandConfig.hasFixedServer) ...[
+              _ServerSelector(
+                onTap: _showServerSelector,
+                onManage: _showServerManagement,
+              ),
+              const SizedBox(height: 16),
+            ],
             if (_showQrLogin) ...[
               _buildLoginModeToggle(),
               const SizedBox(height: 16),

@@ -1,4 +1,5 @@
 import '../config/api_config.dart';
+import '../config/brand_config.dart';
 import '../data/models/server_model.dart';
 import '../data/models/user_model.dart';
 import 'storage_service.dart';
@@ -19,8 +20,12 @@ class ServerService {
     return _instance!;
   }
 
-  static const String _defaultLabel = 'Cloudreve 官方';
-  static const String _defaultBaseUrl = ApiConfig.defaultBaseUrl;
+  static String get _defaultLabel => BrandConfig.hasFixedServer
+      ? BrandConfig.effectiveServerName
+      : 'Cloudreve 官方';
+  static String get _defaultBaseUrl => BrandConfig.hasFixedServer
+      ? BrandConfig.effectiveServerBaseUrl
+      : ApiConfig.defaultBaseUrl;
   static const Object _unset = Object();
 
   List<ServerModel> _servers = [];
@@ -28,6 +33,9 @@ class ServerService {
 
   /// 获取所有服务器
   List<ServerModel> get servers => List.unmodifiable(_servers);
+
+  /// 定制构建是否锁定服务器。
+  bool get isServerLocked => BrandConfig.hasFixedServer;
 
   /// 获取当前选中的服务器
   ServerModel? get currentServer => _currentServer;
@@ -43,6 +51,11 @@ class ServerService {
 
   /// 从存储加载服务器列表
   Future<void> _loadServers() async {
+    if (BrandConfig.hasFixedServer) {
+      await _loadLockedServer();
+      return;
+    }
+
     try {
       final loadedServers = await StorageService.instance.servers;
 
@@ -90,6 +103,53 @@ class ServerService {
         ),
       ];
       _currentServer = _servers.first;
+    }
+  }
+
+  Future<void> _loadLockedServer() async {
+    try {
+      final fixedBaseUrl = BrandConfig.effectiveServerBaseUrl;
+      final fixedLabel = BrandConfig.effectiveServerName;
+      final loadedServers = await StorageService.instance.servers;
+      final existing = loadedServers
+          .where(
+            (server) =>
+                _normalizeBaseUrl(server.baseUrl) == _normalizeBaseUrl(fixedBaseUrl),
+          )
+          .firstOrNull;
+
+      final fixedServer = ServerModel(
+        label: fixedLabel,
+        baseUrl: fixedBaseUrl,
+        rememberMe: existing?.rememberMe ?? true,
+        email: existing?.email,
+        password: existing?.password,
+        user: existing?.user,
+        accounts: existing?.accounts ?? const [],
+      );
+
+      _servers = [fixedServer];
+      _currentServer = fixedServer;
+
+      await _saveServers();
+      await _saveLastSelected();
+      await StorageService.instance.setCustomBaseUrl(fixedBaseUrl);
+
+      AppLogger.i('定制构建已锁定服务器: $fixedLabel <$fixedBaseUrl>');
+    } catch (e) {
+      AppLogger.e('加载定制服务器失败: $e');
+      final fallback = ServerModel(
+        label: _defaultLabel,
+        baseUrl: _defaultBaseUrl,
+      );
+      _servers = [fallback];
+      _currentServer = fallback;
+    }
+  }
+
+  void _ensureServerEditable() {
+    if (BrandConfig.hasFixedServer) {
+      throw Exception('当前是定制构建，服务器地址已锁定，不能修改');
     }
   }
 
@@ -181,6 +241,7 @@ class ServerService {
 
   /// 添加服务器
   Future<void> addServer(ServerModel server) async {
+    _ensureServerEditable();
     if (_servers.any((s) => s.label == server.label)) {
       throw Exception('服务器名称已存在');
     }
@@ -191,6 +252,7 @@ class ServerService {
 
   /// 更新服务器
   Future<void> updateServer(String oldLabel, ServerModel newServer) async {
+    _ensureServerEditable();
     final index = _servers.indexWhere((s) => s.label == oldLabel);
     if (index == -1) {
       throw Exception('服务器不存在');
@@ -212,6 +274,7 @@ class ServerService {
 
   /// 删除服务器
   Future<void> deleteServer(String label) async {
+    _ensureServerEditable();
     if (_servers.length == 1) {
       throw Exception('至少保留一个服务器配置');
     }
@@ -228,6 +291,12 @@ class ServerService {
 
   /// 选择服务器
   Future<void> selectServer(String label) async {
+    if (BrandConfig.hasFixedServer) {
+      final current = _currentServer;
+      if (current == null || current.label == label) return;
+      throw Exception('当前是定制构建，服务器地址已锁定，不能切换');
+    }
+
     final server = _servers.firstWhere((s) => s.label == label);
     _currentServer = server;
     await _saveLastSelected();
@@ -383,6 +452,7 @@ class ServerService {
 
   /// 重置为默认服务器列表
   Future<void> resetToDefault() async {
+    _ensureServerEditable();
     _servers = [
       ServerModel(
         label: _defaultLabel,

@@ -477,6 +477,7 @@ pub async fn start_initial_sync() -> Result<SyncSummaryFfi, SyncErrorFfi> {
     tracing::debug!("[FFI] start_initial_sync ←");
     let engine = get_engine()?;
     engine.ensure_token_fresh();
+    engine.ensure_pause_token_fresh();
     engine.run_initial_sync().await
         .map(|s| {
             tracing::debug!("[FFI] start_initial_sync → uploaded={}, downloaded={}, conflicts={}, failed={}",
@@ -491,6 +492,8 @@ pub async fn start_initial_sync() -> Result<SyncSummaryFfi, SyncErrorFfi> {
 pub async fn start_continuous_sync() -> Result<(), SyncErrorFfi> {
     tracing::debug!("[FFI] start_continuous_sync ←");
     let engine = get_engine()?;
+    engine.ensure_token_fresh();
+    engine.ensure_pause_token_fresh();
     let engine = engine.clone();
     tokio::spawn(async move {
         if let Err(e) = engine.run_continuous().await {
@@ -521,8 +524,45 @@ pub async fn pause_sync() -> Result<(), SyncErrorFfi> {
 #[frb]
 pub async fn resume_sync() -> Result<(), SyncErrorFfi> {
     tracing::debug!("[FFI] resume_sync ←");
-    let engine = get_engine()?;
-    engine.resume().await.map_err(error_to_ffi)
+    let engine = ENGINE.get().cloned().ok_or(SyncErrorFfi::NotInitialized)?;
+    engine.resume().await.map_err(error_to_ffi)?;
+
+    // resume 不是简单改状态：软暂停会取消当前 watcher/worker。
+    // 这里后台重新跑一次差异扫描，再启动持续同步；DB 映射和 .sync_tmp 会作为检查点继续。
+    let engine_for_resume = engine.clone();
+    tokio::spawn(async move {
+        engine_for_resume.ensure_token_fresh();
+        engine_for_resume.ensure_pause_token_fresh();
+
+        match engine_for_resume.run_initial_sync().await {
+            Ok(summary) => {
+                tracing::info!(
+                    "软暂停恢复扫描完成: uploaded={}, downloaded={}, failed={}",
+                    summary.uploaded,
+                    summary.downloaded,
+                    summary.failed,
+                );
+                let engine_for_continuous = engine_for_resume.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = engine_for_continuous.run_continuous().await {
+                        tracing::error!("恢复后的持续同步异常退出: {}", e);
+                    }
+                });
+            }
+            Err(e) => {
+                let message = e.to_string();
+                if engine_for_resume.is_shutdown_cancelled() || engine_for_resume.is_soft_paused() {
+                    tracing::warn!("软暂停恢复扫描被暂停/停止中断: {}", message);
+                } else {
+                    tracing::error!("软暂停恢复扫描失败: {}", message);
+                    engine_for_resume.set_error_state(message).await;
+                }
+            }
+        }
+    });
+
+    tracing::debug!("[FFI] resume_sync → checkpoint rescan spawned");
+    Ok(())
 }
 
 /// 强制同步（重新扫描全量差异）

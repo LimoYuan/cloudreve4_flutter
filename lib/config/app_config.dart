@@ -1,7 +1,9 @@
+import 'brand_config.dart';
+
 /// 应用配置
 class AppConfig {
   /// 应用名称
-  static const String appName = 'Cloudreve';
+  static String get appName => BrandConfig.appName;
 
   /// 应用版本
   static const String version = '1.0.0';

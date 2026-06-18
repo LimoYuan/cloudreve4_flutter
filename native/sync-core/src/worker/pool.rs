@@ -30,6 +30,7 @@ pub struct WorkerPool {
     /// 抑制路径：上传失败清理远端碎片时，防止 SSE 删除事件误删本地文件
     suppress_paths: Arc<DashMap<String, std::time::Instant>>,
     shutdown_token: std::sync::Mutex<CancellationToken>,
+    pause_token: std::sync::Mutex<CancellationToken>,
     #[cfg(feature = "windows-cfapi")]
     platform_adapter: std::sync::Mutex<Option<Arc<dyn PlaceholderCreator>>>,
 }
@@ -43,6 +44,7 @@ impl WorkerPool {
         ensured_dirs: Arc<DashMap<String, ()>>,
         event_sink: Arc<crate::event_sink::EventSink>,
         shutdown_token: CancellationToken,
+        pause_token: CancellationToken,
         max_workers_override: usize,
         client_id: &str,
     ) -> Self {
@@ -72,6 +74,7 @@ impl WorkerPool {
             event_sink,
             suppress_paths: Arc::new(DashMap::new()),
             shutdown_token: std::sync::Mutex::new(shutdown_token),
+            pause_token: std::sync::Mutex::new(pause_token),
             #[cfg(feature = "windows-cfapi")]
             platform_adapter: std::sync::Mutex::new(None),
         }
@@ -139,6 +142,7 @@ impl WorkerPool {
             self.event_sink.clone(),
             self.suppress_paths.clone(),
             lock_recover(&self.shutdown_token).clone(),
+            lock_recover(&self.pause_token).clone(),
             #[cfg(feature = "windows-cfapi")]
             lock_recover(&self.platform_adapter).clone(),
         );
@@ -239,6 +243,7 @@ impl WorkerPool {
         let event_sink = self.event_sink.clone();
         let suppress_paths = self.suppress_paths.clone();
         let shutdown_token = lock_recover(&self.shutdown_token).clone();
+        let pause_token = lock_recover(&self.pause_token).clone();
         let active_workers = self.active_workers.clone();
         let active_upload_paths = self.active_upload_paths.clone();
         let active_count = self.active_count.clone();
@@ -283,6 +288,7 @@ impl WorkerPool {
                 event_sink,
                 suppress_paths,
                 shutdown_token,
+                pause_token,
                 #[cfg(feature = "windows-cfapi")]
                 platform_adapter,
             );
@@ -326,6 +332,11 @@ impl WorkerPool {
     /// 更新 shutdown token（引擎重启时调用）
     pub fn update_shutdown_token(&self, token: CancellationToken) {
         *lock_recover(&self.shutdown_token) = token;
+    }
+
+    /// 更新 pause token（软暂停恢复时调用）
+    pub fn update_pause_token(&self, token: CancellationToken) {
+        *lock_recover(&self.pause_token) = token;
     }
 
     /// 终止所有活跃 Worker 并等待退出

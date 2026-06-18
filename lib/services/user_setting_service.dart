@@ -167,7 +167,8 @@ class UserSettingService {
   }) async {
     final queryParams = <String, dynamic>{
       'page_size': pageSize,
-      'next_page_token': ?nextPageToken,
+      if (nextPageToken != null && nextPageToken.isNotEmpty)
+        'next_page_token': nextPageToken,
     };
     final response = await ApiService.instance.get<Map<String, dynamic>>(
       '/user/creditChanges',

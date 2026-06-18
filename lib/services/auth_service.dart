@@ -110,17 +110,35 @@ class AuthService {
 
     AppLogger.d('AuthService -> 登录响应: $response');
 
-
-  // code 203 表示需要两步验证
-  final code = response['code'] as int?;
-  if (code == 203) {
-    final sessionId = response['data'] as String;
-    throw TwoFactorRequiredException(sessionId);
-  }
-
-  // 下面你原来的代码保持不变
+    // Cloudreve code 203 表示需要两步验证。
+    // ApiService 对 203 会返回原始响应，所以这里要兼容 data 为字符串或 Map 的情况。
+    final code = response['code'] as int?;
+    if (code == 203) {
+      final sessionId = _extractTwoFactorSessionId(response);
+      if (sessionId == null || sessionId.isEmpty) {
+        throw ServerException('两步验证会话无效，请重新登录', code: 203);
+      }
+      throw TwoFactorRequiredException(sessionId);
+    }
 
     return LoginResponseModel.fromJson(response);
+  }
+
+  String? _extractTwoFactorSessionId(Map<String, dynamic> response) {
+    final data = response['data'];
+
+    if (data is String) {
+      return data.trim();
+    }
+
+    if (data is Map) {
+      final map = Map<String, dynamic>.from(data);
+      final value = map['session_id'] ?? map['sessionId'] ?? map['session'];
+      return value?.toString().trim();
+    }
+
+    final value = response['session_id'] ?? response['sessionId'] ?? response['session'];
+    return value?.toString().trim();
   }
 
   /// 2FA登录

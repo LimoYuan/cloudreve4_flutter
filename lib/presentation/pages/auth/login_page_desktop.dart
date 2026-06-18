@@ -14,6 +14,7 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
+import '../../../config/brand_config.dart';
 import '../../../core/exceptions/app_exception.dart';
 import '../../../core/validators/string_validator.dart';
 import '../../../router/app_router.dart';
@@ -28,7 +29,12 @@ import 'widgets/login_error_parser.dart';
 import 'widgets/two_factor_dialog.dart';
 
 class LoginDesktopPage extends StatefulWidget {
-  const LoginDesktopPage({super.key});
+  final bool showBackButton;
+
+  const LoginDesktopPage({
+    super.key,
+    this.showBackButton = false,
+  });
 
   @override
   State<LoginDesktopPage> createState() => _LoginDesktopPageState();
@@ -132,6 +138,12 @@ class _LoginDesktopPageState extends State<LoginDesktopPage>
     _registerConfirmPasswordController.dispose();
     _focusNode.dispose();
     super.dispose();
+  }
+
+  void _handleBackToPreviousPage() {
+    _qrPollTimer?.cancel();
+    _focusNode.unfocus();
+    Navigator.of(context).pop(false);
   }
 
   Future<void> _loadRememberedInfo() async {
@@ -298,7 +310,6 @@ class _LoginDesktopPageState extends State<LoginDesktopPage>
     final site = QrLoginService.cloudreveSiteBase(baseUrl);
     final uri = Uri.parse(site);
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 6);
-    client.findProxy = (_) => 'DIRECT';
     try {
       final request = await client.getUrl(uri);
       request.headers.set(
@@ -319,7 +330,6 @@ class _LoginDesktopPageState extends State<LoginDesktopPage>
 
   Future<Uint8List?> _fetchBytesDirect(String url) async {
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 6);
-    client.findProxy = (_) => 'DIRECT';
     try {
       final request = await client.getUrl(Uri.parse(url));
       request.headers.set(HttpHeaders.acceptHeader, 'image/*,*/*;q=0.8');
@@ -402,6 +412,8 @@ class _LoginDesktopPageState extends State<LoginDesktopPage>
   }
 
   Future<void> _showServerSelector() async {
+    if (BrandConfig.hasFixedServer) return;
+
     await showDialog<void>(
       context: context,
       builder: (context) => Dialog(
@@ -421,6 +433,8 @@ class _LoginDesktopPageState extends State<LoginDesktopPage>
   }
 
   Future<void> _showServerManagement() async {
+    if (BrandConfig.hasFixedServer) return;
+
     await showDialog<void>(
       context: context,
       builder: (context) => Dialog(
@@ -478,7 +492,13 @@ class _LoginDesktopPageState extends State<LoginDesktopPage>
         _focusNode.unfocus();
         ToastHelper.success('登录成功');
         await Future.delayed(const Duration(seconds: 1));
-        if (mounted) navigator.pushReplacementNamed(RouteNames.home);
+        if (mounted) {
+          if (widget.showBackButton) {
+            navigator.pushNamedAndRemoveUntil(RouteNames.home, (route) => false);
+          } else {
+            navigator.pushReplacementNamed(RouteNames.home);
+          }
+        }
       } else if (mounted) {
         if (_loginConfig.loginCaptcha) {
           await captcha.refreshCaptcha();
@@ -529,7 +549,14 @@ class _LoginDesktopPageState extends State<LoginDesktopPage>
     _focusNode.unfocus();
     ToastHelper.success('登录成功');
     await Future.delayed(const Duration(seconds: 1));
-    if (mounted) Navigator.of(context).pushReplacementNamed(RouteNames.home);
+    if (mounted) {
+      final navigator = Navigator.of(context);
+      if (widget.showBackButton) {
+        navigator.pushNamedAndRemoveUntil(RouteNames.home, (route) => false);
+      } else {
+        navigator.pushReplacementNamed(RouteNames.home);
+      }
+    }
   }
 
   Future<void> _switchLoginMode(_LoginMode mode) async {
@@ -691,7 +718,14 @@ class _LoginDesktopPageState extends State<LoginDesktopPage>
       _focusNode.unfocus();
       ToastHelper.success('扫码登录成功');
       await Future.delayed(const Duration(milliseconds: 600));
-      if (mounted) Navigator.of(context).pushReplacementNamed(RouteNames.home);
+      if (mounted) {
+      final navigator = Navigator.of(context);
+      if (widget.showBackButton) {
+        navigator.pushNamedAndRemoveUntil(RouteNames.home, (route) => false);
+      } else {
+        navigator.pushReplacementNamed(RouteNames.home);
+      }
+    }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -733,6 +767,14 @@ class _LoginDesktopPageState extends State<LoginDesktopPage>
                     top: 0,
                     height: 58,
                     child: DragToMoveArea(child: SizedBox.expand()),
+                  ),
+                if (widget.showBackButton)
+                  Positioned(
+                    top: 14,
+                    left: 18,
+                    child: _LoginGlassBackButton(
+                      onTap: _handleBackToPreviousPage,
+                    ),
                   ),
                 if (Platform.isWindows || Platform.isLinux)
                   const Positioned(
@@ -983,21 +1025,23 @@ class _LoginDesktopPageState extends State<LoginDesktopPage>
               crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Expanded(
-                      child: _ServerSelector(onTap: _showServerSelector),
-                    ),
-                    const SizedBox(width: 12),
-                    _ManageServersButton(onTap: _showServerManagement),
-                  ],
-                ),
-                SizedBox(
-                  height: compact
-                      ? 22
-                      : (22.0 * panelScale).clamp(16.0, 24.0).toDouble(),
-                ),
+                if (!BrandConfig.hasFixedServer) ...[
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Expanded(
+                        child: _ServerSelector(onTap: _showServerSelector),
+                      ),
+                      const SizedBox(width: 12),
+                      _ManageServersButton(onTap: _showServerManagement),
+                    ],
+                  ),
+                  SizedBox(
+                    height: compact
+                        ? 22
+                        : (22.0 * panelScale).clamp(16.0, 24.0).toDouble(),
+                  ),
+                ],
                 ClipRect(
                   child: AnimatedSwitcher(
                     duration: const Duration(milliseconds: 260),
@@ -1888,6 +1932,21 @@ class _AuroraGlassPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _AuroraGlassPainter oldDelegate) => false;
+}
+
+class _LoginGlassBackButton extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _LoginGlassBackButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return _WindowButton(
+      tooltip: '返回账号切换',
+      icon: LucideIcons.arrowLeft,
+      onTap: onTap,
+    );
+  }
 }
 
 class _LoginWindowControls extends StatelessWidget {

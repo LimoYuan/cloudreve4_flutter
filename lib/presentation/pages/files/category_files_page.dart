@@ -1,7 +1,11 @@
+// AI_PATCH_FORCE_PREVIEW_NO_SECOND_REQUEST_V3_20260611
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/utils/date_utils.dart' as date_utils;
 import '../../../core/constants/sort_options.dart';
@@ -353,6 +357,7 @@ class _CategoryFilesPageState extends State<CategoryFilesPage>
                 onMore: singleSelected == null
                     ? null
                     : () => _showSelectionMore(context, singleSelected),
+                onDownload: () => _downloadSelectedFiles(context, selected),
                 onMove: () => FileOperationDialogs.showBatchMoveDialog(
                       context,
                       context.read<FileManagerProvider>(),
@@ -551,10 +556,9 @@ class _CategoryFilesPageState extends State<CategoryFilesPage>
   }
 
   int _columnCountForWidth(double width) {
-    if (width < 460) return 2;
-    if (width < 720) return 3;
-    if (width < 1100) return 4;
-    return 6;
+    if (width < 420) return 2;
+    final count = (width / 186).floor();
+    return count.clamp(2, 8).toInt();
   }
 
   int _indexOfMin(List<double> values) {
@@ -572,14 +576,9 @@ class _CategoryFilesPageState extends State<CategoryFilesPage>
   }
 
   double _estimatedTileHeight(FileModel file, double width) {
-    final ext = FileTypeUtils.getExtension(file.name);
-    if (widget.args.category == 'audio') return 112;
-    if (widget.args.category == 'document') return 124;
-    if (ext == 'psd' || ext == 'psb') return width * 1.18 + 54;
-
-    // 用文件名 hash 做轻微错落，避免完全像普通网格。
-    final variance = (file.name.hashCode.abs() % 46).toDouble();
-    return width * 0.92 + 54 + variance;
+    if (widget.args.category == 'audio') return 156;
+    if (widget.args.category == 'document') return 168;
+    return 218;
   }
 
   void _openFile(BuildContext context, FileModel file) {
@@ -597,6 +596,53 @@ class _CategoryFilesPageState extends State<CategoryFilesPage>
       Navigator.of(context).pushNamed(RouteNames.documentPreview, arguments: file);
     } else {
       ToastHelper.info('暂不支持预览 ${FileTypeUtils.getFileTypeDescription(file.name)}');
+    }
+  }
+
+  Future<void> _downloadSelectedFiles(
+    BuildContext context,
+    List<FileModel> selectedFiles,
+  ) async {
+    if (selectedFiles.isEmpty) return;
+
+    try {
+      final response = await _fileService.getDownloadUrls(
+        uris: selectedFiles.map((file) => file.path).toList(),
+        download: true,
+        archive: selectedFiles.length > 1,
+        contextHint: _contextHint,
+      );
+
+      final urls = response['urls'] as List<dynamic>? ?? const [];
+      if (urls.isEmpty) {
+        if (context.mounted) ToastHelper.failure('没有可用的下载链接');
+        return;
+      }
+
+      String? url;
+      final first = urls.first;
+      if (first is String) {
+        url = first;
+      } else if (first is Map<String, dynamic>) {
+        url = (first['url'] ?? first['download_url'] ?? first['src']) as String?;
+      }
+
+      if (url == null || url.isEmpty) {
+        if (context.mounted) ToastHelper.failure('下载链接格式无效');
+        return;
+      }
+
+      final launched = await launchUrl(
+        Uri.parse(url),
+        mode: LaunchMode.externalApplication,
+      );
+      if (!launched && context.mounted) {
+        ToastHelper.failure('无法打开下载链接');
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ToastHelper.failure('下载失败: $e');
+      }
     }
   }
 
@@ -735,7 +781,43 @@ class _CategoryFilesPageState extends State<CategoryFilesPage>
   }
 }
 
-class _CategoryFileTile extends StatelessWidget {
+
+
+// AI_PATCH_FORCE_PREVIEW_NO_SECOND_REQUEST_20260611
+// Category hover previews must not call /file/url. They reuse the same
+// thumbnail cache used by the card, so hovering does not trigger a second
+// network request or a thumbnail -> original-image flicker.
+class _CategoryFullPreviewImage extends StatelessWidget {
+  final FileModel file;
+  final String? contextHint;
+  final bool useOriginalImage;
+  final double borderRadius;
+
+  const _CategoryFullPreviewImage({
+    required this.file,
+    required this.contextHint,
+    required this.useOriginalImage,
+    required this.borderRadius,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // Keep useOriginalImage in the signature for compatibility with existing
+    // call sites, but intentionally ignore it to avoid any /file/url request.
+    Object.hash(useOriginalImage, file.id, file.updatedAt, contextHint);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(borderRadius),
+      child: ThumbnailImage(
+        file: file,
+        contextHint: contextHint,
+        borderRadius: borderRadius,
+        fit: BoxFit.contain,
+      ),
+    );
+  }
+}
+
+class _CategoryFileTile extends StatefulWidget {
   final FileModel file;
   final String? contextHint;
   final String category;
@@ -760,66 +842,275 @@ class _CategoryFileTile extends StatelessWidget {
   });
 
   @override
+  State<_CategoryFileTile> createState() => _CategoryFileTileState();
+}
+
+class _CategoryFileTileState extends State<_CategoryFileTile> {
+  bool _hovering = false;
+  Timer? _previewTimer;
+  Timer? _previewRemoveTimer;
+  OverlayEntry? _previewOverlay;
+  ValueNotifier<bool>? _previewVisible;
+  final GlobalKey _thumbnailKey = GlobalKey();
+
+  bool get _canPreview {
+    return !widget.file.isFolder &&
+        (widget.category == 'image' || widget.category == 'video');
+  }
+
+  double _previewAspectRatio(Rect thumbnailRect) {
+    final cachedRatio = ThumbnailImageSizeCache.aspectRatioFor(widget.file);
+    if (cachedRatio != null && cachedRatio > 0) return cachedRatio.clamp(0.28, 3.2).toDouble();
+    if (thumbnailRect.width > 0 && thumbnailRect.height > 0) {
+      return (thumbnailRect.width / thumbnailRect.height).clamp(0.28, 3.2).toDouble();
+    }
+    return 1.0;
+  }
+
+  @override
+  void dispose() {
+    _cancelPreview();
+    super.dispose();
+  }
+
+  void _onEnter() {
+    if (!mounted) return;
+    setState(() => _hovering = true);
+  }
+
+  void _onExit() {
+    if (!mounted) return;
+    setState(() => _hovering = false);
+    _cancelPreview();
+  }
+
+  void _onPreviewHoverEnter() {
+    if (!mounted || !_canPreview) return;
+    _previewTimer?.cancel();
+    _previewRemoveTimer?.cancel();
+
+    if (_previewOverlay != null) {
+      _previewVisible?.value = true;
+      return;
+    }
+
+    _previewTimer = Timer(const Duration(seconds: 2), _showPreviewOverlay);
+  }
+
+  void _onPreviewHoverExit() {
+    _cancelPreview();
+  }
+
+  void _cancelPreview() {
+    _previewTimer?.cancel();
+    _previewTimer = null;
+
+    final visible = _previewVisible;
+    final overlay = _previewOverlay;
+    if (visible == null || overlay == null) {
+      return;
+    }
+
+    visible.value = false;
+    _previewRemoveTimer?.cancel();
+    _previewRemoveTimer = Timer(const Duration(milliseconds: 280), () {
+      overlay.remove();
+      visible.dispose();
+      if (identical(_previewOverlay, overlay)) {
+        _previewOverlay = null;
+        _previewVisible = null;
+      }
+      _previewRemoveTimer = null;
+    });
+  }
+
+  void _showPreviewOverlay() {
+    if (!mounted || !_hovering || !_canPreview || _previewOverlay != null) {
+      return;
+    }
+
+    final overlay = Overlay.maybeOf(context);
+    if (overlay == null) return;
+
+    final thumbnailRenderObject = _thumbnailKey.currentContext?.findRenderObject();
+    if (thumbnailRenderObject is! RenderBox || !thumbnailRenderObject.hasSize) {
+      return;
+    }
+
+    final thumbnailRect =
+        thumbnailRenderObject.localToGlobal(Offset.zero) & thumbnailRenderObject.size;
+    final screenSize = MediaQuery.sizeOf(context);
+    final aspectRatio = _previewAspectRatio(thumbnailRect);
+    final maxWidth = (screenSize.width - 24).clamp(280.0, 880.0).toDouble();
+    final maxHeight = (screenSize.height - 24).clamp(280.0, 760.0).toDouble();
+    var previewWidth = (thumbnailRect.width * 3.55).clamp(320.0, maxWidth).toDouble();
+    var previewHeight = previewWidth / aspectRatio;
+    final minHeight = (thumbnailRect.height * 2.85).clamp(280.0, maxHeight).toDouble();
+    if (previewHeight < minHeight) {
+      previewHeight = minHeight;
+      previewWidth = previewHeight * aspectRatio;
+    }
+    if (previewHeight > maxHeight) {
+      previewHeight = maxHeight;
+      previewWidth = previewHeight * aspectRatio;
+    }
+    if (previewWidth > maxWidth) {
+      previewWidth = maxWidth;
+      previewHeight = previewWidth / aspectRatio;
+    }
+    final previewVisible = ValueNotifier<bool>(false);
+    final collapsedScale = (thumbnailRect.width / previewWidth).clamp(0.58, 0.84).toDouble();
+
+    _previewRemoveTimer?.cancel();
+    _previewVisible = previewVisible;
+
+    _previewOverlay = OverlayEntry(
+      builder: (overlayContext) {
+        final screenSize = MediaQuery.sizeOf(overlayContext);
+        final idealLeft = thumbnailRect.center.dx - previewWidth / 2;
+        final idealTop = thumbnailRect.center.dy - previewHeight / 2;
+        final left = idealLeft
+            .clamp(8.0, screenSize.width - previewWidth - 8.0)
+            .toDouble();
+        final top = idealTop
+            .clamp(8.0, screenSize.height - previewHeight - 8.0)
+            .toDouble();
+
+        return Positioned(
+          left: left,
+          top: top,
+          width: previewWidth,
+          height: previewHeight,
+          child: IgnorePointer(
+            child: ValueListenableBuilder<bool>(
+              valueListenable: previewVisible,
+              builder: (context, visible, child) {
+                return AnimatedOpacity(
+                  opacity: visible ? 1 : 0,
+                  duration: const Duration(milliseconds: 260),
+                  curve: visible ? Curves.easeOutCubic : Curves.easeInCubic,
+                  child: AnimatedScale(
+                    scale: visible ? 1 : collapsedScale,
+                    duration: const Duration(milliseconds: 260),
+                    curve: visible ? Curves.easeOutCubic : Curves.easeInCubic,
+                    alignment: Alignment.center,
+                    child: child,
+                  ),
+                );
+              },
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    _CategoryFullPreviewImage(
+                      file: widget.file,
+                      contextHint: widget.contextHint,
+                      useOriginalImage: widget.category == 'image',
+                      borderRadius: 14,
+                    ),
+                    if (widget.category == 'video')
+                      Center(
+                        child: Container(
+                          width: 42,
+                          height: 42,
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.42),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            LucideIcons.play,
+                            color: Colors.white,
+                            size: 22,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    overlay.insert(_previewOverlay!);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !identical(_previewVisible, previewVisible)) return;
+      previewVisible.value = true;
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isMedia = category == 'image' || category == 'video';
-    final isAudio = category == 'audio';
-    final isDocument = category == 'document';
+    final isMedia = widget.category == 'image' || widget.category == 'video';
+    final isAudio = widget.category == 'audio';
+    final isDocument = widget.category == 'document';
 
-    final ext = FileTypeUtils.getExtension(file.name);
+    final ext = FileTypeUtils.getExtension(widget.file.name);
     final isPsd = ext == 'psd' || ext == 'psb';
 
-    final borderColor = isSelected
+    final borderColor = widget.isSelected
         ? theme.colorScheme.primary
         : theme.dividerColor.withValues(alpha: 0.12);
 
-    final showSelectionCircle = selectionMode || isSelected;
+    final showSelectionCircle = widget.selectionMode || widget.isSelected || _hovering;
 
     return RepaintBoundary(
-      child: AnimatedScale(
+      child: MouseRegion(
+        onEnter: (_) => _onEnter(),
+        onExit: (_) => _onExit(),
+        child: AnimatedScale(
         duration: const Duration(milliseconds: 150),
         curve: Curves.easeOutCubic,
-        scale: isSelected ? 0.985 : 1.0,
+        scale: widget.isSelected ? 0.985 : 1.0,
         child: Material(
           color: theme.colorScheme.surfaceContainerLow,
           borderRadius: BorderRadius.circular(14),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
-            onTap: onTap,
-            onLongPress: onLongPress,
+            onTap: widget.onTap,
+            onLongPress: widget.onLongPress,
             child: Stack(
               clipBehavior: Clip.none,
               children: [
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    AspectRatio(
-                      aspectRatio: isMedia || isPsd ? 1 : 1.45,
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          RepaintBoundary(
-                            child: ThumbnailImage(
-                              file: file,
-                              contextHint: contextHint,
-                              borderRadius: 0,
+                    MouseRegion(
+                      onEnter: (_) => _onPreviewHoverEnter(),
+                      onExit: (_) => _onPreviewHoverExit(),
+                      child: AspectRatio(
+                        key: _thumbnailKey,
+                        aspectRatio: isMedia || isPsd ? 1 : 1.45,
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            RepaintBoundary(
+                              child: ThumbnailImage(
+                                file: widget.file,
+                                contextHint: widget.contextHint,
+                                borderRadius: 0,
+                                fit: isMedia ? BoxFit.cover : BoxFit.contain,
+                              ),
                             ),
-                          ),
                           Positioned(
                             top: 7,
                             left: 7,
                             child: _TypeBadge(
                               icon: _badgeIcon(),
                               label: _badgeLabel(ext),
-                              color: accentColor,
+                              color: widget.accentColor,
                               compact: isMedia,
                             ),
                           ),
-                          if (category == 'video')
+                          if (widget.category == 'video')
                             const Center(
                               child: _PlayOverlay(),
                             ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                     Padding(
@@ -828,7 +1119,7 @@ class _CategoryFileTile extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            file.name,
+                            widget.file.name,
                             maxLines: isAudio || isDocument ? 2 : 1,
                             overflow: TextOverflow.ellipsis,
                             style: theme.textTheme.bodyMedium?.copyWith(
@@ -837,7 +1128,7 @@ class _CategoryFileTile extends StatelessWidget {
                           ),
                           const SizedBox(height: 3),
                           Text(
-                            '${FileTypeUtils.getFileTypeDescription(file.name)} · ${date_utils.DateUtils.formatFileSize(file.size)}',
+                            '${FileTypeUtils.getFileTypeDescription(widget.file.name)} · ${date_utils.DateUtils.formatFileSize(widget.file.size)}',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: theme.textTheme.bodySmall?.copyWith(
@@ -858,9 +1149,9 @@ class _CategoryFileTile extends StatelessWidget {
                         borderRadius: BorderRadius.circular(14),
                         border: Border.all(
                           color: borderColor,
-                          width: isSelected ? 2.2 : 1,
+                          width: widget.isSelected ? 2.2 : 1,
                         ),
-                        boxShadow: isSelected
+                        boxShadow: widget.isSelected
                             ? [
                                 BoxShadow(
                                   color: theme.colorScheme.primary
@@ -875,30 +1166,39 @@ class _CategoryFileTile extends StatelessWidget {
                   ),
                 ),
                 Positioned(
-                  top: 7,
-                  right: 7,
-                  child: AnimatedOpacity(
+                  top: 8,
+                  right: 8,
+                  child: MouseRegion(
+                    onEnter: (_) => _cancelPreview(),
+                    child: AnimatedOpacity(
                     duration: const Duration(milliseconds: 130),
                     opacity: showSelectionCircle ? 1 : 0,
                     child: IgnorePointer(
                       ignoring: !showSelectionCircle,
-                      child: _SelectionCircle(
-                        selected: isSelected,
-                        onTap: onSelect,
+                      child: AnimatedScale(
+                        duration: const Duration(milliseconds: 150),
+                        curve: Curves.easeOutCubic,
+                        scale: showSelectionCircle ? 1 : 0.86,
+                        child: _SelectionCircle(
+                          selected: widget.isSelected,
+                          onTap: widget.onSelect,
+                        ),
                       ),
                     ),
                   ),
+                ),
                 ),
               ],
             ),
           ),
         ),
       ),
-    );
+    ),
+  );
   }
 
   IconData _badgeIcon() {
-    switch (category) {
+    switch (widget.category) {
       case 'image':
         return LucideIcons.image;
       case 'video':
@@ -914,7 +1214,7 @@ class _CategoryFileTile extends StatelessWidget {
 
   String _badgeLabel(String ext) {
     if (ext == 'psd' || ext == 'psb') return ext.toUpperCase();
-    switch (category) {
+    switch (widget.category) {
       case 'image':
         return '图片';
       case 'video':
@@ -949,8 +1249,8 @@ class _SelectionCircle extends StatelessWidget {
         customBorder: const CircleBorder(),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 160),
-          width: 28,
-          height: 28,
+          width: 22,
+          height: 22,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: selected
@@ -960,13 +1260,13 @@ class _SelectionCircle extends StatelessWidget {
               color: selected
                   ? colorScheme.primary
                   : colorScheme.outline.withValues(alpha: 0.42),
-              width: 1.4,
+              width: 1.0,
             ),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.10),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
+                blurRadius: 3,
+                offset: const Offset(0, 1),
               ),
             ],
           ),
@@ -974,7 +1274,7 @@ class _SelectionCircle extends StatelessWidget {
               ? const Icon(
                   LucideIcons.check,
                   color: Colors.white,
-                  size: 16,
+                  size: 13,
                 )
               : null,
         ),

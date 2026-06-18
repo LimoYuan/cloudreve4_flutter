@@ -81,6 +81,7 @@ class _AccountSwitcherPageState extends State<AccountSwitcherPage> {
 
   Future<void> _switchAccount(UserModel account) async {
     final auth = context.read<AuthProvider>();
+    final previousAccountKey = auth.user?.id ?? auth.user?.email;
 
     if (auth.user?.id == account.id) {
       Navigator.of(context).pop();
@@ -101,10 +102,22 @@ class _AccountSwitcherPageState extends State<AccountSwitcherPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('${account.nickname} 需要重新登录')),
       );
-      Navigator.of(context).pushNamedAndRemoveUntil(
+
+      await Navigator.of(context).pushNamed(
         RouteNames.login,
-        (route) => false,
+        arguments: const {'showBackButton': true},
       );
+
+      if (!mounted) return;
+      final currentAuth = context.read<AuthProvider>();
+      if (currentAuth.state != AuthState.authenticated &&
+          previousAccountKey != null &&
+          previousAccountKey.isNotEmpty) {
+        setState(() => _isBusy = true);
+        await currentAuth.switchToAccount(previousAccountKey);
+        if (!mounted) return;
+        setState(() => _isBusy = false);
+      }
     }
   }
 
@@ -229,7 +242,10 @@ class _AccountSwitcherPageState extends State<AccountSwitcherPage> {
       // 只 push 登录页，不清空当前导航栈。
       // 如果用户突然不想添加账号，按返回键会回到当前账号切换页，
       // 原账号仍然保持登录，账号列表也不会出现空账号。
-      await Navigator.of(context).pushNamed(RouteNames.login);
+      await Navigator.of(context).pushNamed(
+        RouteNames.login,
+        arguments: const {'showBackButton': true},
+      );
 
       if (!mounted) return;
       setState(() => _isBusy = false);

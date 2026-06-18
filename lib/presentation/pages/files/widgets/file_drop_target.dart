@@ -40,62 +40,69 @@ class _FileDropTargetState extends State<FileDropTarget> {
       child: Stack(
         children: [
           widget.child,
-          if (_isDraggingOver)
+          if (_isDraggingOver) ...[
             IgnorePointer(
               child: Container(
                 margin: const EdgeInsets.all(6),
                 decoration: BoxDecoration(
                   border: Border.all(
-                    color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
+                    color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.45),
                     width: 2,
                     strokeAlign: BorderSide.strokeAlignOutside,
                   ),
                   borderRadius: BorderRadius.circular(16),
+                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.025),
                 ),
-                child: Center(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 28),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.7),
-                      borderRadius: BorderRadius.circular(20),
+              ),
+            ),
+            Positioned(
+              top: 14,
+              right: 18,
+              child: IgnorePointer(
+                child: Container(
+                  constraints: const BoxConstraints(maxWidth: 360),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.96),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.18),
                     ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 64,
-                          height: 64,
-                          decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(LucideIcons.upload, size: 28, color: Theme.of(context).colorScheme.primary),
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          '释放文件以上传到当前目录',
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.10),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        LucideIcons.upload,
+                        size: 16,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          '释放上传到当前目录：${widget.currentPath}',
                           style: TextStyle(
                             color: Theme.of(context).colorScheme.primary,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          widget.currentPath,
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.7),
                             fontSize: 13,
+                            fontWeight: FontWeight.w700,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ),
             ),
+          ],
         ],
       ),
     );

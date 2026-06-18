@@ -7,6 +7,17 @@ import '../core/utils/file_utils.dart';
 /// 文件服务
 class FileService {
 
+  Map<String, dynamic> _cleanQueryParams(Map<String, dynamic> params) {
+    final result = <String, dynamic>{};
+    params.forEach((key, value) {
+      if (value == null) return;
+      if (value is String && value.isEmpty) return;
+      result[key] = value;
+    });
+    return result;
+  }
+
+
   /// 列出文件
   Future<Map<String, dynamic>> listFiles({
     required String uri,
@@ -16,14 +27,14 @@ class FileService {
     String? orderDirection,
     String? nextPageToken,
   }) async {
-    final params = <String, dynamic>{
+    final params = _cleanQueryParams({
       'uri': FileUtils.toCloudreveUri(uri),
       'page': page,
       'page_size': pageSize,
       'order_by': orderBy,
       'order_direction': orderDirection,
       'next_page_token': nextPageToken,
-    };
+    });
 
     final response = await ApiService.instance
         .get<Map<String, dynamic>>('/file', queryParameters: params);
@@ -268,11 +279,11 @@ class FileService {
     int page = 0,
     int? pageSize,
   }) async {
-    final params = <String, dynamic>{
+    final params = _cleanQueryParams({
       'uri': 'cloudreve://trash',
       'page': page,
       'page_size': pageSize,
-    };
+    });
 
     final response = await ApiService.instance
         .get<Map<String, dynamic>>('/file', queryParameters: params);
@@ -286,14 +297,16 @@ class FileService {
     int? pageSize,
     String? orderBy,
     String? orderDirection,
+    String? nextPageToken,
   }) async {
-    final params = <String, dynamic>{
+    final params = _cleanQueryParams({
       'uri': 'cloudreve://shared_with_me',
       'page': page,
       'page_size': pageSize,
       'order_by': orderBy,
       'order_direction': orderDirection,
-    };
+      'next_page_token': nextPageToken,
+    });
 
     final response = await ApiService.instance
         .get<Map<String, dynamic>>('/file', queryParameters: params);

@@ -48,24 +48,30 @@ class _RecycleBinPageState extends State<RecycleBinPage>
   }
 
   PreferredSizeWidget _buildAppBar(BuildContext context) {
+    if (_hasSelection) {
+      return AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.close),
+          tooltip: '取消选择',
+          onPressed: _clearSelection,
+        ),
+        title: Text('已选中 ${_selectedFiles.length} 个文件'),
+        actions: [
+          TextButton(
+            onPressed: _toggleSelectAll,
+            child: Text(_selectedFiles.length == _files.length ? '取消全选' : '全选'),
+          ),
+        ],
+      );
+    }
+
     return AppBar(
       title: const Text('回收站'),
       actions: [
         IconButton(
           icon: const Icon(Icons.select_all),
-          onPressed: () {
-            if (_hasSelection) {
-              setState(() {
-                _selectedFiles.clear();
-              });
-            } else {
-              setState(() {
-                _selectedFiles =
-                    _files.map((f) => f.path).toSet();
-              });
-            }
-          },
-          tooltip: _hasSelection ? '取消选择' : '全选',
+          onPressed: _toggleSelectAll,
+          tooltip: '全选',
         ),
         IconButton(
           icon: Icon(
@@ -163,6 +169,7 @@ class _RecycleBinPageState extends State<RecycleBinPage>
   Widget _buildListView(BuildContext context) {
     final screenWidth = MediaQuery.sizeOf(context).width;
     final isDesktop = screenWidth >= 1000;
+    final showCheckbox = _hasSelection;
 
     return ListView.builder(
       itemCount: _files.length,
@@ -174,7 +181,8 @@ class _RecycleBinPageState extends State<RecycleBinPage>
           key: ValueKey('trash_file_${file.id}'),
           file: file,
           isSelected: isSelected,
-          showCheckbox: _hasSelection,
+          showCheckbox: showCheckbox,
+          alwaysShowMobileCheckbox: !isDesktop,
           index: index,
           isDesktop: isDesktop,
           tapToShowMenu: !_hasSelection,
@@ -193,6 +201,8 @@ class _RecycleBinPageState extends State<RecycleBinPage>
 
   Widget _buildGridView(BuildContext context) {
     final screenWidth = MediaQuery.sizeOf(context).width;
+    final isDesktop = screenWidth >= 1000;
+    final showCheckbox = _hasSelection;
     final padding = 16.0;
     final spacing = 16.0;
     final availableWidth = screenWidth - padding * 2;
@@ -228,7 +238,8 @@ class _RecycleBinPageState extends State<RecycleBinPage>
           key: ValueKey('trash_file_grid_${file.id}'),
           file: file,
           isSelected: isSelected,
-          showCheckbox: _hasSelection,
+          showCheckbox: showCheckbox,
+          alwaysShowMobileCheckbox: !isDesktop,
           tapToShowMenu: !_hasSelection,
           onTap: () {
             if (_hasSelection) {
@@ -244,40 +255,71 @@ class _RecycleBinPageState extends State<RecycleBinPage>
   }
 
   Widget _buildBottomBar(BuildContext context) {
-    if (_hasSelection) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.1),
-              blurRadius: 4,
-              offset: const Offset(0, -2),
+    final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 260),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      transitionBuilder: (child, animation) {
+        final slide = Tween<Offset>(
+          begin: const Offset(0, 0.16),
+          end: Offset.zero,
+        ).animate(animation);
+        return FadeTransition(
+          opacity: animation,
+          child: SlideTransition(position: slide, child: child),
+        );
+      },
+      child: !_hasSelection
+          ? const SizedBox.shrink(key: ValueKey('trash_no_selection'))
+          : Container(
+              key: const ValueKey('trash_selection_bar'),
+              height: 80 + bottomInset,
+              padding: EdgeInsets.only(bottom: bottomInset),
+              decoration: BoxDecoration(
+                color: colorScheme.surface,
+                border: Border(
+                  top: BorderSide(
+                    color: Theme.of(context).dividerColor.withValues(alpha: 0.22),
+                  ),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.08),
+                    blurRadius: 18,
+                    offset: const Offset(0, -4),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  _TrashActionItem(
+                    icon: Icons.restore_outlined,
+                    label: '恢复',
+                    onTap: _restoreSelected,
+                  ),
+                  _TrashActionItem(
+                    icon: Icons.delete_forever_outlined,
+                    label: '彻底删除',
+                    danger: true,
+                    onTap: _deleteSelected,
+                  ),
+                  _TrashActionItem(
+                    icon: Icons.select_all,
+                    label: _selectedFiles.length == _files.length ? '取消全选' : '全选',
+                    onTap: _toggleSelectAll,
+                  ),
+                  _TrashActionItem(
+                    icon: Icons.close,
+                    label: '取消',
+                    onTap: _clearSelection,
+                  ),
+                ],
+              ),
             ),
-          ],
-        ),
-        child: SafeArea(
-          child: Row(
-            children: [
-              Text('已选择 ${_selectedFiles.length} 项'),
-              const Spacer(),
-              TextButton.icon(
-                onPressed: _restoreSelected,
-                icon: const Icon(Icons.restore),
-                label: const Text('恢复'),
-              ),
-              TextButton.icon(
-                onPressed: _deleteSelected,
-                icon: const Icon(Icons.delete_forever, color: Colors.red),
-                label: const Text('彻底删除', style: TextStyle(color: Colors.red)),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-    return const SizedBox.shrink();
+    );
   }
 
   bool get _hasSelection => _selectedFiles.isNotEmpty;
@@ -288,6 +330,21 @@ class _RecycleBinPageState extends State<RecycleBinPage>
         _selectedFiles.remove(path);
       } else {
         _selectedFiles.add(path);
+      }
+    });
+  }
+
+  void _clearSelection() {
+    if (!_hasSelection) return;
+    setState(() => _selectedFiles.clear());
+  }
+
+  void _toggleSelectAll() {
+    setState(() {
+      if (_selectedFiles.length == _files.length) {
+        _selectedFiles.clear();
+      } else {
+        _selectedFiles = _files.map((f) => f.path).toSet();
       }
     });
   }
@@ -342,6 +399,7 @@ class _RecycleBinPageState extends State<RecycleBinPage>
 
     if (confirmed == true) {
       await _performRestore([file.path]);
+      _clearSelection();
     }
   }
 
@@ -411,6 +469,7 @@ class _RecycleBinPageState extends State<RecycleBinPage>
 
     if (confirmed == true) {
       await _performDelete([file.path]);
+      _clearSelection();
     }
   }
 
@@ -461,6 +520,54 @@ class _RecycleBinPageState extends State<RecycleBinPage>
         ToastHelper.failure('删除失败: $e');
       }
     }
+  }
+}
+
+
+class _TrashActionItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool danger;
+
+  const _TrashActionItem({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.danger = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final color = danger ? colorScheme.error : colorScheme.onSurfaceVariant;
+
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 24, color: color),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 

@@ -1,4 +1,4 @@
-import 'dart:io' show Platform;
+﻿import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 import '../presentation/pages/auth/login_page.dart';
@@ -11,8 +11,9 @@ import '../presentation/pages/webdav/webdav_page.dart';
 import '../presentation/pages/remote_download/remote_download_page.dart';
 import '../presentation/pages/settings/settings_page.dart';
 import '../presentation/pages/profile/account_switcher_page.dart';
-import '../presentation/pages/sync/sync_page_android.dart';
 import '../presentation/pages/sync/sync_settings_page.dart';
+import '../presentation/pages/sync/mobile_sync_entry_page.dart';
+import '../presentation/pages/sync/desktop_sync_wizard_page.dart';
 import '../presentation/pages/preview/image_preview_page.dart';
 import '../presentation/pages/preview/pdf_preview_page.dart';
 import '../presentation/pages/preview/video_preview_page.dart';
@@ -27,7 +28,7 @@ import '../services/share_link_service.dart';
 import '../data/models/file_model.dart';
 import '../presentation/pages/auth/qr_login_scan_page.dart';
 
-/// 路由名称
+/// 璺敱鍚嶇О
 class RouteNames {
   static const String qrLoginScan = '/qr-login-scan';
   static const String splash = '/';
@@ -50,12 +51,13 @@ class RouteNames {
   static const String categoryFiles = '/category-files';
   static const String syncStatus = '/sync-status';
   static const String syncSettings = '/sync-settings';
+  static const String desktopSyncWizard = '/desktop-sync-wizard';
   static const String shareLink = '/share-link';
   static const String cloudreveFileApp = '/cloudreve-file-app';
   static const String transferredFiles = '/transferred-files';
 }
 
-/// 应用路由
+/// 搴旂敤璺敱
 class AppRouter {
   static Route<dynamic> generateRoute(RouteSettings settings) {
     switch (settings.name) {
@@ -71,11 +73,14 @@ class AppRouter {
         );
 
       case RouteNames.login:
+        final args = settings.arguments;
+        final showBackButton = args is Map && args['showBackButton'] == true;
+
         return MaterialPageRoute(
           settings: settings,
           builder: (context) =>
               (Platform.isWindows || Platform.isLinux || Platform.isMacOS)
-              ? const LoginDesktopPage()
+              ? LoginDesktopPage(showBackButton: showBackButton)
               : const LoginPage(),
         );
 
@@ -250,17 +255,23 @@ class AppRouter {
           builder: (context) => const CategoryFilesPage(
             args: CategoryFilesPageArgs(
               category: 'image',
-              title: '图片',
+              title: '鍥剧墖',
               icon: Icons.image,
               color: Color(0xFFF0ABFC),
             ),
           ),
         );
 
+      case RouteNames.desktopSyncWizard:
+        return MaterialPageRoute(
+          settings: settings,
+          builder: (context) => const DesktopSyncWizardPage(),
+        );
+
       case RouteNames.syncStatus:
         return MaterialPageRoute(
           settings: settings,
-          builder: (context) => const SyncPageAndroid(),
+          builder: (context) => const MobileSyncEntryPage(),
         );
 
       case RouteNames.syncSettings:
@@ -314,3 +325,7 @@ class AppRouter {
     }
   }
 }
+
+
+
+

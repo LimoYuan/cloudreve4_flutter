@@ -6,17 +6,18 @@ import 'package:provider/provider.dart';
 
 import '../../../../core/utils/file_utils.dart';
 import '../../../../core/utils/date_utils.dart' as app_date_utils;
-import '../../../../router/app_router.dart';
 import '../../../providers/file_manager_provider.dart';
 import '../../../widgets/thumbnail_image.dart';
 
 class DesktopSummaryPanel extends StatelessWidget {
   final VoidCallback? onRecentMore;
+  final VoidCallback? onTransferredMore;
   final void Function(FileModel file) onOpenFile;
 
   const DesktopSummaryPanel({
     super.key,
     this.onRecentMore,
+    this.onTransferredMore,
     required this.onOpenFile,
   });
 
@@ -27,9 +28,12 @@ class DesktopSummaryPanel extends StatelessWidget {
 
     final recentFiles = List<FileModel>.from(fileManager.files)
       ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-    final displayFiles = recentFiles.take(20).toList();
-    final transferFiles = fileManager.transferredFiles.take(20).toList();
 
+    final transferredFiles = List<FileModel>.from(fileManager.transferredFiles)
+      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+
+    final displayRecentFiles = recentFiles.take(20).toList();
+    final displayTransferredFiles = transferredFiles.take(20).toList();
     final dividerColor = theme.dividerColor.withValues(alpha: 0.28);
 
     return Padding(
@@ -43,12 +47,12 @@ class DesktopSummaryPanel extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                flex: compact ? 5 : 7,
                 child: _SummarySection(
                   title: '最近文件',
-                  files: displayFiles,
+                  files: displayRecentFiles,
                   onMore: onRecentMore,
                   onOpenFile: onOpenFile,
+                  emptyText: '暂无最近文件',
                 ),
               ),
               SizedBox(width: gap),
@@ -60,12 +64,12 @@ class DesktopSummaryPanel extends StatelessWidget {
               ),
               SizedBox(width: gap),
               Expanded(
-                flex: compact ? 4 : 3,
                 child: _SummarySection(
                   title: '转存文件',
-                  files: transferFiles,
-                  onMore: () => Navigator.of(context).pushNamed(RouteNames.transferredFiles),
+                  files: displayTransferredFiles,
+                  onMore: onTransferredMore,
                   onOpenFile: onOpenFile,
+                  emptyText: '暂无转存文件',
                 ),
               ),
             ],
@@ -81,12 +85,14 @@ class _SummarySection extends StatelessWidget {
   final List<FileModel> files;
   final VoidCallback? onMore;
   final void Function(FileModel file) onOpenFile;
+  final String emptyText;
 
   const _SummarySection({
     required this.title,
     required this.files,
     this.onMore,
     required this.onOpenFile,
+    required this.emptyText,
   });
 
   @override
@@ -107,15 +113,7 @@ class _SummarySection extends StatelessWidget {
               ),
             ),
             const Spacer(),
-            if (onMore != null)
-              TextButton.icon(
-                onPressed: onMore,
-                icon: const Icon(LucideIcons.arrowRight, size: 18),
-                label: const Text('查看更多'),
-                style: TextButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                ),
-              ),
+            _MoreButtonSlot(onMore: onMore),
           ],
         ),
         const SizedBox(height: 10),
@@ -123,7 +121,7 @@ class _SummarySection extends StatelessWidget {
           SizedBox(
             height: 110,
             child: Center(
-              child: Text('暂无文件', style: TextStyle(color: theme.hintColor)),
+              child: Text(emptyText, style: TextStyle(color: theme.hintColor)),
             ),
           )
         else
@@ -132,7 +130,7 @@ class _SummarySection extends StatelessWidget {
             child: HorizontalScrollListView(
               itemCount: files.length,
               itemBuilder: (context, index) {
-                return _RecentFileCard(
+                return _SummaryFileCard(
                   file: files[index],
                   colorScheme: colorScheme,
                   onOpenFile: onOpenFile,
@@ -145,12 +143,44 @@ class _SummarySection extends StatelessWidget {
   }
 }
 
-class _RecentFileCard extends StatelessWidget {
+
+class _MoreButtonSlot extends StatelessWidget {
+  final VoidCallback? onMore;
+
+  const _MoreButtonSlot({this.onMore});
+
+  @override
+  Widget build(BuildContext context) {
+    // Always reserve the same header space. When onMore is null, keep an
+    // invisible placeholder so the file card list below will not move up/down
+    // when switching categories.
+    return SizedBox(
+      width: 104,
+      height: 40,
+      child: onMore == null
+          ? const SizedBox.shrink()
+          : Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: onMore,
+                icon: const Icon(LucideIcons.arrowRight, size: 18),
+                label: const Text('查看更多'),
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
+              ),
+            ),
+    );
+  }
+}
+
+class _SummaryFileCard extends StatelessWidget {
   final FileModel file;
   final ColorScheme colorScheme;
   final void Function(FileModel file) onOpenFile;
 
-  const _RecentFileCard({
+  const _SummaryFileCard({
     required this.file,
     required this.colorScheme,
     required this.onOpenFile,
@@ -172,7 +202,10 @@ class _RecentFileCard extends StatelessWidget {
         child: InkWell(
           onTap: () {
             if (file.isFolder) {
-              Provider.of<FileManagerProvider>(context, listen: false).enterFolder(file.relativePath);
+              final target = file.path.startsWith('cloudreve://shared_with_me')
+                  ? file.path
+                  : file.relativePath;
+              Provider.of<FileManagerProvider>(context, listen: false).enterFolder(target);
             } else {
               onOpenFile(file);
             }

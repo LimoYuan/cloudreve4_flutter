@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:dio/dio.dart';
+import '../core/utils/direct_http_client.dart';
 import '../config/api_config.dart';
 import '../services/storage_service.dart';
 import '../core/exceptions/app_exception.dart';
@@ -66,6 +67,9 @@ class ApiService {
         sendTimeout: const Duration(seconds: ApiConfig.sendTimeout),
         headers: {'Content-Type': 'application/json'},
       ),
+    );
+    _dio.httpClientAdapter = DirectHttpClientFactory.dioAdapter(
+      connectionTimeout: const Duration(seconds: ApiConfig.connectTimeout),
     );
 
     _dio.interceptors.add(_requestInterceptor());

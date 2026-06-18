@@ -38,6 +38,14 @@ import 'router/app_router.dart';
 import 'presentation/widgets/toast_helper.dart';
 import 'src/rust/frb_generated.dart' show RustSyncApi;
 
+class _CloudreveDirectHttpOverrides extends HttpOverrides {
+  @override
+  HttpClient createHttpClient(SecurityContext? context) {
+    final client = super.createHttpClient(context);
+    client.findProxy = (_) => 'DIRECT';
+    return client;
+  }
+}
 final RouteObserver<PageRoute> routeObserver = RouteObserver<PageRoute>();
 
 /// 全局标记：当前是否处于登录页，登录页不显示自定义标题栏
@@ -56,6 +64,7 @@ Level _parseLogLevel(String level) {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  HttpOverrides.global = _CloudreveDirectHttpOverrides();
 
   // 初始化日志（必须最先，否则后续任何 AppLogger 调用都会触发 fallback Logger 导致文件输出失效）
   await AppLogger.init();

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:dio/dio.dart';
+import '../core/utils/direct_http_client.dart';
 import 'package:flutter/foundation.dart';
 import 'package:file_picker/file_picker.dart';
 
@@ -1580,7 +1581,7 @@ class UploadService extends ChangeNotifier {
   }
 
   Dio _buildRawUploadDio() {
-    return Dio(
+    final dio = Dio(
       BaseOptions(
         // OneDrive / SharePoint / 对象存储直传地址在移动网络下建立连接可能比较慢。
         // 原 30 秒太短，会导致 “HTTP null, request connection took longer than 0:00:30”。
@@ -1590,6 +1591,10 @@ class UploadService extends ChangeNotifier {
         validateStatus: (status) => status != null && status >= 200 && status < 300,
       ),
     );
+    dio.httpClientAdapter = DirectHttpClientFactory.dioAdapter(
+      connectionTimeout: const Duration(minutes: 2),
+    );
+    return dio;
   }
 
   String _appendChunkQuery(String url, int index) {

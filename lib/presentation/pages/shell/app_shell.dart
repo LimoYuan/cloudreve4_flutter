@@ -6,6 +6,13 @@ import 'package:cloudreve4_flutter/presentation/providers/navigation_provider.da
 import 'package:cloudreve4_flutter/presentation/providers/sync_provider.dart';
 import 'package:cloudreve4_flutter/presentation/providers/upload_manager_provider.dart';
 import 'package:cloudreve4_flutter/presentation/providers/user_setting_provider.dart';
+
+import 'package:cloudreve4_flutter/data/models/download_task_model.dart';
+import 'package:cloudreve4_flutter/data/models/file_model.dart';
+import 'package:cloudreve4_flutter/presentation/widgets/file_operation_dialogs.dart';
+import 'package:cloudreve4_flutter/presentation/widgets/selection_toolbar.dart';
+import 'package:cloudreve4_flutter/presentation/widgets/toast_helper.dart';
+import 'package:cloudreve4_flutter/services/file_service.dart';
 import 'package:cloudreve4_flutter/presentation/widgets/announcement_dialog.dart';
 import 'package:cloudreve4_flutter/presentation/widgets/gesture_handler_mixin.dart';
 import 'package:cloudreve4_flutter/presentation/widgets/glassmorphism_container.dart';
@@ -211,6 +218,15 @@ class _AppShellState extends State<AppShell> with GestureHandlerMixin, TickerPro
     return screenWidth >= 800;
   }
 
+  double _bottomSystemPadding(BuildContext context) {
+    final media = MediaQuery.of(context);
+    if (media.viewPadding.bottom > 0) return media.viewPadding.bottom;
+
+    // Android 手势导航模式下部分机型 viewPadding 为 0，但底部仍有
+    // systemGestureInsets。给底栏内容留一点呼吸空间，避免贴住手势条。
+    return media.systemGestureInsets.bottom > 0 ? 8.0 : 0.0;
+  }
+
   /// 根据平台返回页面列表（控制 IndexedStack 和 index 映射）
   List<Widget> _pages(bool showSyncTab) => showSyncTab
       ? [const OverviewPage(), const FilesPage(), const TasksPage(), const StorePage(), const SyncPage(), const ProfilePage()]
@@ -411,81 +427,397 @@ class _AppShellState extends State<AppShell> with GestureHandlerMixin, TickerPro
   Widget _buildMobileLayout(BuildContext context, NavigationProvider navProvider) {
     return Scaffold(
       body: _buildPageContent(context, navProvider.currentIndex),
-      bottomNavigationBar: GlassmorphismContainer(
+      bottomNavigationBar: _buildMobileBottomNavigation(context, navProvider),
+    );
+  }
+
+  Widget _buildMobileBottomNavigation(
+    BuildContext context,
+    NavigationProvider navProvider,
+  ) {
+    // 普通底部导航栏和文件选择操作栏必须使用同一个固定高度。
+    // 否则勾选文件时 Scaffold 的 bottomNavigationBar 高度会从 64
+    // 跳到 66/安全区高度，造成页面和底栏一起下移。
+    final bottomBarHeight = 80.0 + _bottomSystemPadding(context);
+
+    return SizedBox(
+      height: bottomBarHeight,
+      child: Consumer<FileManagerProvider>(
+        builder: (context, fileManager, _) {
+          final showFileSelectionActions =
+              navProvider.currentIndex == 1 && fileManager.hasSelection;
+
+          return AnimatedSwitcher(
+            duration: const Duration(milliseconds: 420),
+            reverseDuration: const Duration(milliseconds: 360),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            layoutBuilder: (currentChild, previousChildren) {
+              return Stack(
+                alignment: Alignment.bottomCenter,
+                children: [
+                  ...previousChildren,
+                  ?currentChild,
+                ],
+              );
+            },
+            transitionBuilder: (child, animation) {
+              final curved = CurvedAnimation(
+                parent: animation,
+                curve: Curves.easeOutCubic,
+                reverseCurve: Curves.easeInCubic,
+              );
+
+              return FadeTransition(
+                opacity: curved,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0, 0.18),
+                    end: Offset.zero,
+                  ).animate(curved),
+                  child: ScaleTransition(
+                    scale: Tween<double>(begin: 0.99, end: 1).animate(curved),
+                    alignment: Alignment.bottomCenter,
+                    child: child,
+                  ),
+                ),
+              );
+            },
+            child: showFileSelectionActions
+                ? KeyedSubtree(
+                    key: const ValueKey('mobile-file-selection-actions'),
+                    child: _buildMobileFileSelectionNavigationBar(
+                      context,
+                      fileManager,
+                    ),
+                  )
+                : KeyedSubtree(
+                    key: const ValueKey('mobile-main-navigation'),
+                    child: _buildMobileMainNavigationBar(context, navProvider),
+                  ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildMobileMainNavigationBar(
+    BuildContext context,
+    NavigationProvider navProvider,
+  ) {
+    final bottomSafePadding = _bottomSystemPadding(context);
+    final barHeight = 80.0 + bottomSafePadding;
+
+    return SizedBox(
+      height: barHeight,
+      child: GlassmorphismContainer(
         borderRadius: 0,
-        child: Consumer2<UploadManagerProvider, DownloadManagerProvider>(
+        child: Padding(
+          padding: EdgeInsets.only(bottom: bottomSafePadding),
+          child: Consumer2<UploadManagerProvider, DownloadManagerProvider>(
           builder: (context, uploadManager, downloadManager, _) {
-            final activeCount = uploadManager.activeTasks.length + downloadManager.downloadingCount;
+            final activeCount =
+                uploadManager.activeTasks.length + downloadManager.downloadingCount;
 
             return NavigationBar(
-              height: 64,
-              labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-              selectedIndex: navProvider.currentIndex,
-              onDestinationSelected: _handleTabSelected,
-              destinations: [
-                const NavigationDestination(
-                  icon: Icon(LucideIcons.layoutDashboard),
-                  selectedIcon: Icon(LucideIcons.layoutDashboard, weight: 700),
-                  label: '概览',
+              height: 80,
+            labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+            selectedIndex: navProvider.currentIndex,
+            onDestinationSelected: _handleTabSelected,
+            destinations: [
+              const NavigationDestination(
+                icon: Icon(LucideIcons.layoutDashboard),
+                selectedIcon: Icon(LucideIcons.layoutDashboard, weight: 700),
+                label: '概览',
+              ),
+              const NavigationDestination(
+                icon: Icon(LucideIcons.folder),
+                selectedIcon: Icon(LucideIcons.folder, weight: 700),
+                label: '文件',
+              ),
+              NavigationDestination(
+                icon: Badge(
+                  isLabelVisible: activeCount > 0,
+                  label: Text('$activeCount'),
+                  child: const Icon(LucideIcons.listChecks),
                 ),
-                const NavigationDestination(
-                  icon: Icon(LucideIcons.folder),
-                  selectedIcon: Icon(LucideIcons.folder, weight: 700),
-                  label: '文件',
+                selectedIcon: Badge(
+                  isLabelVisible: activeCount > 0,
+                  label: Text('$activeCount'),
+                  child: const Icon(LucideIcons.listChecks, weight: 700),
                 ),
+                label: '任务',
+              ),
+              const NavigationDestination(
+                icon: Icon(Icons.storefront_outlined),
+                selectedIcon: Icon(Icons.storefront),
+                label: '商店',
+              ),
+              if (_cachedShowSyncTab)
                 NavigationDestination(
-                  icon: Badge(
-                    isLabelVisible: activeCount > 0,
-                    label: Text('$activeCount'),
-                    child: const Icon(LucideIcons.listChecks),
+                  icon: Consumer<SyncProvider>(
+                    builder: (context, sync, _) {
+                      final count = sync.activeWorkerCount;
+                      return Badge(
+                        isLabelVisible: count > 0,
+                        label: Text('$count'),
+                        child: _buildSyncIcon(isSelected: false, size: 24),
+                      );
+                    },
                   ),
-                  selectedIcon: Badge(
-                    isLabelVisible: activeCount > 0,
-                    label: Text('$activeCount'),
-                    child: const Icon(LucideIcons.listChecks, weight: 700),
+                  selectedIcon: Consumer<SyncProvider>(
+                    builder: (context, sync, _) {
+                      final count = sync.activeWorkerCount;
+                      return Badge(
+                        isLabelVisible: count > 0,
+                        label: Text('$count'),
+                        child: _buildSyncIcon(isSelected: true, size: 24),
+                      );
+                    },
                   ),
-                  label: '任务',
+                  label: '同步',
                 ),
-                const NavigationDestination(
-                  icon: Icon(Icons.storefront_outlined),
-                  selectedIcon: Icon(Icons.storefront),
-                  label: '商店',
-                ),
-                if (_cachedShowSyncTab)
-                  NavigationDestination(
-                    icon: Consumer<SyncProvider>(
-                      builder: (context, sync, _) {
-                        final count = sync.activeWorkerCount;
-                        return Badge(
-                          isLabelVisible: count > 0,
-                          label: Text('$count'),
-                          child: _buildSyncIcon(isSelected: false, size: 24),
-                        );
-                      },
-                    ),
-                    selectedIcon: Consumer<SyncProvider>(
-                      builder: (context, sync, _) {
-                        final count = sync.activeWorkerCount;
-                        return Badge(
-                          isLabelVisible: count > 0,
-                          label: Text('$count'),
-                          child: _buildSyncIcon(isSelected: true, size: 24),
-                        );
-                      },
-                    ),
-                    label: '同步',
-                  ),
-                const NavigationDestination(
-                  icon: Icon(LucideIcons.user),
-                  selectedIcon: Icon(LucideIcons.user, weight: 700),
-                  label: '我的',
-                ),
-              ],
-            );
-          },
+              const NavigationDestination(
+                icon: Icon(LucideIcons.user),
+                selectedIcon: Icon(LucideIcons.user, weight: 700),
+                label: '我的',
+              ),
+            ],
+          );
+        },
+          ),
         ),
       ),
     );
+  }
+
+  Widget _buildMobileFileSelectionNavigationBar(
+    BuildContext context,
+    FileManagerProvider fileManager,
+  ) {
+    final selectedFiles = _selectedMobileFiles(fileManager);
+    final singleSelected = selectedFiles.length == 1 ? selectedFiles.first : null;
+
+    return SelectionToolbar(
+      selectionCount: fileManager.selectedFiles.length,
+      totalCount: fileManager.files.length,
+      useOldAndroidActions: true,
+      onDownload: selectedFiles.isEmpty
+          ? null
+          : () async {
+              final shouldDismiss = await _downloadMobileSelectedFiles(fileManager);
+              if (shouldDismiss) _clearMobileFileSelection(fileManager);
+            },
+      onShare: singleSelected == null
+          ? null
+          : () async {
+              await FileOperationDialogs.showShareDialog(
+                context,
+                singleSelected,
+              );
+              _clearMobileFileSelection(fileManager);
+            },
+      onDelete: () async {
+        await FileOperationDialogs.showDeleteConfirmation(
+          context,
+          fileManager,
+          List<String>.from(fileManager.selectedFiles),
+        );
+        // 删除成功时 provider 会清空选择；这里兜底处理，确保底部栏弹回。
+        _clearMobileFileSelection(fileManager);
+      },
+      onRename: singleSelected == null
+          ? null
+          : () async {
+              await FileOperationDialogs.showRenameDialog(
+                context,
+                fileManager,
+                singleSelected,
+              );
+              _clearMobileFileSelection(fileManager);
+            },
+      onMore: selectedFiles.isEmpty
+          ? null
+          : () => _showMobileSelectionMoreMenu(
+                fileManager: fileManager,
+                selectedFiles: selectedFiles,
+              ),
+    );
+  }
+
+  void _clearMobileFileSelection(FileManagerProvider fileManager) {
+    if (!mounted) return;
+    if (fileManager.hasSelection) {
+      fileManager.clearSelection();
+    }
+  }
+
+  List<FileModel> _selectedMobileFiles(FileManagerProvider fileManager) {
+    final selectedPaths = fileManager.selectedFiles.toSet();
+    return fileManager.files
+        .where((file) => selectedPaths.contains(file.path))
+        .toList();
+  }
+
+  Future<bool> _downloadMobileSelectedFiles(
+    FileManagerProvider fileManager,
+  ) async {
+    final selectedFiles = _selectedMobileFiles(fileManager);
+    if (selectedFiles.isEmpty) return false;
+
+    try {
+      final downloadManager =
+          Provider.of<DownloadManagerProvider>(context, listen: false);
+      final uris = selectedFiles.map((file) => file.path).toList();
+      final response = await FileService().getDownloadUrls(
+        uris: uris,
+        download: true,
+        archive: true,
+        contextHint: fileManager.contextHint,
+      );
+
+      final url = _extractFirstMobileDownloadUrl(response);
+      if (url == null || url.isEmpty) {
+        if (mounted) ToastHelper.error('服务端没有返回下载链接');
+        return false;
+      }
+
+      final archiveName = _mobileArchiveNameFor(selectedFiles);
+      final archiveUri = selectedFiles.length == 1
+          ? selectedFiles.first.path
+          : 'archive:${DateTime.now().millisecondsSinceEpoch}:${uris.join('|')}';
+
+      final task = await downloadManager.addDownloadTask(
+        fileName: archiveName,
+        fileUri: archiveUri,
+        fileSize: 0,
+        downloadUrl: url,
+        initialStatus: DownloadStatus.archiving,
+      );
+      if (!mounted) return false;
+
+      if (task == null) {
+        ToastHelper.info('下载任务已存在');
+      } else {
+        ToastHelper.success('已添加下载任务');
+      }
+      return true;
+    } catch (e) {
+      if (mounted) ToastHelper.failure('添加下载任务失败: $e');
+      return false;
+    }
+  }
+
+  void _showMobileSelectionMoreMenu({
+    required FileManagerProvider fileManager,
+    required List<FileModel> selectedFiles,
+  }) {
+    final hasFolder = selectedFiles.any((file) => file.isFolder);
+
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.drive_file_move_outline),
+              title: const Text('移动'),
+              onTap: () {
+                final selectedPaths = List<String>.from(fileManager.selectedFiles);
+                Navigator.of(sheetContext).pop();
+                FileOperationDialogs.showBatchMoveDialog(
+                  context,
+                  fileManager,
+                  selectedPaths,
+                  false,
+                );
+                _clearMobileFileSelection(fileManager);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.content_copy),
+              title: const Text('复制'),
+              onTap: () {
+                final selectedPaths = List<String>.from(fileManager.selectedFiles);
+                Navigator.of(sheetContext).pop();
+                FileOperationDialogs.showBatchMoveDialog(
+                  context,
+                  fileManager,
+                  selectedPaths,
+                  true,
+                );
+                _clearMobileFileSelection(fileManager);
+              },
+            ),
+            if (hasFolder)
+              ListTile(
+                leading: const Icon(Icons.drive_folder_upload_outlined),
+                title: const Text('导出目录'),
+                onTap: () async {
+                  Navigator.of(sheetContext).pop();
+                  final folders =
+                      selectedFiles.where((file) => file.isFolder).toList();
+                  await FileOperationDialogs.showExportDirectoryDialog(
+                    context,
+                    fileManager,
+                    folders,
+                  );
+                  _clearMobileFileSelection(fileManager);
+                },
+              ),
+            ListTile(
+              leading: const Icon(Icons.close),
+              title: const Text('取消选择'),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                fileManager.clearSelection();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String? _extractFirstMobileDownloadUrl(Map<String, dynamic> response) {
+    final direct = response['url'];
+    if (direct is String && direct.isNotEmpty) return direct;
+
+    final urls = response['urls'];
+    if (urls is List && urls.isNotEmpty) {
+      final first = urls.first;
+      if (first is String && first.isNotEmpty) return first;
+      if (first is Map<String, dynamic>) {
+        final value = first['url'];
+        if (value is String && value.isNotEmpty) return value;
+      }
+      if (first is Map) {
+        final value = first['url'];
+        if (value is String && value.isNotEmpty) return value;
+      }
+    }
+
+    return null;
+  }
+
+  String _mobileArchiveNameFor(List<FileModel> files) {
+    if (files.length == 1) {
+      final name = files.first.name.replaceAll(RegExp(r'[\\/:*?"<>|]+'), '_');
+      return name.toLowerCase().endsWith('.zip') ? name : '$name.zip';
+    }
+
+    final now = DateTime.now();
+    final stamp = [
+      now.year.toString().padLeft(4, '0'),
+      now.month.toString().padLeft(2, '0'),
+      now.day.toString().padLeft(2, '0'),
+      '_',
+      now.hour.toString().padLeft(2, '0'),
+      now.minute.toString().padLeft(2, '0'),
+      now.second.toString().padLeft(2, '0'),
+    ].join();
+    return '下载文件_$stamp.zip';
   }
 
   Widget _buildDesktopLayout(BuildContext context, NavigationProvider navProvider) {

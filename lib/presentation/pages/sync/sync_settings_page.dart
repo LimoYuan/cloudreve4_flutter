@@ -19,6 +19,7 @@ import '../../widgets/settings/settings_shared.dart';
 import '../../widgets/folder_picker.dart';
 import '../../widgets/sync_stats_card.dart';
 import '../../widgets/toast_helper.dart';
+import 'desktop_sync_wizard_page.dart';
 import 'sync_log_viewer_page.dart';
 
 /// 同步设置页面
@@ -939,11 +940,40 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     sync.updateConfig(updated);
   }
 
+  Future<void> _openDesktopWizardFromSettings(SyncProvider sync) async {
+    final ok = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => const DesktopSyncWizardPage()),
+    );
+    if (ok == true && mounted) {
+      final config = sync.persistedConfig;
+      if (config != null) {
+        setState(() {
+          _localRootController.text = config.localRoot;
+          _remoteRoot = config.remoteRoot;
+          _syncMode = config.syncMode;
+          _conflictStrategy = config.conflictStrategy;
+          _wcfDeleteMode = config.wcfDeleteMode;
+          _maxConcurrent = config.maxConcurrentTransfers;
+          _bandwidthLimitKbps = config.bandwidthLimitKbps;
+          _maxWorkers = config.maxWorkers;
+          _logLevel = config.logLevel;
+          _maxHydrationCacheSizeGb = config.maxHydrationCacheSizeGb;
+        });
+      }
+    }
+  }
+
   Future<void> _startSync(AuthProvider auth, SyncProvider sync) async {
     final server = auth.currentServer;
     final token = auth.token;
     if (server == null || token == null) {
       ToastHelper.failure('请先登录');
+      return;
+    }
+
+    if (_isDesktop && !sync.desktopSyncWizardCompleted) {
+      ToastHelper.failure('请先完成桌面同步向导');
+      await _openDesktopWizardFromSettings(sync);
       return;
     }
 

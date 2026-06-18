@@ -1,5 +1,14 @@
 import 'share_model.dart';
 
+
+int parseSize(dynamic value) {
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  if (value is String) return int.tryParse(value) ?? 0;
+  return 0;
+}
+
+
 /// 文件模型
 class FileModel {
   final int type; // 0:文件, 1:文件夹
@@ -31,18 +40,36 @@ class FileModel {
   });
 
   factory FileModel.fromJson(Map<String, dynamic> json) {
+    DateTime parseDate(dynamic value) {
+      if (value is DateTime) return value;
+      if (value is String && value.isNotEmpty) {
+        return DateTime.tryParse(value) ?? DateTime.fromMillisecondsSinceEpoch(0);
+      }
+      return DateTime.fromMillisecondsSinceEpoch(0);
+    }
+
+    int parseType(dynamic value) {
+      if (value is int) return value;
+      if (value is num) return value.toInt();
+      if (value is String) return int.tryParse(value) ?? 0;
+      return 0;
+    }
+    final id = (json['id'] ?? json['uri'] ?? json['path'] ?? json['name'] ?? '').toString();
+    final name = (json['name'] ?? json['display_name'] ?? id).toString();
+    final path = (json['path'] ?? json['uri'] ?? '/').toString();
+
     return FileModel(
-      type: json['type'] as int,
-      id: json['id'] as String,
-      name: json['name'] as String,
-      createdAt: DateTime.parse(json['created_at'] as String),
-      updatedAt: DateTime.parse(json['updated_at'] as String),
-      size: (json['size'] as num?)?.toInt() ?? 0,
-      path: json['path'] as String,
-      metadata: json['metadata'] as Map<String, dynamic>?,
-      permission: json['permission'] as String?,
-      primaryEntity: json['primary_entity'] as String?,
-      capability: json['capability'] as String?,
+      type: parseType(json['type']),
+      id: id,
+      name: name,
+      createdAt: parseDate(json['created_at'] ?? json['createdAt']),
+      updatedAt: parseDate(json['updated_at'] ?? json['updatedAt'] ?? json['created_at']),
+      size: parseSize(json['size']),
+      path: path,
+      metadata: json['metadata'] is Map ? Map<String, dynamic>.from(json['metadata'] as Map) : null,
+      permission: json['permission']?.toString(),
+      primaryEntity: json['primary_entity']?.toString(),
+      capability: json['capability']?.toString(),
       owned: json['owned'] as bool?,
     );
   }
@@ -130,7 +157,7 @@ class FolderSummaryModel {
 
   factory FolderSummaryModel.fromJson(Map<String, dynamic> json) {
     return FolderSummaryModel(
-      size: (json['size'] as num?)?.toInt() ?? 0,
+      size: parseSize(json['size']),
       files: (json['files'] as num?)?.toInt() ?? 0,
       folders: (json['folders'] as num?)?.toInt() ?? 0,
       completed: json['completed'] as bool,
@@ -292,7 +319,7 @@ class EntityModel {
       id: json['id'] as String,
       type: json['type'] as int,
       createdAt: DateTime.parse(json['created_at'] as String),
-      size: (json['size'] as num?)?.toInt() ?? 0,
+      size: parseSize(json['size']),
       encryptedWith: json['encrypted_with'] as String?,
       storagePolicy: json['storage_policy'] is Map<String, dynamic>
           ? StoragePolicyModel.fromJson(json['storage_policy'] as Map<String, dynamic>)

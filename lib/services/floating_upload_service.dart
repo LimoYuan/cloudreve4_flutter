@@ -14,6 +14,7 @@ import '../presentation/providers/upload_manager_provider.dart';
 import '../presentation/widgets/toast_helper.dart';
 import 'qr_login_service.dart';
 import 'server_service.dart';
+import '../core/utils/direct_http_client.dart';
 import 'storage_service.dart';
 
 class FloatingUploadService {
@@ -63,7 +64,15 @@ class FloatingUploadService {
         final uri = Uri.tryParse(faviconUrl);
         if (uri == null) continue;
 
-        final response = await http.get(uri).timeout(const Duration(seconds: 5));
+        final http.Response response;
+        final client = DirectHttpClientFactory.packageHttpClient(
+          connectionTimeout: const Duration(seconds: 5),
+        );
+        try {
+          response = await client.get(uri).timeout(const Duration(seconds: 5));
+        } finally {
+          client.close();
+        }
         if (response.statusCode < 200 ||
             response.statusCode >= 300 ||
             response.bodyBytes.isEmpty) {

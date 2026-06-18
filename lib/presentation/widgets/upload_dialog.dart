@@ -10,8 +10,16 @@ import '../../services/native_content_reader.dart';
 import 'glassmorphism_container.dart';
 import 'toast_helper.dart';
 
-/// 显示上传对话框（毛玻璃风格）
+/// 显示上传对话框（毛玻璃风格）。
+///
+/// 桌面端不再弹出“选择图片/选择视频/选择所有文件”的二级选择，
+/// 直接打开系统文件选择器；移动端保留原有分类选择逻辑。
 void showUploadDialog(BuildContext context) {
+  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+    pickAndUploadFiles(context, FileType.any);
+    return;
+  }
+
   showGeneralDialog(
     context: context,
     barrierDismissible: true,
@@ -35,6 +43,92 @@ void showUploadDialog(BuildContext context) {
     pageBuilder: (context, animation, secondaryAnimation) =>
         const _UploadDialogContent(),
   );
+}
+
+Future<void> pickAndUploadFiles(
+  BuildContext context,
+  FileType type, {
+  bool closeDialog = false,
+}) async {
+  try {
+    final uploadManager = Provider.of<UploadManagerProvider>(
+      context,
+      listen: false,
+    );
+    final fileManager = Provider.of<FileManagerProvider>(
+      context,
+      listen: false,
+    );
+
+    if (Platform.isAndroid) {
+      final files = await NativeContentReader.instance.pickFiles(
+        type: _nativePickerType(type),
+        allowMultiple: true,
+      );
+
+      if (closeDialog && context.mounted) {
+        Navigator.of(context).pop();
+      }
+
+      if (!context.mounted) return;
+      if (files.isEmpty) {
+        ToastHelper.warning('未选择文件');
+        return;
+      }
+
+      uploadManager.markShouldShowDialog();
+      await uploadManager.startUploadNativeFiles(
+        files,
+        fileManager.currentPath,
+      );
+
+      if (context.mounted) {
+        ToastHelper.info('上传已开始，查看任务页');
+      }
+      return;
+    }
+
+    final result = await FilePicker.platform.pickFiles(
+      type: type,
+      allowMultiple: true,
+    );
+
+    if (closeDialog && context.mounted) {
+      Navigator.of(context).pop();
+    }
+
+    if (!context.mounted) return;
+    if (result == null || result.files.isEmpty) {
+      ToastHelper.warning('未选择文件');
+      return;
+    }
+
+    uploadManager.markShouldShowDialog();
+    await uploadManager.startUploadPlatformFiles(
+      result.files,
+      fileManager.currentPath,
+    );
+
+    if (context.mounted) {
+      ToastHelper.info('上传已开始，查看任务页');
+    }
+  } catch (e) {
+    if (!context.mounted) return;
+    ToastHelper.failure('选择文件失败: $e');
+  }
+}
+
+String _nativePickerType(FileType type) {
+  switch (type) {
+    case FileType.image:
+      return 'image';
+    case FileType.video:
+      return 'video';
+    case FileType.audio:
+      return 'audio';
+    default:
+      return 'any';
+  }
 }
 
 class _UploadDialogContent extends StatelessWidget {
@@ -225,84 +319,7 @@ class _UploadDialogContent extends StatelessWidget {
   }
 
   Future<void> _pickFiles(BuildContext context, FileType type) async {
-    try {
-      final uploadManager = Provider.of<UploadManagerProvider>(
-        context,
-        listen: false,
-      );
-      final fileManager = Provider.of<FileManagerProvider>(
-        context,
-        listen: false,
-      );
-
-      if (Platform.isAndroid) {
-        final files = await NativeContentReader.instance.pickFiles(
-          type: _nativePickerType(type),
-          allowMultiple: true,
-        );
-
-        if (context.mounted) {
-          Navigator.of(context).pop();
-        }
-
-        if (!context.mounted) return;
-        if (files.isEmpty) {
-          ToastHelper.warning('未选择文件');
-          return;
-        }
-
-        uploadManager.markShouldShowDialog();
-        await uploadManager.startUploadNativeFiles(
-          files,
-          fileManager.currentPath,
-        );
-
-        if (context.mounted) {
-          ToastHelper.info('上传已开始，查看任务页');
-        }
-        return;
-      }
-
-      final result = await FilePicker.platform.pickFiles(
-        type: type,
-        allowMultiple: true,
-      );
-
-      if (context.mounted) {
-        Navigator.of(context).pop();
-      }
-
-      if (!context.mounted) return;
-      if (result == null || result.files.isEmpty) {
-        ToastHelper.warning('未选择文件');
-        return;
-      }
-
-      uploadManager.markShouldShowDialog();
-      await uploadManager.startUploadPlatformFiles(
-        result.files,
-        fileManager.currentPath,
-      );
-
-      if (context.mounted) {
-        ToastHelper.info('上传已开始，查看任务页');
-      }
-    } catch (e) {
-      if (!context.mounted) return;
-      ToastHelper.failure('选择文件失败: $e');
-    }
+    await pickAndUploadFiles(context, type, closeDialog: true);
   }
 
-  String _nativePickerType(FileType type) {
-    switch (type) {
-      case FileType.image:
-        return 'image';
-      case FileType.video:
-        return 'video';
-      case FileType.audio:
-        return 'audio';
-      default:
-        return 'any';
-    }
-  }
 }

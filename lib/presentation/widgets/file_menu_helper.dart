@@ -2,6 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import '../../core/utils/app_logger.dart';
 
+/// 文件菜单弹出时的底部边界 anchor。当文件管理器底部存在面包屑导航时，
+/// 应将该 GlobalKey 挂在面包屑外层 Widget 上；菜单向上翻转时会以面包屑顶端
+/// 为基点对齐底边，避免菜单遮挡面包屑或在相邻行间跳动。
+final GlobalKey fileMenuBottomBoundaryKey = GlobalKey(debugLabel: 'fileMenuBottomBoundary');
+
 /// 文件菜单选项
 enum FileMenuAction {
   select,
@@ -50,7 +55,7 @@ Future<FileMenuAction?> showFileMenu({
   final offset = renderBox.localToGlobal(Offset.zero, ancestor: overlay);
   final size = renderBox.size;
   final centerX = offset.dx + size.width / 2;
-  final top = offset.dy + size.height / 2;
+  final anchorTop = offset.dy + size.height / 2;
 
   AppLogger.d('showFileMenu: widget offset: $offset, size: $size, center: $centerX');
 
@@ -81,6 +86,21 @@ Future<FileMenuAction?> showFileMenu({
 
   if (items.isEmpty) return null;
 
+  // 单 item 40 高 + 上下 padding 各 6
+  final menuHeight = items.length * 40.0 + 12.0;
+
+  // 计算菜单的底部边界：默认是视口底端；若文件管理器底部挂了面包屑，
+  // 则以面包屑顶端为底界（fileMenuBottomBoundaryKey）。
+  double resolveBottomBoundary(Size screen) {
+    final keyContext = fileMenuBottomBoundaryKey.currentContext;
+    if (keyContext == null) return screen.height;
+    final box = keyContext.findRenderObject();
+    if (box is! RenderBox || !box.attached) return screen.height;
+    final boundaryTop = box.localToGlobal(Offset.zero, ancestor: overlay).dy;
+    if (boundaryTop <= 0 || boundaryTop > screen.height) return screen.height;
+    return boundaryTop;
+  }
+
   final result = await showGeneralDialog<FileMenuAction>(
     context: context,
     barrierDismissible: true,
@@ -88,9 +108,31 @@ Future<FileMenuAction?> showFileMenu({
     barrierColor: Colors.transparent,
     transitionDuration: const Duration(milliseconds: 120),
     pageBuilder: (dialogContext, animation, secondaryAnimation) {
-      final screenWidth = MediaQuery.sizeOf(dialogContext).width;
+      final screenSize = MediaQuery.sizeOf(dialogContext);
       const menuWidth = 240.0;
-      final left = (centerX - menuWidth / 2).clamp(8.0, screenWidth - menuWidth - 8.0);
+      const edgePadding = 8.0;
+      final left = (centerX - menuWidth / 2)
+          .clamp(edgePadding, screenSize.width - menuWidth - edgePadding);
+
+      // 默认向下展开；若下方空间不够则以底边界（面包屑顶端 / 视口底端）为基准向上展开，
+      // 这样相邻行右键时菜单位置稳定，不会随锚点跳动。
+      final bottomBoundary = resolveBottomBoundary(screenSize);
+      final spaceBelow = bottomBoundary - anchorTop - edgePadding;
+      final spaceAbove = anchorTop - edgePadding;
+      final flipUp = spaceBelow < menuHeight && spaceAbove > spaceBelow;
+      final double top;
+      final double maxHeight;
+      if (flipUp) {
+        const bottomGap = 4.0;
+        final fit = menuHeight.clamp(80.0, bottomBoundary - bottomGap - edgePadding);
+        top = bottomBoundary - bottomGap - fit;
+        maxHeight = fit;
+      } else {
+        top = anchorTop.clamp(edgePadding, bottomBoundary - edgePadding);
+        maxHeight = (bottomBoundary - top - edgePadding)
+            .clamp(80.0, bottomBoundary - edgePadding * 2);
+      }
+      final slideBegin = flipUp ? const Offset(0, 0.04) : const Offset(0, -0.04);
 
       return Stack(
         children: [
@@ -101,7 +143,7 @@ Future<FileMenuAction?> showFileMenu({
             child: FadeTransition(
               opacity: CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
               child: SlideTransition(
-                position: Tween<Offset>(begin: const Offset(0, -0.04), end: Offset.zero)
+                position: Tween<Offset>(begin: slideBegin, end: Offset.zero)
                     .animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
                 child: Material(
                   color: Theme.of(dialogContext).colorScheme.surface,
@@ -109,17 +151,22 @@ Future<FileMenuAction?> showFileMenu({
                   shadowColor: Colors.black.withValues(alpha: 0.18),
                   borderRadius: BorderRadius.circular(12),
                   clipBehavior: Clip.antiAlias,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 6),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        for (final item in items)
-                          _FileMenuTile(
-                            item: item,
-                            onTap: () => Navigator.of(dialogContext).pop(item.action),
-                          ),
-                      ],
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxHeight: maxHeight),
+                    child: SingleChildScrollView(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            for (final item in items)
+                              _FileMenuTile(
+                                item: item,
+                                onTap: () => Navigator.of(dialogContext).pop(item.action),
+                              ),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 ),

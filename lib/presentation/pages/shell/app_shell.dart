@@ -10,6 +10,7 @@ import 'package:cloudreve4_flutter/presentation/providers/user_setting_provider.
 import 'package:cloudreve4_flutter/data/models/download_task_model.dart';
 import 'package:cloudreve4_flutter/data/models/file_model.dart';
 import 'package:cloudreve4_flutter/presentation/widgets/file_operation_dialogs.dart';
+import 'package:cloudreve4_flutter/presentation/widgets/file_menu_helper.dart' show fileMenuBottomBoundaryKey;
 import 'package:cloudreve4_flutter/presentation/widgets/selection_toolbar.dart';
 import 'package:cloudreve4_flutter/presentation/widgets/toast_helper.dart';
 import 'package:cloudreve4_flutter/services/file_service.dart';
@@ -441,6 +442,7 @@ class _AppShellState extends State<AppShell> with GestureHandlerMixin, TickerPro
     final bottomBarHeight = 80.0 + _bottomSystemPadding(context);
 
     return SizedBox(
+      key: fileMenuBottomBoundaryKey,
       height: bottomBarHeight,
       child: Consumer<FileManagerProvider>(
         builder: (context, fileManager, _) {

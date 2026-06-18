@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+import 'file_menu_helper.dart' show fileMenuBottomBoundaryKey;
 
 /// 面包屑导航组件（桌面端底部）
 class FileBreadcrumb extends StatefulWidget {
@@ -62,6 +63,7 @@ class _FileBreadcrumbState extends State<FileBreadcrumb> {
     final theme = Theme.of(context);
 
     return Container(
+      key: fileMenuBottomBoundaryKey,
       height: 52,
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 7),
       decoration: BoxDecoration(

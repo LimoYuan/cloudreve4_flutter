@@ -9,10 +9,12 @@ import 'package:cloudreve4_flutter/main.dart' show isOnLoginPage;
 import 'package:window_manager/window_manager.dart';
 import 'package:cloudreve4_flutter/services/captcha_service.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../config/brand_config.dart';
 import '../../../core/exceptions/app_exception.dart';
@@ -71,6 +73,7 @@ class _LoginDesktopPageState extends State<LoginDesktopPage>
   _LoginMode _loginMode = _LoginMode.qr;
   bool _isQrLoading = false;
   String? _qrError;
+  bool _qrRelayUnavailable = false;
   QrLoginSession? _qrSession;
   Timer? _qrPollTimer;
 
@@ -565,6 +568,7 @@ class _LoginDesktopPageState extends State<LoginDesktopPage>
     setState(() {
       _loginMode = mode;
       _qrError = null;
+      _qrRelayUnavailable = false;
       _inlineAuthError = null;
     });
     if (mode == _LoginMode.qr) {
@@ -613,10 +617,26 @@ class _LoginDesktopPageState extends State<LoginDesktopPage>
     setState(() {
       _isQrLoading = true;
       _qrError = null;
+      _qrRelayUnavailable = false;
       _qrSession = null;
     });
 
     try {
+      final relayBaseUrl = QrLoginService.relayBaseForCloudreve(server.baseUrl);
+      try {
+        await QrLoginService.instance
+            .healthCheck(relayBaseUrl)
+            .timeout(const Duration(seconds: 6));
+      } catch (e) {
+        if (!mounted) return;
+        setState(() {
+          _isQrLoading = false;
+          _qrRelayUnavailable = true;
+          _qrError = '健康检查失败, 扫描登录不可用, 请检查二维码插件是否正常部署\n($relayBaseUrl/api/health)';
+        });
+        return;
+      }
+
       final session = await QrLoginService.instance
           .createSession(
             cloudreveBaseUrl: server.baseUrl,
@@ -628,6 +648,7 @@ class _LoginDesktopPageState extends State<LoginDesktopPage>
         _qrSession = session;
         _isQrLoading = false;
         _qrError = null;
+        _qrRelayUnavailable = false;
       });
       debugPrint(
         '[QR][desktop] session created sid=${session.sessionId} relay=${session.relayBaseUrl}',
@@ -1236,14 +1257,7 @@ class _LoginDesktopPageState extends State<LoginDesktopPage>
         ),
         SizedBox(height: _gap(10, scale, min: 4)),
         Center(
-          child: Text(
-            _qrStatusText(),
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: statusColor,
-              height: 1.5,
-            ),
-          ),
+          child: _buildQrStatusContent(theme, statusColor),
         ),
         SizedBox(height: _gap(12, scale, min: 4)),
         FilledButton.icon(
@@ -1290,6 +1304,60 @@ class _LoginDesktopPageState extends State<LoginDesktopPage>
     if (_isQrLoading) return '正在连接扫码登录中转服务...';
     if (_qrSession == null) return '点击生成二维码后，用手机端扫码确认登录。';
     return '请打开手机端，点击概览页左上角扫码图标扫描二维码。';
+  }
+
+  static const String _qrRelayPluginUrl =
+      'https://github.com/LimoYuan/mkw_qr_relay_server';
+
+  Widget _buildQrStatusContent(ThemeData theme, Color statusColor) {
+    final baseStyle = theme.textTheme.bodyMedium?.copyWith(
+      color: statusColor,
+      height: 1.5,
+    );
+
+    final statusText = Text(
+      _qrStatusText(),
+      textAlign: TextAlign.center,
+      style: baseStyle,
+    );
+
+    if (!_qrRelayUnavailable) return statusText;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        statusText,
+        const SizedBox(height: 6),
+        Text.rich(
+          TextSpan(
+            style: baseStyle?.copyWith(fontSize: 12),
+            children: [
+              const TextSpan(text: '插件来自 @mkw3627-ui 部署方案，'),
+              TextSpan(
+                text: '点击浏览器访问',
+                style: TextStyle(
+                  color: theme.colorScheme.primary,
+                  decoration: TextDecoration.underline,
+                  decorationColor: theme.colorScheme.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+                recognizer: TapGestureRecognizer()
+                  ..onTap = _openQrRelayPluginPage,
+              ),
+            ],
+          ),
+          textAlign: TextAlign.center,
+        ),
+      ],
+    );
+  }
+
+  Future<void> _openQrRelayPluginPage() async {
+    final uri = Uri.parse(_qrRelayPluginUrl);
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && mounted) {
+      ToastHelper.failure('无法打开浏览器：$_qrRelayPluginUrl');
+    }
   }
 
   double _gap(double value, double scale, {double min = 6.0}) =>

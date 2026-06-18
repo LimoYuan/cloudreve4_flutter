@@ -34,6 +34,7 @@ use crate::worker::WorkerPool;
 use dashmap::DashMap;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::RwLock;
 #[cfg(feature = "windows-cfapi")]
 use tokio::sync::mpsc;
@@ -51,6 +52,10 @@ pub struct SyncEngine {
     pause_token: std::sync::Mutex<CancellationToken>,
     /// 同步操作互斥锁：防止 force_sync / run_initial_sync 并发
     sync_lock: tokio::sync::Mutex<()>,
+    /// resume_sync 的后台 rescan 是否在飞行中：防止用户重复点 resume 导致并发 rescan/spawn
+    pub(crate) resume_in_flight: AtomicBool,
+    /// run_continuous 是否已在运行：防止 start_continuous_sync / resume 重复 spawn 出多个持续同步循环
+    pub(crate) continuous_running: AtomicBool,
     worker_pool: WorkerPool,
     #[allow(dead_code)]
     file_locks: Arc<FileLockRegistry>,
@@ -144,6 +149,8 @@ impl SyncEngine {
             shutdown_token: std::sync::Mutex::new(shutdown_token),
             pause_token: std::sync::Mutex::new(pause_token),
             sync_lock: tokio::sync::Mutex::new(()),
+            resume_in_flight: AtomicBool::new(false),
+            continuous_running: AtomicBool::new(false),
             worker_pool,
             file_locks,
             ensured_dirs,
@@ -525,5 +532,23 @@ impl SyncEngine {
         ).await {
             tracing::warn!("WCF 统计记录失败: {}", e);
         }
+    }
+}
+
+/// 在作用域结束时把 AtomicBool 复位为 false。用于幂等抢占场景：
+/// 入口 compare_exchange(false→true) 抢到才创建 guard，保证早返回 / panic / 多分支退出都能清理。
+pub(crate) struct AtomicFlagGuard<'a> {
+    flag: &'a AtomicBool,
+}
+
+impl<'a> AtomicFlagGuard<'a> {
+    pub(crate) fn new(flag: &'a AtomicBool) -> Self {
+        Self { flag }
+    }
+}
+
+impl<'a> Drop for AtomicFlagGuard<'a> {
+    fn drop(&mut self) {
+        self.flag.store(false, Ordering::Release);
     }
 }

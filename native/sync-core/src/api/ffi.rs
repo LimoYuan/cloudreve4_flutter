@@ -525,12 +525,37 @@ pub async fn pause_sync() -> Result<(), SyncErrorFfi> {
 pub async fn resume_sync() -> Result<(), SyncErrorFfi> {
     tracing::debug!("[FFI] resume_sync ←");
     let engine = ENGINE.get().cloned().ok_or(SyncErrorFfi::NotInitialized)?;
-    engine.resume().await.map_err(error_to_ffi)?;
+
+    // 幂等抢占：只有一个 resume rescan 任务能在飞行中。重复点击直接返回成功，避免并发 rescan + 重复 spawn run_continuous。
+    if engine
+        .resume_in_flight
+        .compare_exchange(
+            false,
+            true,
+            std::sync::atomic::Ordering::AcqRel,
+            std::sync::atomic::Ordering::Acquire,
+        )
+        .is_err()
+    {
+        tracing::info!("resume_sync 已有 rescan 在飞行中，忽略本次调用");
+        return Ok(());
+    }
+
+    if let Err(e) = engine.resume().await.map_err(error_to_ffi) {
+        engine
+            .resume_in_flight
+            .store(false, std::sync::atomic::Ordering::Release);
+        return Err(e);
+    }
 
     // resume 不是简单改状态：软暂停会取消当前 watcher/worker。
     // 这里后台重新跑一次差异扫描，再启动持续同步；DB 映射和 .sync_tmp 会作为检查点继续。
     let engine_for_resume = engine.clone();
     tokio::spawn(async move {
+        // 任务退出时（任意路径，含 panic）清理 resume_in_flight，允许下次 resume。
+        let _resume_guard =
+            crate::sync_engine::AtomicFlagGuard::new(&engine_for_resume.resume_in_flight);
+
         engine_for_resume.ensure_token_fresh();
         engine_for_resume.ensure_pause_token_fresh();
 
@@ -542,6 +567,7 @@ pub async fn resume_sync() -> Result<(), SyncErrorFfi> {
                     summary.downloaded,
                     summary.failed,
                 );
+                // run_continuous 内部有 continuous_running 幂等保护：若旧实例还未退出会被自动跳过。
                 let engine_for_continuous = engine_for_resume.clone();
                 tokio::spawn(async move {
                     if let Err(e) = engine_for_continuous.run_continuous().await {

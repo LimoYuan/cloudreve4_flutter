@@ -3,11 +3,28 @@ use crate::event_handler::EventHandler;
 use crate::models::*;
 use crate::utils::lock_recover;
 
-use super::SyncEngine;
+use super::{AtomicFlagGuard, SyncEngine};
 
 impl SyncEngine {
     /// 持续同步：双事件源驱动 (SSE + 本地文件监听)，按 sync_mode 选择事件源
     pub async fn run_continuous(&self) -> Result<()> {
+        // 幂等守卫：避免 start_continuous_sync 与 resume_sync rescan 后台 spawn 多个 run_continuous，
+        // 导致 SSE / 本地监听被重复订阅。抢不到锁时直接早返回（已有实例在跑）。
+        if self
+            .continuous_running
+            .compare_exchange(
+                false,
+                true,
+                std::sync::atomic::Ordering::AcqRel,
+                std::sync::atomic::Ordering::Acquire,
+            )
+            .is_err()
+        {
+            tracing::info!("持续同步已在运行，跳过本次启动");
+            return Ok(());
+        }
+        let _running_guard = AtomicFlagGuard::new(&self.continuous_running);
+
         let event_handler = EventHandler::new(
             self.api.clone(),
             self.api.client_id().to_string(),

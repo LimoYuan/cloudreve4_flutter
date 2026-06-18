@@ -4,6 +4,7 @@ import 'package:cloudreve4_flutter/presentation/providers/download_manager_provi
 import 'package:cloudreve4_flutter/presentation/providers/navigation_provider.dart';
 import 'package:cloudreve4_flutter/presentation/providers/sync_provider.dart';
 import 'package:cloudreve4_flutter/presentation/providers/upload_manager_provider.dart';
+import 'package:cloudreve4_flutter/router/app_router.dart';
 import 'package:cloudreve4_flutter/services/local_recent_activity_service.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
@@ -175,7 +176,7 @@ class _RecentActivityListState extends State<RecentActivityList> {
                 ),
               )
               .toList(),
-          onMore: () => _navigateToTab(2),
+          onMore: () => Navigator.of(context).pushNamed(RouteNames.share),
         ),
       );
     }

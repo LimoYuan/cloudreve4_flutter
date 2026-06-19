@@ -19,6 +19,7 @@ import '../presentation/pages/preview/pdf_preview_page.dart';
 import '../presentation/pages/preview/video_preview_page.dart';
 import '../presentation/pages/preview/audio_preview_page.dart';
 import '../presentation/pages/preview/document_preview_page.dart';
+import '../presentation/pages/preview/document_editor_page.dart';
 import '../presentation/pages/preview/markdown_preview_page.dart';
 import '../presentation/pages/files/category_files_page.dart';
 import '../presentation/pages/share/share_link_page.dart';
@@ -47,6 +48,7 @@ class RouteNames {
   static const String videoPreview = '/video-preview';
   static const String audioPreview = '/audio-preview';
   static const String documentPreview = '/document-preview';
+  static const String documentEditor = '/document-editor';
   static const String markdownPreview = '/markdown-preview';
   static const String categoryFiles = '/category-files';
   static const String syncStatus = '/sync-status';
@@ -216,6 +218,23 @@ class AppRouter {
         return MaterialPageRoute(
           settings: settings,
           builder: (context) => DocumentPreviewPage(file: file),
+        );
+
+      case RouteNames.documentEditor:
+        final args = settings.arguments;
+        if (args is Map<String, dynamic>) {
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => DocumentEditorPage(
+              file: args['file'] as FileModel,
+              initialContent: args['initialContent'] as String?,
+            ),
+          );
+        }
+        final file = args as FileModel;
+        return MaterialPageRoute(
+          settings: settings,
+          builder: (context) => DocumentEditorPage(file: file),
         );
 
       case RouteNames.markdownPreview:

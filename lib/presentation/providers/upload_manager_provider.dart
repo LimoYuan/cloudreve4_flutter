@@ -59,11 +59,16 @@ class UploadManagerProvider extends ChangeNotifier {
   /// 兼容旧入口：从 dart:io File 开始上传。
   ///
   /// 桌面端拖拽上传、部分旧逻辑仍会调用这个方法。
-  Future<void> startUpload(
+  ///
+  /// 返回创建的 UploadTaskModel id 列表，调用方需要时可监听这些 id 的状态。
+  Future<List<String>> startUpload(
     List<File> files,
-    String targetPath,
-  ) async {
+    String targetPath, {
+    bool overwrite = false,
+    bool hidden = false,
+  }) async {
     final uri = _normalizeTargetPath(targetPath);
+    final ids = <String>[];
 
     for (final file in files) {
       final task = UploadTaskModel(
@@ -74,11 +79,15 @@ class UploadManagerProvider extends ChangeNotifier {
             : file.path.split(Platform.pathSeparator).last,
         fileSize: await file.length(),
         targetPath: uri,
+        overwrite: overwrite,
+        hidden: hidden,
       );
 
       _uploadService.addTask(task);
       _uploadService.startUpload(task);
+      ids.add(task.id);
     }
+    return ids;
   }
 
   /// 从 file_picker 的 PlatformFile 开始上传。

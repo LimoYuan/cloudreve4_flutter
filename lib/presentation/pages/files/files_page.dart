@@ -12,6 +12,7 @@ import 'package:flutter/services.dart';
 import '../../../core/utils/file_utils.dart';
 import '../../../core/constants/sort_options.dart';
 import '../../../core/constants/storage_keys.dart';
+import '../../../core/exceptions/app_exception.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:provider/provider.dart';
@@ -31,6 +32,7 @@ import '../../widgets/file_operation_dialogs.dart';
 import '../../widgets/file_info_dialog.dart';
 import '../../widgets/pdf_action_menu.dart';
 import '../../widgets/search_dialog.dart';
+import '../../widgets/text_action_menu.dart';
 import '../../widgets/toast_helper.dart';
 import '../../../router/app_router.dart';
 import '../../../core/utils/file_type_utils.dart';
@@ -1677,9 +1679,13 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
     } else if (FileTypeUtils.isAudio(file.name)) {
       Navigator.of(context).pushNamed(RouteNames.audioPreview, arguments: file);
     } else if (FileTypeUtils.isMarkdown(file.name)) {
-      Navigator.of(context).pushNamed(RouteNames.markdownPreview, arguments: file);
+      TextActionMenu.show(
+        context,
+        file,
+        previewRoute: RouteNames.markdownPreview,
+      );
     } else if (FileTypeUtils.isTextCode(file.name)) {
-      Navigator.of(context).pushNamed(RouteNames.documentPreview, arguments: file);
+      TextActionMenu.show(context, file);
     } else {
       ToastHelper.info('暂不支持预览 ${FileTypeUtils.getFileTypeDescription(file.name)}');
     }
@@ -2232,15 +2238,109 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
     final name = controller.text.trim();
     if (confirmed != true || name.isEmpty) return;
 
+    final base = fileManager.currentPath == '/' || fileManager.currentPath.isEmpty ? '' : fileManager.currentPath;
+    final uri = base.isEmpty ? '/$name' : base.endsWith('/') ? '$base$name' : '$base/$name';
+
     try {
-      final base = fileManager.currentPath == '/' || fileManager.currentPath.isEmpty ? '' : fileManager.currentPath;
-      final uri = base.isEmpty ? '/$name' : base.endsWith('/') ? '$base$name' : '$base/$name';
-      await FileService().createFile(uri: uri, type: 'file', errOnConflict: true);
+      final response = await FileService().createFile(uri: uri, type: 'file', errOnConflict: true);
       await fileManager.loadFiles(refresh: true);
-      if (context.mounted) ToastHelper.success('文件创建成功');
+      if (!context.mounted) return;
+      ToastHelper.success('文件创建成功');
+
+      FileModel? newFile;
+      try {
+        newFile = FileModel.fromJson(response);
+      } catch (_) {
+        newFile = null;
+      }
+      if (newFile == null) return;
+
+      await _promptOpenEditor(context, newFile, isNew: true);
+    } on ServerException catch (e) {
+      if (e.code == 40004) {
+        if (context.mounted) {
+          await _handleExistedOnCreate(context, uri, name);
+        }
+        return;
+      }
+      if (context.mounted) ToastHelper.failure('创建文件失败: ${e.message}');
     } catch (e) {
       if (context.mounted) ToastHelper.failure('创建文件失败: $e');
     }
+  }
+
+  /// 创建文件遇到 40004 ObjectExisted 时的处理：
+  /// 拉取已存在的文件信息，询问用户是否直接打开编辑器。
+  Future<void> _handleExistedOnCreate(
+    BuildContext context,
+    String uri,
+    String name,
+  ) async {
+    FileModel? existing;
+    try {
+      final info = await FileService().getFileInfo(uri: uri);
+      existing = FileModel.fromJson(info);
+    } catch (_) {
+      existing = null;
+    }
+
+    if (!context.mounted) return;
+
+    final shouldOpen = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('文件已存在'),
+        content: Text('"$name" 已存在，是否直接打开编辑器编辑该文件？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('打开编辑器'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldOpen != true || !context.mounted || existing == null) return;
+    await Navigator.of(context).pushNamed(
+      RouteNames.documentEditor,
+      arguments: existing,
+    );
+  }
+
+  /// 创建成功后弹"立即打开编辑器"对话框，确认则跳转。
+  Future<void> _promptOpenEditor(
+    BuildContext context,
+    FileModel file, {
+    required bool isNew,
+  }) async {
+    final openEditor = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('打开编辑器？'),
+        content: Text('是否立即打开编辑器编写 "${file.name}"？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('稍后'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('打开编辑器'),
+          ),
+        ],
+      ),
+    );
+    if (openEditor != true || !context.mounted) return;
+    await Navigator.of(context).pushNamed(
+      RouteNames.documentEditor,
+      arguments: isNew
+          ? {'file': file, 'initialContent': ''}
+          : file,
+    );
   }
 
   Widget _buildDesktopFileList(BuildContext context) {

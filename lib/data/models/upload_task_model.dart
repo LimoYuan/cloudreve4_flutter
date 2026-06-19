@@ -156,6 +156,23 @@ class UploadTaskModel {
   /// 按 offset/length 分片读取，不再依赖 file_picker 复制出来的缓存文件。
   final String? sourceUri;
 
+  /// 是否覆盖上传。
+  ///
+  /// 对应 Cloudreve 创建上传会话时的 `entity_type: "version"`，会把已有同名文件
+  /// 当作新版本写入而不是直接报 ObjectExisted。
+  final bool overwrite;
+
+  /// 是否在 UI / 通知 / 本地持久化中隐藏。
+  ///
+  /// 编辑器的"保存"会调用上传服务，但保存场景不希望污染任务管理页：
+  /// 同一文件保存 N 次会出现 N 条任务，且重启后仍存在。
+  /// 设为 true 后：
+  /// - allTasks / activeTasks 不返回该任务
+  /// - _saveTasks 不持久化
+  /// - 前台通知不计入
+  /// - 终态（completed / failed / cancelled）后自动从 _tasks 移除
+  final bool hidden;
+
   final DateTime createdAt;
   DateTime? completedAt;
   final UploadStatus status;
@@ -174,6 +191,8 @@ class UploadTaskModel {
     required this.fileSize,
     required this.targetPath,
     this.sourceUri,
+    this.overwrite = false,
+    this.hidden = false,
     DateTime? createdAt,
     this.completedAt,
     UploadStatus? status,
@@ -267,6 +286,8 @@ class UploadTaskModel {
       fileSize: fileSize,
       targetPath: targetPath,
       sourceUri: sourceUri ?? this.sourceUri,
+      overwrite: overwrite,
+      hidden: hidden,
       createdAt: createdAt,
       completedAt: completedAt ?? this.completedAt,
       status: status ?? this.status,
@@ -293,6 +314,7 @@ class UploadTaskModel {
       'file_size': fileSize,
       'target_path': targetPath,
       'source_uri': sourceUri,
+      'overwrite': overwrite,
       'created_at': createdAt.toIso8601String(),
       'completed_at': completedAt?.toIso8601String(),
       'status': status.index,
@@ -315,6 +337,7 @@ class UploadTaskModel {
       fileSize: (json['file_size'] as num?)?.toInt() ?? 0,
       targetPath: json['target_path'] as String,
       sourceUri: json['source_uri']?.toString(),
+      overwrite: json['overwrite'] as bool? ?? false,
       createdAt: DateTime.parse(json['created_at'] as String),
       completedAt: json['completed_at'] != null
           ? DateTime.parse(json['completed_at'] as String)

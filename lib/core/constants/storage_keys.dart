@@ -45,6 +45,9 @@ class StorageKeys {
   // 文件视图
   static const String fileViewType = 'file_view_type';
 
+  // 编辑器
+  static const String editorTheme = 'editor_theme';
+
   // 日志级别
   static const String logLevel = 'app_log_level';
 

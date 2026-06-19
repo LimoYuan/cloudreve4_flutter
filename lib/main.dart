@@ -34,6 +34,7 @@ import 'services/cache_manager_service.dart';
 import 'services/avatar_cache_service.dart';
 import 'core/utils/video_fullscreen.dart';
 import 'services/desktop_service.dart';
+import 'services/global_shortcuts_service.dart';
 import 'router/app_router.dart';
 import 'presentation/widgets/toast_helper.dart';
 import 'src/rust/frb_generated.dart' show RustSyncApi;
@@ -155,6 +156,9 @@ void main() async {
     };
 
     await DesktopService.instance.initialize();
+
+    // 注册全局快捷键（F11 全屏切换），整个程序生命周期内有效
+    GlobalShortcutsService.instance.init();
   }
 
   // 初始化MediaKit

@@ -118,6 +118,10 @@ class StorageService {
   Future<String?> get lastSelectedServerLabel => getString(StorageKeys.lastSelectedServer);
   Future<bool> setLastSelectedServerLabel(String? value) => setString(StorageKeys.lastSelectedServer, value);
 
+  /// 编辑器主题 key
+  Future<String?> getEditorTheme() => getString(StorageKeys.editorTheme);
+  Future<bool> setEditorTheme(String value) => setString(StorageKeys.editorTheme, value);
+
   /// 搜索历史（最新在前，最多 20 条）
   Future<List<String>> getSearchHistory() async {
     final json = await getString(StorageKeys.searchHistory);

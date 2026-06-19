@@ -84,22 +84,26 @@ class UploadService extends ChangeNotifier {
   }
 
   void _syncForegroundNotification() {
-    unawaited(UploadForegroundService.syncWithTasks(_tasks.values.toList()));
+    final visible =
+        _tasks.values.where((t) => !t.hidden).toList(growable: false);
+    unawaited(UploadForegroundService.syncWithTasks(visible));
   }
 
   /// 获取任务
   UploadTaskModel? getTask(String id) => _tasks[id];
 
   /// 获取所有任务
-  List<UploadTaskModel> get allTasks => _tasks.values.toList();
+  List<UploadTaskModel> get allTasks =>
+      _tasks.values.where((t) => !t.hidden).toList();
 
   /// 获取进行中的任务
   List<UploadTaskModel> get activeTasks => _tasks.values
       .where(
         (t) =>
-            t.status == UploadStatus.uploading ||
-            t.status == UploadStatus.waiting ||
-            t.status == UploadStatus.paused,
+            !t.hidden &&
+            (t.status == UploadStatus.uploading ||
+                t.status == UploadStatus.waiting ||
+                t.status == UploadStatus.paused),
       )
       .toList();
 
@@ -286,13 +290,16 @@ class UploadService extends ChangeNotifier {
   /// 保存上传任务到本地存储
   Future<void> _saveTasks() async {
     try {
-      final tasksList = _tasks.values.map((task) => task.toJson()).toList();
+      final tasksList = _tasks.values
+          .where((t) => !t.hidden)
+          .map((task) => task.toJson())
+          .toList();
       final tasksJson = jsonEncode(tasksList);
       await StorageService.instance.setString(
         StorageKeys.uploadTasks,
         tasksJson,
       );
-      AppLogger.d('已保存 ${_tasks.length} 个上传任务到存储');
+      AppLogger.d('已保存 ${tasksList.length} 个上传任务到存储');
     } catch (e) {
       AppLogger.d('保存上传任务失败: $e');
     }
@@ -458,6 +465,8 @@ class UploadService extends ChangeNotifier {
           ),
         );
       }
+
+      _purgeHiddenTaskIfTerminal(task.id);
     } catch (e) {
       _logUploadException(e, task.fileName);
 
@@ -504,6 +513,24 @@ class UploadService extends ChangeNotifier {
           ),
         );
       }
+
+      _purgeHiddenTaskIfTerminal(task.id);
+    }
+  }
+
+  /// 隐藏任务到达终态后从 _tasks 移除，避免编辑器多次保存堆积。
+  void _purgeHiddenTaskIfTerminal(String taskId) {
+    final t = _tasks[taskId];
+    if (t == null || !t.hidden) return;
+    if (t.status == UploadStatus.completed ||
+        t.status == UploadStatus.failed ||
+        t.status == UploadStatus.cancelled) {
+      _tasks.remove(taskId);
+      _pauseRequestedTaskIds.remove(taskId);
+      _cancelTokens.remove(taskId);
+      final controller = _progressControllers.remove(taskId);
+      controller?.close();
+      _speedTrackers.remove(taskId);
     }
   }
 
@@ -516,6 +543,7 @@ class UploadService extends ChangeNotifier {
             ? '${task.targetPath}${task.fileName}'
             : '${task.targetPath}/${task.fileName}',
         'size': task.fileSize,
+        if (task.overwrite) 'entity_type': 'version',
       },
     );
 

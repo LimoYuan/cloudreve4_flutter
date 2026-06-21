@@ -297,6 +297,14 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "0.0.2"
+  enough_convert:
+    dependency: "direct main"
+    description:
+      name: enough_convert
+      sha256: c67d85ca21aaa0648f155907362430701db41f7ec8e6501a58ad9cd9d8569d01
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "1.6.0"
   equatable:
     dependency: transitive
     description:

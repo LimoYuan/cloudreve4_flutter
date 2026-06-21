@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 import '../../../data/models/file_model.dart';
 import '../../../services/file_service.dart';
 import '../../../core/utils/file_type_utils.dart';
+import '../../../core/utils/text_decode_utils.dart';
 
 /// 文档预览页面
 class DocumentPreviewPage extends StatefulWidget {
@@ -70,7 +71,7 @@ class _DocumentPreviewPageState extends State<DocumentPreviewPage> {
 
       if (mounted) {
         setState(() {
-          _content = responseContent.body;
+          _content = TextDecodeUtils.decodeBytes(responseContent.bodyBytes);
           _lineCount = _countLines(_content);
           _languageMode = _detectLanguageMode(widget.file.name);
           _languageName = _getLanguageNameFromExtension(widget.file.name);

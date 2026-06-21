@@ -116,6 +116,9 @@ dependencies:
   re_editor: ^0.9.0
   re_highlight: ^0.0.3
 
+  # 字符编码（GBK/GB18030/Big5/UTF-16 等非 UTF-8 解码）
+  enough_convert: ^1.6.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

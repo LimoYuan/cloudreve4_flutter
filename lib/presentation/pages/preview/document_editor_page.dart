@@ -15,6 +15,7 @@ import 'package:re_highlight/styles/atom-one-light.dart';
 import 'package:re_highlight/styles/monokai-sublime.dart';
 
 import '../../../core/utils/app_logger.dart';
+import '../../../core/utils/text_decode_utils.dart';
 import '../../../data/models/file_model.dart';
 import '../../../data/models/upload_task_model.dart';
 import '../../../services/file_service.dart';
@@ -295,7 +296,7 @@ class _DocumentEditorPageState extends State<DocumentEditorPage> {
       if (r.statusCode != 200) {
         throw Exception('下载失败: ${r.statusCode}');
       }
-      _setContent(r.body);
+      _setContent(TextDecodeUtils.decodeBytes(r.bodyBytes));
       if (mounted) setState(() => _isLoading = false);
     } catch (e) {
       AppLogger.d('[DocumentEditor] load failed: $e');

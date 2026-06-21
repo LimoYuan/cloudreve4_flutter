@@ -80,13 +80,7 @@ class _LoginPageState extends State<LoginPage> {
     return MediaQuery.of(context).size.width >= _mobileQrLoginMinWidth;
   }
 
-  bool get _showCaptcha {
-    final captcha = CaptchaService.instance;
-    return _loginConfig.loginCaptcha ||
-        captcha.isWebCaptcha ||
-        ((captcha.captchaImage ?? '').isNotEmpty) ||
-        ((captcha.captchaTicket ?? '').isNotEmpty);
-  }
+  bool get _showCaptcha => _loginConfig.loginCaptcha;
 
   @override
   void initState() {
@@ -136,7 +130,10 @@ class _LoginPageState extends State<LoginPage> {
       if (!mounted) return;
       setState(() => _loginConfig = config);
 
-      await CaptchaService.instance.loadCaptcha(server.baseUrl);
+      CaptchaService.instance.clearCaptcha();
+      if (config.loginCaptcha) {
+        await CaptchaService.instance.loadCaptcha(server.baseUrl);
+      }
       if (mounted) setState(() {});
     } catch (_) {}
   }

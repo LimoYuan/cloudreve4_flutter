@@ -70,10 +70,15 @@ class _LoginPageState extends State<LoginPage> {
   int _siteBrandLoadId = 0;
 
   static const double _desktopDualPanelBreakpoint = 760;
+  static const double _mobileQrLoginMinWidth = 1000;
 
-  bool get _showQrLogin =>
-      defaultTargetPlatform != TargetPlatform.android &&
-      defaultTargetPlatform != TargetPlatform.iOS;
+  bool get _showQrLogin {
+    final isMobilePlatform =
+        defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS;
+    if (!isMobilePlatform) return true;
+    return MediaQuery.of(context).size.width >= _mobileQrLoginMinWidth;
+  }
 
   bool get _showCaptcha {
     final captcha = CaptchaService.instance;
@@ -557,21 +562,33 @@ class _LoginPageState extends State<LoginPage> {
       final status = await QrLoginService.instance.getStatus(session);
       if (!mounted) return;
 
-      if (status.status == 'authorized') {
+      final normalizedStatus = status.status.trim().toLowerCase();
+
+      if (_isQrAuthorizedStatus(normalizedStatus)) {
         _qrPollTimer?.cancel();
         setState(() => _qrStatus = 'authorized');
         await _completeQrLogin();
-      } else if (status.status == 'expired') {
+      } else if (normalizedStatus == 'expired') {
         _qrPollTimer?.cancel();
         setState(() {
           _qrStatus = 'expired';
           _qrError = '二维码已过期，请重新获取';
         });
       }
-      // pending: keep polling
+      // pending / scanned: keep polling
     } catch (e) {
       // Network error during poll, don't kill the session immediately
     }
+  }
+
+  bool _isQrAuthorizedStatus(String status) {
+    return const {
+      'authorized',
+      'confirmed',
+      'success',
+      'completed',
+      'done',
+    }.contains(status);
   }
 
   Future<void> _completeQrLogin() async {

@@ -707,166 +707,268 @@ class _SharesPageState extends State<SharesPage> {
       );
     }
 
-    final edited = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, update) {
-          final screenWidth = MediaQuery.sizeOf(dialogContext).width;
-          final dialogWidth = screenWidth >= 720 ? 680.0 : screenWidth - 32.0;
+    List<Widget> buildShareFormChildren(StateSetter update) {
+      return [
+        TextField(
+          decoration: InputDecoration(
+            labelText: '文件名',
+            prefixIcon: const Icon(LucideIcons.fileText),
+            suffixIcon: IconButton(
+              icon: const Icon(LucideIcons.copy, size: 18),
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: share.name));
+                ToastHelper.success('文件名已复制');
+              },
+              tooltip: '复制文件名',
+            ),
+          ),
+          controller: TextEditingController(text: share.name),
+          readOnly: true,
+        ),
+        const SizedBox(height: 14),
+        TextField(
+          decoration: InputDecoration(
+            labelText: '分享链接',
+            prefixIcon: const Icon(LucideIcons.link),
+            suffixIcon: IconButton(
+              icon: const Icon(LucideIcons.copy, size: 18),
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: share.url));
+                ToastHelper.success('分享链接已复制');
+              },
+              tooltip: '复制分享链接',
+            ),
+          ),
+          controller: TextEditingController(text: share.url),
+          readOnly: true,
+        ),
+        const SizedBox(height: 18),
+        buildPermissionSection(update),
+        const SizedBox(height: 16),
+        buildOptionSwitch(
+          icon: LucideIcons.lock,
+          title: '使用密码保护链接',
+          subtitle: '和旧 Windows 分享权限面板保持一致',
+          value: passwordProtected,
+          onChanged: (value) => update(() => passwordProtected = value),
+          child: buildCompactField(
+            controller: passwordController,
+            hint: '分享密码，留空则由服务端保留/生成',
+          ),
+        ),
+        buildOptionSwitch(
+          icon: LucideIcons.timer,
+          title: '超时自动过期',
+          value: timeoutExpire,
+          onChanged: (value) => update(() => timeoutExpire = value),
+          child: buildCompactField(
+            controller: expireDaysController,
+            hint: '有效期',
+            suffix: '天',
+          ),
+        ),
+        buildOptionSwitch(
+          icon: LucideIcons.download,
+          title: '下载后自动过期',
+          value: downloadExpire,
+          onChanged: (value) => update(() => downloadExpire = value),
+          child: buildCompactField(
+            controller: downloadsController,
+            hint: '下载次数',
+            suffix: '次',
+          ),
+        ),
+        buildOptionSwitch(
+          icon: Icons.account_balance_wallet_outlined,
+          title: '付费下载',
+          value: paidDownload,
+          onChanged: (value) => update(() => paidDownload = value),
+          child: buildCompactField(
+            controller: priceController,
+            hint: '价格',
+            suffix: '积分',
+          ),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          secondary: const Icon(LucideIcons.eye),
+          title: const Text('启用分享视图', style: TextStyle(fontWeight: FontWeight.w700)),
+          subtitle: const Text('允许使用分享页面预览文件'),
+          value: shareView,
+          onChanged: (value) => update(() => shareView = value),
+        ),
+        if (share.isFolder)
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            secondary: const Icon(LucideIcons.bookOpen),
+            title: const Text('显示 README', style: TextStyle(fontWeight: FontWeight.w700)),
+            subtitle: const Text('文件夹分享中展示说明文件'),
+            value: showReadme,
+            onChanged: (value) => update(() => showReadme = value),
+          ),
+      ];
+    }
 
-          return AlertDialog(
-            titlePadding: const EdgeInsets.fromLTRB(24, 20, 12, 0),
-            contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
-            title: Row(
-              children: [
-                const Expanded(child: Text('编辑分享')),
-                IconButton(
-                  icon: const Icon(LucideIcons.copy),
-                  onPressed: () {
-                    Clipboard.setData(ClipboardData(text: share.url));
-                    ToastHelper.success('分享链接已复制');
-                  },
-                  tooltip: '复制分享链接',
-                ),
-              ],
+    bool validateShareForm() {
+      if (timeoutExpire && parsePositiveInt(expireDaysController) == null) {
+        ToastHelper.failure('请输入有效的过期天数');
+        return false;
+      }
+      if (downloadExpire && parsePositiveInt(downloadsController) == null) {
+        ToastHelper.failure('请输入有效的下载次数');
+        return false;
+      }
+      if (paidDownload && parsePositiveInt(priceController) == null) {
+        ToastHelper.failure('请输入有效的付费金额');
+        return false;
+      }
+      return true;
+    }
+
+    if (!mounted) return;
+    final useBottomSheet = MediaQuery.sizeOf(context).width < 720;
+    final sheetBackground = Theme.of(context).colorScheme.surface;
+
+    final bool? edited;
+    if (useBottomSheet) {
+      edited = await showModalBottomSheet<bool>(
+            context: context,
+            isScrollControlled: true,
+            useSafeArea: true,
+            showDragHandle: true,
+            backgroundColor: sheetBackground,
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
             ),
-            content: SizedBox(
-              width: dialogWidth,
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.only(top: 6),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    TextField(
-                      decoration: InputDecoration(
-                        labelText: '文件名',
-                        prefixIcon: const Icon(LucideIcons.fileText),
-                        suffixIcon: IconButton(
-                          icon: const Icon(LucideIcons.copy, size: 18),
-                          onPressed: () {
-                            Clipboard.setData(ClipboardData(text: share.name));
-                            ToastHelper.success('文件名已复制');
-                          },
-                          tooltip: '复制文件名',
+            builder: (sheetContext) => StatefulBuilder(
+              builder: (sheetContext, update) {
+                final media = MediaQuery.of(sheetContext);
+                return Padding(
+                  padding: EdgeInsets.only(bottom: media.viewInsets.bottom),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: media.size.height * 0.9,
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 0, 8, 0),
+                          child: Row(
+                            children: [
+                              const Expanded(
+                                child: Text(
+                                  '编辑分享',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(LucideIcons.copy),
+                                onPressed: () {
+                                  Clipboard.setData(
+                                    ClipboardData(text: share.url),
+                                  );
+                                  ToastHelper.success('分享链接已复制');
+                                },
+                                tooltip: '复制分享链接',
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                      controller: TextEditingController(text: share.name),
-                      readOnly: true,
-                    ),
-                    const SizedBox(height: 14),
-                    TextField(
-                      decoration: InputDecoration(
-                        labelText: '分享链接',
-                        prefixIcon: const Icon(LucideIcons.link),
-                        suffixIcon: IconButton(
-                          icon: const Icon(LucideIcons.copy, size: 18),
-                          onPressed: () {
-                            Clipboard.setData(ClipboardData(text: share.url));
-                            ToastHelper.success('分享链接已复制');
-                          },
-                          tooltip: '复制分享链接',
+                        Flexible(
+                          child: SingleChildScrollView(
+                            padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: buildShareFormChildren(update),
+                            ),
+                          ),
                         ),
-                      ),
-                      controller: TextEditingController(text: share.url),
-                      readOnly: true,
+                        const Divider(height: 1),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              TextButton(
+                                onPressed: () =>
+                                    Navigator.of(sheetContext).pop(false),
+                                child: const Text('取消'),
+                              ),
+                              const SizedBox(width: 8),
+                              FilledButton(
+                                onPressed: () {
+                                  if (validateShareForm()) {
+                                    Navigator.of(sheetContext).pop(true);
+                                  }
+                                },
+                                child: const Text('保存'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 18),
-                    buildPermissionSection(update),
-                    const SizedBox(height: 16),
-                    buildOptionSwitch(
-                      icon: LucideIcons.lock,
-                      title: '使用密码保护链接',
-                      subtitle: '和旧 Windows 分享权限面板保持一致',
-                      value: passwordProtected,
-                      onChanged: (value) => update(() => passwordProtected = value),
-                      child: buildCompactField(
-                        controller: passwordController,
-                        hint: '分享密码，留空则由服务端保留/生成',
-                      ),
-                    ),
-                    buildOptionSwitch(
-                      icon: LucideIcons.timer,
-                      title: '超时自动过期',
-                      value: timeoutExpire,
-                      onChanged: (value) => update(() => timeoutExpire = value),
-                      child: buildCompactField(
-                        controller: expireDaysController,
-                        hint: '有效期',
-                        suffix: '天',
-                      ),
-                    ),
-                    buildOptionSwitch(
-                      icon: LucideIcons.download,
-                      title: '下载后自动过期',
-                      value: downloadExpire,
-                      onChanged: (value) => update(() => downloadExpire = value),
-                      child: buildCompactField(
-                        controller: downloadsController,
-                        hint: '下载次数',
-                        suffix: '次',
-                      ),
-                    ),
-                    buildOptionSwitch(
-                      icon: Icons.account_balance_wallet_outlined,
-                      title: '付费下载',
-                      value: paidDownload,
-                      onChanged: (value) => update(() => paidDownload = value),
-                      child: buildCompactField(
-                        controller: priceController,
-                        hint: '价格',
-                        suffix: '积分',
-                      ),
-                    ),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      secondary: const Icon(LucideIcons.eye),
-                      title: const Text('启用分享视图', style: TextStyle(fontWeight: FontWeight.w700)),
-                      subtitle: const Text('允许使用分享页面预览文件'),
-                      value: shareView,
-                      onChanged: (value) => update(() => shareView = value),
-                    ),
-                    if (share.isFolder)
-                      SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        secondary: const Icon(LucideIcons.bookOpen),
-                        title: const Text('显示 README', style: TextStyle(fontWeight: FontWeight.w700)),
-                        subtitle: const Text('文件夹分享中展示说明文件'),
-                        value: showReadme,
-                        onChanged: (value) => update(() => showReadme = value),
-                      ),
-                  ],
-                ),
-              ),
+                  ),
+                );
+              },
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(false),
-                child: const Text('取消'),
-              ),
-              FilledButton(
-                onPressed: () {
-                  if (timeoutExpire && parsePositiveInt(expireDaysController) == null) {
-                    ToastHelper.failure('请输入有效的过期天数');
-                    return;
-                  }
-                  if (downloadExpire && parsePositiveInt(downloadsController) == null) {
-                    ToastHelper.failure('请输入有效的下载次数');
-                    return;
-                  }
-                  if (paidDownload && parsePositiveInt(priceController) == null) {
-                    ToastHelper.failure('请输入有效的付费金额');
-                    return;
-                  }
-                  Navigator.of(dialogContext).pop(true);
-                },
-                child: const Text('保存'),
-              ),
-            ],
           );
-        },
-      ),
-    );
+    } else {
+      edited = await showDialog<bool>(
+            context: context,
+            builder: (dialogContext) => StatefulBuilder(
+              builder: (dialogContext, update) {
+                return AlertDialog(
+                  titlePadding: const EdgeInsets.fromLTRB(24, 20, 12, 0),
+                  contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
+                  title: Row(
+                    children: [
+                      const Expanded(child: Text('编辑分享')),
+                      IconButton(
+                        icon: const Icon(LucideIcons.copy),
+                        onPressed: () {
+                          Clipboard.setData(ClipboardData(text: share.url));
+                          ToastHelper.success('分享链接已复制');
+                        },
+                        tooltip: '复制分享链接',
+                      ),
+                    ],
+                  ),
+                  content: SizedBox(
+                    width: 680,
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: buildShareFormChildren(update),
+                      ),
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(dialogContext).pop(false),
+                      child: const Text('取消'),
+                    ),
+                    FilledButton(
+                      onPressed: () {
+                        if (validateShareForm()) {
+                          Navigator.of(dialogContext).pop(true);
+                        }
+                      },
+                      child: const Text('保存'),
+                    ),
+                  ],
+                );
+              },
+            ),
+          );
+    }
 
     if (edited == true) {
       final expireDays = timeoutExpire ? parsePositiveInt(expireDaysController) : null;

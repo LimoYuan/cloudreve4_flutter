@@ -141,17 +141,19 @@ class _OverviewPageState extends State<OverviewPage> {
 
     return Scaffold(
       appBar: AppBar(
-        leading: _showQrScanEntry
-            ? IconButton(
-                icon: const Icon(Icons.qr_code_scanner),
-                tooltip: '扫码登录电脑',
-                onPressed: () {
-                  Navigator.of(context).pushNamed(RouteNames.qrLoginScan);
-                },
-              )
-            : null,
         title: const Text('概览'),
         centerTitle: true,
+        actions: _showQrScanEntry
+            ? [
+                IconButton(
+                  icon: const Icon(Icons.qr_code_scanner),
+                  tooltip: '扫码登录电脑',
+                  onPressed: () {
+                    Navigator.of(context).pushNamed(RouteNames.qrLoginScan);
+                  },
+                ),
+              ]
+            : null,
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),

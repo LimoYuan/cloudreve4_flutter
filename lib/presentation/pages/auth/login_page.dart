@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:cloudreve4_flutter/data/models/login_config_model.dart';
 import 'package:cloudreve4_flutter/presentation/widgets/desktop_constrained.dart';
@@ -8,7 +9,6 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -22,6 +22,7 @@ import '../../../router/app_router.dart';
 import '../../../services/api_service.dart';
 import '../../../services/auth_service.dart';
 import '../../../services/server_service.dart';
+import '../../../services/site_logo_cache_service.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/toast_helper.dart';
 import 'widgets/auth_server_sheets.dart';
@@ -33,9 +34,6 @@ import 'register_page.dart';
 enum _LoginMode { password, qr }
 
 class LoginPage extends StatefulWidget {
-  static const String _oldAndroidLoginLogoUrl =
-      'https://mkwgame.com/58a45deaef7b8dd23b42f3c8fbe8e5a.webp';
-
   const LoginPage({super.key});
 
   @override
@@ -66,7 +64,8 @@ class _LoginPageState extends State<LoginPage> {
   // Site branding state
   String? _siteName;
   String? _siteDescription;
-  Uint8List? _siteLogoBytes;
+  String? _siteLogoUrl;
+  File? _siteLogoFile;
   int _siteBrandLoadId = 0;
 
   static const double _desktopDualPanelBreakpoint = 760;
@@ -147,13 +146,16 @@ class _LoginPageState extends State<LoginPage> {
         ? 'Cloudreve'
         : server.label.trim();
 
-    if (mounted) {
-      setState(() {
-        _siteName = fallbackName;
-        _siteDescription = null;
-        _siteLogoBytes = null;
-      });
-    }
+    // 先取本地缓存：有缓存立即展示，无缓存先走 app_logo，稍后异步拉取
+    final cachedLogo = await SiteLogoCacheService.instance.getCachedFile(server);
+
+    if (!mounted || loadId != _siteBrandLoadId) return;
+    setState(() {
+      _siteName = fallbackName;
+      _siteDescription = null;
+      _siteLogoUrl = null;
+      _siteLogoFile = cachedLogo;
+    });
 
     String? siteName;
     String? description;
@@ -219,23 +221,28 @@ class _LoginPageState extends State<LoginPage> {
       logo = htmlBrand.logoUrl ?? logo;
     } catch (_) {}
 
-    final resolvedLogo = _resolveSiteAssetUrl(server.baseUrl, logo);
-
-    Uint8List? logoBytes;
-    if (resolvedLogo != null) {
-      try {
-        logoBytes = await _fetchLogoBytes(
-          resolvedLogo,
-        ).timeout(const Duration(seconds: 8));
-      } catch (_) {}
-    }
+    final resolvedLogo =
+        _resolveSiteAssetUrl(server.baseUrl, logo) ??
+        QrLoginService.faviconUrlFromCloudreve(server.baseUrl);
 
     if (!mounted || loadId != _siteBrandLoadId) return;
     setState(() {
       _siteName = _cleanSiteText(siteName) ?? fallbackName;
       _siteDescription = _cleanSiteText(description);
-      _siteLogoBytes = logoBytes;
+      _siteLogoUrl = resolvedLogo;
     });
+
+    // 无本地缓存时才异步拉取并写入缓存，成功后刷新 UI
+    if (cachedLogo == null) {
+      final cached = await SiteLogoCacheService.instance.fetchAndCache(
+        server,
+        resolvedLogo,
+      );
+      if (!mounted || loadId != _siteBrandLoadId) return;
+      if (cached != null) {
+        setState(() => _siteLogoFile = cached);
+      }
+    }
   }
 
   String? _firstString(Map<String, dynamic> data, List<String> keys) {
@@ -306,29 +313,6 @@ class _LoginPageState extends State<LoginPage> {
       description: _extractMetaContent(html, 'description'),
       logoUrl: _extractLargeLogoHref(html, site),
     );
-  }
-
-  Future<Uint8List?> _fetchLogoBytes(String url) async {
-    final dio = Dio();
-    dio.httpClientAdapter = DirectHttpClientFactory.dioAdapter(
-      connectionTimeout: const Duration(seconds: 8),
-    );
-    final response = await dio.get<List<int>>(
-      url,
-      options: Options(
-        responseType: ResponseType.bytes,
-        followRedirects: true,
-        headers: {'Accept': 'image/*,*/*;q=0.8'},
-        validateStatus: (status) => status != null && status < 500,
-      ),
-    );
-    final status = response.statusCode ?? 0;
-    final data = response.data;
-    if (status < 200 || status >= 300 || data == null || data.isEmpty) {
-      return null;
-    }
-    if (data.length > 1024 * 1024) return null;
-    return Uint8List.fromList(data);
   }
 
   String? _extractHtmlTitle(String html) {
@@ -1304,23 +1288,84 @@ class _LoginPageState extends State<LoginPage> {
     final logoWidth = screenWidth * 0.72 > 280.0 ? 280.0 : screenWidth * 0.72;
     const logoHeight = 126.0;
 
-    if (_siteLogoBytes != null && _siteLogoBytes!.isNotEmpty) {
-      return SizedBox(
+    Widget logoChild;
+    if (_siteLogoFile != null && _siteLogoFile!.existsSync()) {
+      logoChild = Image.file(
+        _siteLogoFile!,
         width: logoWidth,
         height: logoHeight,
-        child: Center(
-          child: Image.memory(
-            _siteLogoBytes!,
-            width: logoWidth,
-            height: logoHeight,
-            fit: BoxFit.contain,
-            errorBuilder: (_, _, _) => _buildAppLogo(size),
-          ),
-        ),
+        fit: BoxFit.contain,
+        errorBuilder: (_, _, _) => _buildAppLogo(size),
       );
+    } else {
+      final server = ServerService.instance.currentServer;
+      final faviconUrl =
+          _siteLogoUrl ??
+          (server == null
+              ? null
+              : QrLoginService.faviconUrlFromCloudreve(server.baseUrl));
+
+      if (faviconUrl != null) {
+        logoChild = Image.network(
+          faviconUrl,
+          width: logoWidth,
+          height: logoHeight,
+          fit: BoxFit.contain,
+          errorBuilder: (_, _, _) => _buildAppLogo(size),
+        );
+      } else {
+        logoChild = _buildAppLogo(size);
+      }
     }
 
-    return _buildAppLogo(size);
+    return GestureDetector(
+      onTap: _showLogoRefreshDialog,
+      child: SizedBox(
+        width: logoWidth,
+        height: logoHeight,
+        child: Center(child: logoChild),
+      ),
+    );
+  }
+
+  /// 点击 logo 弹出刷新确认（站点更换 logo 后手动刷新本地缓存）
+  Future<void> _showLogoRefreshDialog() async {
+    final server = ServerService.instance.currentServer;
+    if (server == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('刷新站点 Logo'),
+          content: const Text('站点更换了新 Logo？点击刷新将重新拉取并更新本地缓存。'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('刷新'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed == true) {
+      await _refreshSiteLogo();
+    }
+  }
+
+  /// 清除本地缓存并复用品牌加载逻辑重新拉取 logo
+  Future<void> _refreshSiteLogo() async {
+    final server = ServerService.instance.currentServer;
+    if (server == null) return;
+
+    await SiteLogoCacheService.instance.evict(server);
+    if (mounted) setState(() => _siteLogoFile = null);
+    await _loadSiteBrand();
   }
 
   Widget _buildAppLogo(double size) {
@@ -1331,32 +1376,11 @@ class _LoginPageState extends State<LoginPage> {
       width: logoWidth,
       height: 126,
       child: Center(
-        child: Image.network(
-          LoginPage._oldAndroidLoginLogoUrl,
-          width: logoWidth,
-          height: 126,
+        child: Image.asset(
+          'assets/images/app_logo.png',
+          width: size,
+          height: size,
           fit: BoxFit.contain,
-          filterQuality: FilterQuality.high,
-          headers: const {
-            'User-Agent':
-                'Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Mobile Safari/537.36',
-            'Accept':
-                'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-          },
-          loadingBuilder: (context, child, loadingProgress) {
-            if (loadingProgress == null) return child;
-            return const SizedBox(
-              width: 32,
-              height: 32,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            );
-          },
-          errorBuilder: (_, _, _) => Image.asset(
-            'assets/images/app_logo.png',
-            width: size,
-            height: size,
-            fit: BoxFit.contain,
-          ),
         ),
       ),
     );

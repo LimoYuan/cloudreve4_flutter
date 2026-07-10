@@ -78,6 +78,7 @@ class _CategoryFilesPageState extends State<CategoryFilesPage>
   final Set<String> _selectedFilePaths = <String>{};
   String? _nextPageToken;
   String? _contextHint;
+  String? _lastViewportFillToken;
   bool _isLoading = true;
   bool _isLoadingMore = false;
   String? _errorMessage;
@@ -113,10 +114,55 @@ class _CategoryFilesPageState extends State<CategoryFilesPage>
     super.dispose();
   }
 
+  String? _readNextPageToken(Map<String, dynamic> pagination) {
+    final raw = pagination['next_token'] ??
+        pagination['next_page_token'] ??
+        pagination['nextPageToken'] ??
+        pagination['next'] ??
+        pagination['cursor'];
+    final token = raw?.toString().trim();
+    return token == null || token.isEmpty ? null : token;
+  }
+
+  String _fileIdentity(FileModel file) {
+    final path = file.path.trim();
+    if (path.isNotEmpty && path != '/') return path;
+    final id = file.id.trim();
+    if (id.isNotEmpty) return id;
+    return file.name;
+  }
+
+  double _bottomListPadding(BuildContext context) {
+    final safeBottom = MediaQuery.of(context).padding.bottom;
+    return safeBottom + (_hasSelection ? 112.0 : 96.0);
+  }
+
+  void _scheduleLoadMoreIfViewportNotFilled() {
+    final token = _nextPageToken;
+    if (token == null ||
+        token.isEmpty ||
+        token == _lastViewportFillToken ||
+        _isLoading ||
+        _isLoadingMore) {
+      return;
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      if (_nextPageToken != token || _isLoading || _isLoadingMore) return;
+      final position = _scrollController.position;
+      if (position.maxScrollExtent <= 48 ||
+          position.pixels >= position.maxScrollExtent - 480) {
+        _lastViewportFillToken = token;
+        _loadFiles(refresh: false);
+      }
+    });
+  }
+
   void _onScroll() {
-    if (_nextPageToken == null || _isLoading || _isLoadingMore) return;
+    if (_nextPageToken == null || _isLoading || _isLoadingMore || !_scrollController.hasClients) return;
     final position = _scrollController.position;
-    if (position.pixels >= position.maxScrollExtent - 320) {
+    if (position.pixels >= position.maxScrollExtent - 480) {
       _loadFiles(refresh: false);
     }
   }
@@ -163,11 +209,11 @@ class _CategoryFilesPageState extends State<CategoryFilesPage>
             ..clear()
             ..addAll(newFiles);
         } else {
-          final existingIds = _files.map((e) => e.id).toSet();
-          _files.addAll(newFiles.where((file) => !existingIds.contains(file.id)));
+          final existingKeys = _files.map(_fileIdentity).toSet();
+          _files.addAll(newFiles.where((file) => !existingKeys.contains(_fileIdentity(file))));
         }
 
-        _nextPageToken = pagination['next_token'] as String?;
+        _nextPageToken = _readNextPageToken(pagination);
         _contextHint = response['context_hint'] as String?;
         _isLoading = false;
         _isLoadingMore = false;
@@ -456,6 +502,8 @@ class _CategoryFilesPageState extends State<CategoryFilesPage>
           heights[targetIndex] += _estimatedTileHeight(file, columnWidth) + spacing;
         }
 
+        _scheduleLoadMoreIfViewportNotFilled();
+
         return ListView(
           controller: _scrollController,
           physics: const AlwaysScrollableScrollPhysics(),
@@ -463,7 +511,7 @@ class _CategoryFilesPageState extends State<CategoryFilesPage>
             horizontalPadding,
             10,
             horizontalPadding,
-            _hasSelection ? 92 : 24,
+            _bottomListPadding(context),
           ),
           children: [
             _buildSummaryHeader(context),

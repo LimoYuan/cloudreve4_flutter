@@ -139,13 +139,15 @@ class DownloadProgressItem extends StatelessWidget {
                             : '未知大小',
                         style: const TextStyle(fontSize: 12),
                       ),
-                      if (latestTask.speed > 0) ...[
+                      if (_shouldShowSpeedHint(latestTask)) ...[
                         const SizedBox(width: 12),
                         Text(
-                          latestTask.speedText,
+                          _buildSpeedHint(latestTask),
                           style: TextStyle(
                             fontSize: 12,
-                            color: Theme.of(context).colorScheme.primary,
+                            color: latestTask.speed > 0
+                                ? Theme.of(context).colorScheme.primary
+                                : Theme.of(context).hintColor,
                           ),
                         ),
                       ],
@@ -166,6 +168,15 @@ class DownloadProgressItem extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  bool _shouldShowSpeedHint(DownloadTaskModel task) {
+    return task.status == DownloadStatus.downloading || task.speed > 0;
+  }
+
+  String _buildSpeedHint(DownloadTaskModel task) {
+    if (task.speed > 0) return task.speedText;
+    return task.downloadedBytes > 0 ? '持续下载中' : '建立连接中';
   }
 
   String _getProgressLabel(DownloadTaskModel task) {

@@ -21,6 +21,8 @@ import 'package:cloudreve4_flutter/presentation/widgets/share_clipboard_watcher.
 import 'package:cloudreve4_flutter/presentation/widgets/user_avatar.dart';
 import 'package:cloudreve4_flutter/services/announcement_service.dart';
 import 'package:cloudreve4_flutter/services/dialog_queue_service.dart';
+import 'package:cloudreve4_flutter/services/app_update_service.dart';
+import 'package:cloudreve4_flutter/presentation/widgets/app_update_dialog.dart';
 import 'package:cloudreve4_flutter/services/floating_upload_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -34,6 +36,7 @@ import '../tasks/tasks_page.dart';
 import '../store/store_page.dart';
 import '../profile/profile_page.dart';
 
+import 'package:cloudreve4_flutter/mkw_packager/generated/update_config.dart' as mkw_update;
 /// 桌面端侧边栏入场动画：从左侧滑入 + 淡入
 class _DesktopSidebarIntro extends StatefulWidget {
   final Widget child;
@@ -243,6 +246,7 @@ class _AppShellState extends State<AppShell> with GestureHandlerMixin, TickerPro
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _showPostLoginAnnouncement();
+      _checkAppUpdate();
       _lastUserId = context.read<AuthProvider>().user?.id;
     });
   }
@@ -251,6 +255,42 @@ class _AppShellState extends State<AppShell> with GestureHandlerMixin, TickerPro
   void dispose() {
     _syncSpinController.dispose();
     super.dispose();
+  }
+
+
+  Future<void> _checkAppUpdate() async {
+    if (defaultTargetPlatform != TargetPlatform.android &&
+        defaultTargetPlatform != TargetPlatform.windows) {
+      return;
+    }
+
+    try {
+      // MKW_ONLINE_UPDATE_AUTO_GUARD
+      if (!mkw_update.mkwOnlineUpdateEnabled || !mkw_update.mkwAutoUpdateEnabled) return;
+      final result = await AppUpdateService.instance.check();
+      final update = result.update;
+      if (!mounted || update == null) return;
+
+      // 启动自动检查：先静默下载更新包，下载完成后再弹更新窗口。
+      // 这样用户看到“发现新版本”时，更新包已经在本地，不需要再等待下载。
+      final packagePath = await AppUpdateService.instance.downloadPackage(update);
+      if (!mounted) return;
+
+      await DialogQueueService.instance.enqueue<void>(() async {
+        if (!mounted) return;
+
+        await AppUpdateDialog.show(
+          context,
+          update: update,
+          currentVersion: result.current.version,
+          currentBuild: result.current.buildNumber,
+          preDownloadedPath: packagePath,
+        );
+
+      });
+    } catch (_) {
+      // 在线更新检查/静默下载失败不能影响主界面。
+    }
   }
 
   /// 切换 tab 时刷新对应页面数据

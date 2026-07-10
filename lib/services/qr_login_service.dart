@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'dart:io';
 
 import 'package:cryptography/cryptography.dart';
@@ -7,6 +7,7 @@ import '../core/utils/direct_http_client.dart';
 
 import '../data/models/user_model.dart';
 
+import 'package:cloudreve4_flutter/mkw_packager/generated/qr_login_config.dart';
 class QrLoginPayload {
   final String relayBaseUrl;
   final String cloudreveBaseUrl;
@@ -197,6 +198,12 @@ class QrLoginService {
 
   static final QrLoginService instance = QrLoginService._();
 
+  static void _ensureQrLoginRuntimeEnabled() {
+    if (!mkwQrLoginEnabled) {
+      throw Exception('扫码登录功能已关闭');
+    }
+  }
+
   final X25519 _keyExchange = X25519();
   final AesGcm _cipher = AesGcm.with256bits();
 
@@ -270,6 +277,7 @@ class QrLoginService {
   }
 
   Future<void> healthCheck(String relayBaseUrl) async {
+    _ensureQrLoginRuntimeEnabled();
     final dio = _dio(relayBaseUrl);
     final response = await dio.get<Map<String, dynamic>>('/api/health');
     final data = response.data ?? const <String, dynamic>{};
@@ -282,6 +290,7 @@ class QrLoginService {
     required String cloudreveBaseUrl,
     String? deviceName,
   }) async {
+    _ensureQrLoginRuntimeEnabled();
     final relayBaseUrl = relayBaseForCloudreve(cloudreveBaseUrl);
     final cloudreve = cloudreveSiteBase(cloudreveBaseUrl);
     final keyPair = await _keyExchange.newKeyPair();
@@ -322,6 +331,7 @@ class QrLoginService {
   }
 
   Future<QrLoginStatus> getStatus(QrLoginSession session) async {
+    _ensureQrLoginRuntimeEnabled();
     final dio = _dio(session.relayBaseUrl);
     final response = await dio.get<Map<String, dynamic>>(
       '/api/session/${session.sessionId}/status',
@@ -330,6 +340,7 @@ class QrLoginService {
   }
 
   Future<QrLoginTokenPayload> getResult(QrLoginSession session) async {
+    _ensureQrLoginRuntimeEnabled();
     final dio = _dio(session.relayBaseUrl);
     final response = await dio.get<Map<String, dynamic>>(
       '/api/session/${session.sessionId}/result',
@@ -376,6 +387,7 @@ class QrLoginService {
   }
 
   Future<void> markScanned(QrLoginPayload payload) async {
+    _ensureQrLoginRuntimeEnabled();
     try {
       // Keep this lightweight: it helps verify that mobile actually touched the
       // same relay/session that desktop is polling, without printing user token.
@@ -404,6 +416,7 @@ class QrLoginService {
     required UserModel user,
     required String currentCloudreveBaseUrl,
   }) async {
+    _ensureQrLoginRuntimeEnabled();
     if (!isSameCloudreve(currentCloudreveBaseUrl, payload.cloudreveBaseUrl)) {
       throw Exception('二维码所属站点与当前手机端登录站点不一致');
     }
@@ -475,3 +488,4 @@ class QrLoginService {
     }
   }
 }
+

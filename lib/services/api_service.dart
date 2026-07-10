@@ -6,6 +6,7 @@ import '../config/api_config.dart';
 import '../services/storage_service.dart';
 import '../core/exceptions/app_exception.dart';
 import '../core/utils/app_logger.dart';
+import '../core/utils/user_friendly_error.dart';
 
 /// API响应
 class ApiResponse<T> {
@@ -26,9 +27,12 @@ class ApiResponse<T> {
   factory ApiResponse.fromJson(Map<String, dynamic> json) {
     return ApiResponse<T>(
       code: json['code'] as int? ?? 0,
-      message: json['msg'] as String? ?? '',
+      message: json['msg']?.toString() ??
+          json['message']?.toString() ??
+          json['error']?.toString() ??
+          '',
       data: json['data'],
-      error: json['error'] as String?,
+      error: json['error']?.toString(),
       correlationId: json['correlation_id'] as String?,
     );
   }
@@ -267,11 +271,22 @@ class ApiService {
 
         if (responseData is Map<String, dynamic>) {
           final response = ApiResponse.fromJson(responseData);
-          throw ServerException(response.message, code: response.code);
+          throw ServerException(
+            UserFriendlyError.fromText(
+              response.message,
+              code: response.code,
+              fallback: '请求失败，请稍后重试',
+            ),
+            code: response.code,
+          );
         }
 
         throw ServerException(
-          responseData?.toString() ?? '请求失败',
+          UserFriendlyError.fromText(
+            responseData?.toString(),
+            code: statusCode,
+            fallback: '请求失败，请检查网络或服务器状态后重试',
+          ),
           code: statusCode,
         );
       },
@@ -489,7 +504,14 @@ class ApiService {
     if (data is Map<String, dynamic>) {
       final apiResponse = ApiResponse<dynamic>.fromJson(data);
       if (!apiResponse.isSuccess && !apiResponse.isContinue) {
-        throw ServerException(apiResponse.message, code: apiResponse.code);
+        throw ServerException(
+          UserFriendlyError.fromText(
+            apiResponse.message,
+            code: apiResponse.code,
+            fallback: '请求失败，请稍后重试',
+          ),
+          code: apiResponse.code,
+        );
       }
 
       final payload = apiResponse.data;

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import '../../core/utils/user_friendly_error.dart';
 import 'package:oktoast/oktoast.dart';
 
 /// Toast 封装组件
@@ -17,7 +19,7 @@ class ToastHelper {
   /// 显示失败提示
   static void failure(String message) {
     _showToast(
-      message,
+      UserFriendlyError.fromText(message, fallback: '操作失败，请稍后重试'),
       backgroundColor: const Color(0xFFFFEBEE),
       textColor: const Color(0xFFC62828),
     );
@@ -26,7 +28,7 @@ class ToastHelper {
   /// 显示错误提示
   static void error(String message) {
     _showToast(
-      message,
+      UserFriendlyError.fromText(message, fallback: '操作失败，请稍后重试'),
       backgroundColor: const Color(0xFFFFF3E0),
       textColor: const Color(0xFFEF6C00),
       duration: const Duration(seconds: 3),
@@ -36,7 +38,7 @@ class ToastHelper {
   /// 显示警告提示
   static void warning(String message) {
     _showToast(
-      message,
+      UserFriendlyError.fromText(message, fallback: message),
       backgroundColor: const Color(0xFFFFF8E1),
       textColor: const Color(0xFFFF8F00),
     );
@@ -110,7 +112,7 @@ class ToastHelper {
   }) {
     showToastWidget(
       _buildIconToast(
-        message: message,
+        message: UserFriendlyError.fromText(message, fallback: message),
         icon: icon,
         iconColor: iconColor,
         backgroundColor: backgroundColor,

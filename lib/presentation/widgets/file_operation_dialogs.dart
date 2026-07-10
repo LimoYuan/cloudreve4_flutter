@@ -92,11 +92,17 @@ class FileOperationDialogs {
       },
     );
 
-    if (confirmed == true && controller.text.isNotEmpty) {
+    if (confirmed == true && controller.text.trim().isNotEmpty) {
       final error = await fileManager.createFolder(controller.text);
-      if (error != null && context.mounted) {
-        ToastHelper.failure('创建文件夹失败: $error');
-      } else if (context.mounted) {
+      if (!context.mounted) return;
+
+      if (error != null) {
+        if (error.contains('已存在')) {
+          ToastHelper.warning(error);
+        } else {
+          ToastHelper.failure('创建文件夹失败: $error');
+        }
+      } else {
         ToastHelper.success('文件夹创建成功');
       }
     }

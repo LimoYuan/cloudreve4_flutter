@@ -9,6 +9,7 @@ import '../../core/constants/sort_options.dart';
 import '../../core/constants/storage_keys.dart';
 import '../../core/utils/app_logger.dart';
 import '../../core/utils/file_utils.dart';
+import '../../core/exceptions/app_exception.dart';
 
 /// 文件视图类型
 enum FileViewType { list, grid, gallery }
@@ -61,6 +62,27 @@ class FileManagerProvider extends ChangeNotifier {
   String? get highlightPath => _highlightPath;
   String? get activeCategory => _activeCategory;
 
+  String? _readNextPageToken(Map<String, dynamic>? pagination) {
+    if (pagination == null || pagination.isEmpty) return null;
+    final raw = pagination['next_token'] ??
+        pagination['next_page_token'] ??
+        pagination['nextPageToken'] ??
+        pagination['next'] ??
+        pagination['cursor'];
+    final token = raw?.toString().trim();
+    return token == null || token.isEmpty ? null : token;
+  }
+
+  String _fileIdentity(FileModel file) {
+    // Prefer path/URI because some API payloads can omit or reuse id across
+    // pages. De-duplicating only by id may drop the last visible item/page.
+    final path = file.path.trim();
+    if (path.isNotEmpty && path != '/') return path;
+    final id = file.id.trim();
+    if (id.isNotEmpty) return id;
+    return file.name;
+  }
+
   /// 加载文件列表
   Future<void> loadFiles({bool refresh = false, Duration timeout = const Duration(seconds: 5)}) async {
     if (refresh) {
@@ -88,7 +110,7 @@ class FileManagerProvider extends ChangeNotifier {
         _files = filesData
             .map((f) => FileModel.fromJson(f as Map<String, dynamic>))
             .toList();
-        _nextPageToken = pagination['next_token'] as String?;
+        _nextPageToken = _readNextPageToken(pagination);
         _hasMore = _nextPageToken != null;
         _contextHint = response['context_hint'] as String?;
       });
@@ -134,9 +156,9 @@ class FileManagerProvider extends ChangeNotifier {
           .toList();
 
       setState(() {
-        final existingIds = _files.map((e) => e.id).toSet();
-        _files.addAll(newFiles.where((f) => !existingIds.contains(f.id)));
-        _nextPageToken = pagination['next_token'] as String?;
+        final existingKeys = _files.map(_fileIdentity).toSet();
+        _files.addAll(newFiles.where((f) => !existingKeys.contains(_fileIdentity(f))));
+        _nextPageToken = _readNextPageToken(pagination);
         _hasMore = _nextPageToken != null;
       });
     } on TimeoutException {
@@ -284,15 +306,29 @@ class FileManagerProvider extends ChangeNotifier {
   }
 
   /// 创建文件夹
+  ///
+  /// 创建文件夹属于一次性操作错误，不应该污染文件列表的全局
+  /// [_errorMessage]。否则服务端返回 40004(Object existed) 时，
+  /// 移动端会从正常列表跳到整页错误态。
   Future<String?> createFolder(String name) async {
-    try {
-      String uri;
-      if (_currentPath == '/' || _currentPath.isEmpty) {
-        uri = '/$name';
-      } else {
-        uri = '$_currentPath/$name';
-      }
+    final normalizedName = _normalizeCreateName(name);
+    if (normalizedName == null) {
+      return '文件夹名称不能为空';
+    }
+    if (!_isSafePathName(normalizedName)) {
+      return '文件夹名称不能包含 / 或 \\，也不能使用 . 或 ..';
+    }
 
+    final existedLocally = _files.any(
+      (file) => file.name.trim() == normalizedName,
+    );
+    if (existedLocally) {
+      return '同名文件或文件夹已存在，请换一个名称';
+    }
+
+    final uri = _joinCurrentPath(normalizedName);
+
+    try {
       final response = await FileService().createFile(
         uri: uri,
         type: 'folder',
@@ -302,15 +338,58 @@ class FileManagerProvider extends ChangeNotifier {
       final newFolder = FileModel.fromJson(response);
 
       setState(() {
+        _errorMessage = null;
+        _files.removeWhere((file) => _fileIdentity(file) == _fileIdentity(newFolder));
         _files.insert(0, newFolder);
       });
 
       return null;
     } catch (e) {
-      final error = e.toString();
-      setErrorMessage(error);
-      return error;
+      // Cloudreve V4: code 40004 / Object existed。这里只返回给调用方做
+      // toast 提示，不要 setErrorMessage，避免整页显示 AppException。
+      if (_isObjectExistedError(e)) {
+        unawaited(loadFiles(refresh: true));
+        return '同名文件或文件夹已存在，请换一个名称';
+      }
+
+      AppLogger.d('Create folder failed: $e');
+      return _friendlyCreateFolderError(e);
     }
+  }
+
+  String? _normalizeCreateName(String name) {
+    final normalized = name.trim();
+    return normalized.isEmpty ? null : normalized;
+  }
+
+  bool _isSafePathName(String name) {
+    if (name == '.' || name == '..') return false;
+    return !name.contains('/') && !name.contains('\\');
+  }
+
+  String _joinCurrentPath(String childName) {
+    final base = _currentPath.trim();
+    if (base.isEmpty || base == '/') return '/$childName';
+    return base.endsWith('/') ? '$base$childName' : '$base/$childName';
+  }
+
+  bool _isObjectExistedError(Object error) {
+    if (error is AppException && error.code == 40004) return true;
+    final text = error.toString().toLowerCase();
+    return text.contains('40004') ||
+        text.contains('object existed') ||
+        text.contains('object exists') ||
+        text.contains('already exists') ||
+        text.contains('已存在');
+  }
+
+  String _friendlyCreateFolderError(Object error) {
+    if (error is AppException) {
+      final message = error.message.trim();
+      if (message.isNotEmpty) return message;
+    }
+    final text = error.toString();
+    return text;
   }
 
   /// 删除单个文件（增量移除）
@@ -379,20 +458,98 @@ class FileManagerProvider extends ChangeNotifier {
     }
   }
 
+  String _fileNameFromUri(String fileUri) {
+    final clean = fileUri.split('?').first.replaceAll(RegExp(r'/+$'), '');
+    final nameParts = clean
+        .split('/')
+        .where((part) => part.isNotEmpty)
+        .toList(growable: false);
+    final rawName = nameParts.isEmpty ? null : nameParts.last;
+    if (rawName == null || rawName.trim().isEmpty || rawName == 'my') {
+      return '上传文件';
+    }
+    try {
+      return Uri.decodeComponent(rawName);
+    } catch (_) {
+      return rawName;
+    }
+  }
+
+  FileModel _optimisticUploadedFile(String fileUri) {
+    final now = DateTime.now();
+    return FileModel(
+      type: 0,
+      id: fileUri,
+      name: _fileNameFromUri(fileUri),
+      createdAt: now,
+      updatedAt: now,
+      size: 0,
+      path: fileUri,
+    );
+  }
+
+  void _upsertVisibleFile(FileModel file) {
+    final key = _fileIdentity(file);
+    final index = _files.indexWhere((existing) {
+      if (existing.path == file.path) return true;
+      if (existing.id.isNotEmpty && existing.id == file.id) return true;
+      return _fileIdentity(existing) == key;
+    });
+
+    setState(() {
+      if (index >= 0) {
+        _files[index] = file;
+      } else {
+        // 上传完成的文件必须立即进入当前可见列表。否则当前目录已有 50 个
+        // 文件时，仅刷新第一页会让第 51 个及之后的上传结果看起来“消失”。
+        _files.insert(0, file);
+      }
+    });
+  }
+
+  Future<FileModel?> _getUploadedFileInfoWithRetry(String fileUri) async {
+    Object? lastError;
+    for (var attempt = 0; attempt < 4; attempt++) {
+      if (attempt > 0) {
+        await Future.delayed(Duration(milliseconds: 350 * attempt));
+      }
+
+      try {
+        final response = await FileService()
+            .getFileInfo(uri: fileUri)
+            .timeout(const Duration(seconds: 6));
+        return FileModel.fromJson(response);
+      } catch (e) {
+        lastError = e;
+      }
+    }
+
+    AppLogger.d('获取上传文件信息失败，将先显示本地占位: $lastError');
+    return null;
+  }
+
+  Future<void> _replaceUploadedPlaceholderWhenReady(String fileUri) async {
+    await Future.delayed(const Duration(seconds: 2));
+    try {
+      final response = await FileService()
+          .getFileInfo(uri: fileUri)
+          .timeout(const Duration(seconds: 6));
+      _upsertVisibleFile(FileModel.fromJson(response));
+    } catch (e) {
+      AppLogger.d('刷新上传文件占位失败: $e');
+    }
+  }
+
   /// 通过 URI 获取文件信息并添加到列表（用于上传完成后）
   Future<void> addFileByUri(String fileUri) async {
-    try {
-      final response = await FileService().getFileInfo(uri: fileUri);
-      final newFile = FileModel.fromJson(response);
-      final exists = _files.any((f) => f.id == newFile.id);
-      if (!exists) {
-        setState(() {
-          _files.insert(0, newFile);
-        });
-      }
-    } catch (e) {
-      AppLogger.d('获取上传文件信息失败: $e');
+    final remoteFile = await _getUploadedFileInfoWithRetry(fileUri);
+    if (remoteFile != null) {
+      _upsertVisibleFile(remoteFile);
+      return;
     }
+
+    _upsertVisibleFile(_optimisticUploadedFile(fileUri));
+    unawaited(_replaceUploadedPlaceholderWhenReady(fileUri));
   }
 
   /// 高亮指定文件路径（3 秒后自动清除）
@@ -465,7 +622,7 @@ class FileManagerProvider extends ChangeNotifier {
         _files = filesData
             .map((f) => FileModel.fromJson(f as Map<String, dynamic>))
             .toList();
-        _nextPageToken = pagination['next_token'] as String?;
+        _nextPageToken = _readNextPageToken(pagination);
         _hasMore = _nextPageToken != null;
         _contextHint = response['context_hint'] as String?;
       });
@@ -583,7 +740,7 @@ class FileManagerProvider extends ChangeNotifier {
       final pagination = response['pagination'] as Map<String, dynamic>?;
       setState(() {
         _files = updatedFiles;
-        _nextPageToken = pagination?['next_token'] as String?;
+        _nextPageToken = _readNextPageToken(pagination);
         _hasMore = _nextPageToken != null;
         _contextHint = response['context_hint'] as String?;
       });

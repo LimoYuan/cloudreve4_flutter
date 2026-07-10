@@ -7,7 +7,7 @@ class AppException implements Exception {
   AppException(this.message, {this.code, this.data});
 
   @override
-  String toString() => 'AppException: $message (code: $code)';
+  String toString() => message;
 }
 
 /// 网络异常

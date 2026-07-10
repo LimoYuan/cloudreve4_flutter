@@ -9,6 +9,7 @@ import '../../providers/auth_provider.dart';
 import '../../widgets/toast_helper.dart';
 import '../../widgets/user_avatar.dart';
 
+import 'package:cloudreve4_flutter/mkw_packager/generated/qr_login_config.dart';
 class QrLoginScanPage extends StatefulWidget {
   const QrLoginScanPage({super.key});
 
@@ -142,6 +143,12 @@ class _QrLoginScanPageState extends State<QrLoginScanPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (!mkwQrLoginEnabled) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('扫码登录电脑')),
+        body: const Center(child: Text('扫码登录功能已关闭')),
+      );
+    }
     return Scaffold(
       appBar: AppBar(title: const Text('扫码登录电脑')),
       body: Stack(

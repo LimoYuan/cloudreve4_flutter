@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:external_path/external_path.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
+import '../config/brand_config.dart';
 import '../core/constants/storage_keys.dart';
 import '../data/models/download_task_model.dart';
 import 'api_service.dart';
@@ -156,14 +157,15 @@ class DownloadService {
 
     // 配置通知（Android 前台服务需要通知栏显示）
     if (Platform.isAndroid) {
+      final appName = BrandConfig.appName;
       bd.FileDownloader().configureNotification(
-        running: const bd.TaskNotification(
-          '正在下载',
+        running: bd.TaskNotification(
+          '$appName 正在下载',
           '文件: {filename} - {progress}',
         ),
-        complete: const bd.TaskNotification('下载完成', '文件: {filename} 已保存'),
-        error: const bd.TaskNotification('下载失败', '文件: {filename} 下载出错'),
-        paused: const bd.TaskNotification('已暂停', '文件: {filename} 已暂停'),
+        complete: bd.TaskNotification('$appName 下载完成', '文件: {filename} 已保存'),
+        error: bd.TaskNotification('$appName 下载失败', '文件: {filename} 下载出错'),
+        paused: bd.TaskNotification('$appName 已暂停', '文件: {filename} 已暂停'),
         progressBar: true,
         tapOpensFile: true,
       );

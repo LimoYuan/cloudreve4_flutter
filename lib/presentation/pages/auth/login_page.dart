@@ -72,6 +72,7 @@ class _LoginPageState extends State<LoginPage> {
   static const double _mobileQrLoginMinWidth = 1000;
 
   bool get _showQrLogin {
+    if (!BrandConfig.qrLoginEnabled) return false;
     final isMobilePlatform =
         defaultTargetPlatform == TargetPlatform.android ||
         defaultTargetPlatform == TargetPlatform.iOS;
@@ -147,7 +148,9 @@ class _LoginPageState extends State<LoginPage> {
         : server.label.trim();
 
     // 先取本地缓存：有缓存立即展示，无缓存先走 app_logo，稍后异步拉取
-    final cachedLogo = await SiteLogoCacheService.instance.getCachedFile(server);
+    final cachedLogo = await SiteLogoCacheService.instance.getCachedFile(
+      server,
+    );
 
     if (!mounted || loadId != _siteBrandLoadId) return;
     setState(() {

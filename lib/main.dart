@@ -36,6 +36,7 @@ import 'core/utils/video_fullscreen.dart';
 import 'services/desktop_service.dart';
 import 'services/global_shortcuts_service.dart';
 import 'router/app_router.dart';
+import 'services/app_update_service.dart';
 import 'presentation/widgets/toast_helper.dart';
 import 'src/rust/frb_generated.dart' show RustSyncApi;
 
@@ -47,6 +48,7 @@ class _CloudreveDirectHttpOverrides extends HttpOverrides {
     return client;
   }
 }
+
 final RouteObserver<PageRoute> routeObserver = RouteObserver<PageRoute>();
 
 /// 全局标记：当前是否处于登录页，登录页不显示自定义标题栏
@@ -252,6 +254,7 @@ class AppView extends StatelessWidget {
       child: MaterialApp(
         title: AppConfig.appName,
         debugShowCheckedModeBanner: false,
+        navigatorKey: AppUpdateService.navigatorKey,
         theme: themeProvider.buildLightTheme(),
         darkTheme: themeProvider.buildDarkTheme(),
         themeMode: flutterThemeMode,

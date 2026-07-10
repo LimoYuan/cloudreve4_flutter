@@ -21,15 +21,19 @@ class FileService {
   /// 列出文件
   Future<Map<String, dynamic>> listFiles({
     required String uri,
-    int page = 0,
+    int? page,
     int? pageSize,
     String? orderBy,
     String? orderDirection,
     String? nextPageToken,
   }) async {
+    // Cloudreve V4 pagination is token based once next_page_token is present.
+    // Sending page=0 together with next_page_token can make some servers keep
+    // returning the first page, which looks like the Android client is missing
+    // the last file/page even though the web UI can scroll to it.
     final params = _cleanQueryParams({
       'uri': FileUtils.toCloudreveUri(uri),
-      'page': page,
+      'page': nextPageToken == null ? (page ?? 0) : null,
       'page_size': pageSize,
       'order_by': orderBy,
       'order_direction': orderDirection,

@@ -1,4 +1,4 @@
-﻿import 'dart:io' show Platform;
+import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 import '../presentation/pages/auth/login_page.dart';
@@ -29,7 +29,8 @@ import '../services/share_link_service.dart';
 import '../data/models/file_model.dart';
 import '../presentation/pages/auth/qr_login_scan_page.dart';
 
-/// 璺敱鍚嶇О
+import 'package:cloudreve4_flutter/mkw_packager/generated/qr_login_config.dart';
+
 class RouteNames {
   static const String qrLoginScan = '/qr-login-scan';
   static const String splash = '/';
@@ -59,11 +60,18 @@ class RouteNames {
   static const String transferredFiles = '/transferred-files';
 }
 
-/// 搴旂敤璺敱
 class AppRouter {
   static Route<dynamic> generateRoute(RouteSettings settings) {
     switch (settings.name) {
       case RouteNames.qrLoginScan:
+        if (!mkwQrLoginEnabled) {
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => const Scaffold(
+              body: Center(child: Text('扫码登录功能已关闭')),
+            ),
+          );
+        }
         return MaterialPageRoute(
           settings: settings,
           builder: (context) => const QrLoginScanPage(),

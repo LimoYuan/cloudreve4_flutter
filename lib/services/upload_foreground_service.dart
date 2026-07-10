@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
+import '../config/brand_config.dart';
 import '../core/utils/app_logger.dart';
 import '../data/models/upload_task_model.dart';
 
@@ -14,9 +15,10 @@ import '../data/models/upload_task_model.dart';
 /// 并同步通知栏文字。
 class UploadForegroundService {
   static const int _serviceId = 46041;
-  static const String _channelId = 'cloudreve_upload_service';
-  static const String _channelName = 'Cloudreve 上传任务';
-  static const String _channelDescription = '显示 Cloudreve 文件上传进度';
+  static const String _channelId = 'mkw_upload_service';
+  static String get _appName => BrandConfig.appName;
+  static String get _channelName => '$_appName 上传任务';
+  static String get _channelDescription => '显示 $_appName 文件上传进度';
 
   static bool _initialized = false;
   static bool _permissionAsked = false;
@@ -88,9 +90,10 @@ class UploadForegroundService {
         ? uploadingTasks.first
         : activeTasks.first;
 
+    final appName = _appName;
     final title = activeTasks.length == 1
-        ? 'Cloudreve 正在上传'
-        : 'Cloudreve 正在上传 ${activeTasks.length} 个文件';
+        ? '$appName 正在上传'
+        : '$appName 正在上传 ${activeTasks.length} 个文件';
     final text = _buildNotificationText(primaryTask);
 
     try {

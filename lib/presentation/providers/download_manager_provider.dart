@@ -20,6 +20,9 @@ class DownloadManagerProvider extends ChangeNotifier {
   final Map<String, DateTime> _lastProgressTime = {};
   final Map<String, int> _lastProgressBytes = {};
   DateTime? _lastProgressPersistTime;
+  Timer? _activeDownloadSampler;
+  bool _isSamplingLocalProgress = false;
+
 
   /// 暂停/恢复后的基准字节数。
   ///
@@ -75,6 +78,8 @@ class DownloadManagerProvider extends ChangeNotifier {
 
     // 从本地存储加载已保存的下载任务
     await _loadTasks();
+
+    _ensureActiveDownloadSampler();
 
     _isInitialized = true;
     AppLogger.d('DownloadManagerProvider 初始化完成');
@@ -152,6 +157,7 @@ class DownloadManagerProvider extends ChangeNotifier {
     _tasks[id] = task;
     await _saveTasks();
     notifyListeners();
+    _ensureActiveDownloadSampler();
 
     // 开始下载
     AppLogger.d(
@@ -170,7 +176,18 @@ class DownloadManagerProvider extends ChangeNotifier {
       return null;
     }
 
-    return task;
+    final startedTask = _tasks[id];
+    if (startedTask != null && startedTask.status == DownloadStatus.waiting) {
+      _tasks[id] = startedTask.copyWith(
+        status: DownloadStatus.downloading,
+        backgroundTaskId: bdTaskId.startsWith('dio:') ? startedTask.backgroundTaskId : bdTaskId,
+        waitingForWifi: false,
+      );
+      await _saveTasks();
+      notifyListeners();
+    }
+
+    return _tasks[id] ?? task;
   }
 
   /// 批量添加下载任务
@@ -217,12 +234,26 @@ class DownloadManagerProvider extends ChangeNotifier {
       return;
     }
 
-    var currentDownloadedBytes = task.downloadedBytes;
+    var effectiveStatus = status;
     final hasProgress = progressPercent != null && progressPercent.isFinite;
+
+    // background_downloader may emit a non-progress enqueued/waiting status after
+    // an earlier running/progress callback. Treat that as a transient scheduler
+    // callback instead of downgrading the visible row back to "waiting".
+    if (effectiveStatus == DownloadStatus.waiting &&
+        task.status == DownloadStatus.downloading &&
+        !task.waitingForWifi &&
+        progressPercent == null &&
+        downloadedBytes == null &&
+        task.downloadedBytes > 0) {
+      effectiveStatus = DownloadStatus.downloading;
+    }
+
+    var currentDownloadedBytes = task.downloadedBytes;
 
     if (downloadedBytes != null) {
       currentDownloadedBytes = downloadedBytes.clamp(0, 1 << 62);
-    } else if (status == DownloadStatus.completed) {
+    } else if (effectiveStatus == DownloadStatus.completed) {
       currentDownloadedBytes = task.fileSize > 0
           ? task.fileSize
           : _completedFileSize(task) ?? task.downloadedBytes;
@@ -265,7 +296,7 @@ class DownloadManagerProvider extends ChangeNotifier {
     var speed = task.speed;
     final now = DateTime.now();
 
-    if (status == DownloadStatus.downloading &&
+    if (effectiveStatus == DownloadStatus.downloading &&
         (hasProgress || downloadedBytes != null)) {
       final lastTime = _lastProgressTime[taskId];
       final lastBytes = _lastProgressBytes[taskId];
@@ -281,7 +312,7 @@ class DownloadManagerProvider extends ChangeNotifier {
 
       _lastProgressTime[taskId] = now;
       _lastProgressBytes[taskId] = currentDownloadedBytes;
-    } else if (status == DownloadStatus.downloading && !hasProgress) {
+    } else if (effectiveStatus == DownloadStatus.downloading && !hasProgress) {
       speed = task.speed;
     } else {
       speed = 0;
@@ -290,18 +321,18 @@ class DownloadManagerProvider extends ChangeNotifier {
     }
 
     final waitingForWifi =
-        status == DownloadStatus.waiting &&
+        effectiveStatus == DownloadStatus.waiting &&
         (_isWifiOnlyEnabled || task.waitingForWifi);
 
     final updatedTask = task.copyWith(
-      status: status,
-      fileSize: status == DownloadStatus.completed && task.fileSize <= 0
+      status: effectiveStatus,
+      fileSize: effectiveStatus == DownloadStatus.completed && task.fileSize <= 0
           ? currentDownloadedBytes
           : task.fileSize,
       downloadedBytes: currentDownloadedBytes,
       speed: speed,
       waitingForWifi: waitingForWifi,
-      completedAt: status == DownloadStatus.completed
+      completedAt: effectiveStatus == DownloadStatus.completed
           ? DateTime.now()
           : task.completedAt,
     );
@@ -318,7 +349,7 @@ class DownloadManagerProvider extends ChangeNotifier {
     );
 
     final shouldPersistNow =
-        status != DownloadStatus.downloading ||
+        effectiveStatus != DownloadStatus.downloading ||
         _shouldPersistProgress(now, updatedTask);
 
     if (shouldPersistNow) {
@@ -346,6 +377,124 @@ class DownloadManagerProvider extends ChangeNotifier {
     final isArchiveDownload = task.downloadUrl?.contains('/archive/') == true;
     final interval = isArchiveDownload ? 30 : 2;
     return now.difference(last).inSeconds >= interval;
+  }
+
+  void _ensureActiveDownloadSampler() {
+    _activeDownloadSampler ??= Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => _sampleLocalActiveDownloadProgress(),
+    );
+  }
+
+  Future<void> _sampleLocalActiveDownloadProgress() async {
+    if (_isSamplingLocalProgress) return;
+    _isSamplingLocalProgress = true;
+
+    try {
+      final now = DateTime.now();
+      var changed = false;
+      var shouldPersist = false;
+
+      for (final entry in _tasks.entries.toList()) {
+        final taskId = entry.key;
+        final task = entry.value;
+        final isActive = task.status == DownloadStatus.downloading ||
+            task.status == DownloadStatus.archiving ||
+            task.status == DownloadStatus.waiting;
+
+        if (!isActive) continue;
+
+        final localBytes = await _readLocalDownloadedBytes(task);
+        if (localBytes == null || localBytes <= task.downloadedBytes) {
+          continue;
+        }
+
+        final lastTime = _lastProgressTime[taskId];
+        final lastBytes = _lastProgressBytes[taskId] ?? task.downloadedBytes;
+        var speed = task.speed;
+
+        if (lastTime != null) {
+          final elapsedMs = now.difference(lastTime).inMilliseconds;
+          final bytesDelta = localBytes - lastBytes;
+          if (elapsedMs >= 300 && bytesDelta > 0) {
+            speed = (bytesDelta * 1000 / elapsedMs).round();
+          }
+        }
+
+        _lastProgressTime[taskId] = now;
+        _lastProgressBytes[taskId] = localBytes;
+
+        var nextStatus = task.status;
+        if (task.status == DownloadStatus.waiting && !task.waitingForWifi) {
+          nextStatus = DownloadStatus.downloading;
+        }
+
+        _tasks[taskId] = task.copyWith(
+          status: nextStatus,
+          downloadedBytes: task.fileSize > 0 && localBytes > task.fileSize
+              ? task.fileSize
+              : localBytes,
+          speed: speed,
+          waitingForWifi: false,
+        );
+
+        changed = true;
+        shouldPersist = shouldPersist || _shouldPersistProgress(now, _tasks[taskId]!);
+      }
+
+      if (changed) {
+        if (shouldPersist) {
+          await _saveTasks();
+          _lastProgressPersistTime = now;
+        }
+        notifyListeners();
+      }
+    } catch (e) {
+      AppLogger.d('本地采样下载进度失败: $e');
+    } finally {
+      _isSamplingLocalProgress = false;
+    }
+  }
+
+  Future<int?> _readLocalDownloadedBytes(DownloadTaskModel task) async {
+    final candidates = <String>{
+      task.savePath,
+      '${task.savePath}.part',
+      '${task.savePath}.tmp',
+      '${task.savePath}.download',
+    };
+
+    final file = File(task.savePath);
+    final dir = file.parent;
+    final name = file.path.split(Platform.pathSeparator).last;
+
+    try {
+      if (await dir.exists()) {
+        await for (final entity in dir.list(followLinks: false)) {
+          if (entity is! File) continue;
+          final entityName = entity.path.split(Platform.pathSeparator).last;
+          if (entityName == name ||
+              entityName == '$name.part' ||
+              entityName == '$name.tmp' ||
+              entityName.startsWith('$name.')) {
+            candidates.add(entity.path);
+          }
+        }
+      }
+    } catch (_) {}
+
+    var best = 0;
+    for (final path in candidates) {
+      try {
+        final f = File(path);
+        if (await f.exists()) {
+          final length = await f.length();
+          if (length > best) best = length;
+        }
+      } catch (_) {}
+    }
+
+    return best > 0 ? best : null;
   }
 
   /// 恢复下载
@@ -591,6 +740,8 @@ class DownloadManagerProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _activeDownloadSampler?.cancel();
+    _activeDownloadSampler = null;
     _lastProgressTime.clear();
     _lastProgressBytes.clear();
     _downloadService.dispose();

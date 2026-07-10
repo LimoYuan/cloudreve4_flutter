@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -12,14 +13,9 @@ import 'toast_helper.dart';
 
 /// 显示上传对话框（毛玻璃风格）。
 ///
-/// 桌面端不再弹出“选择图片/选择视频/选择所有文件”的二级选择，
-/// 直接打开系统文件选择器；移动端保留原有分类选择逻辑。
+/// 文件管理页点击“上传”后，明确提供“上传文件 / 上传文件夹”两个入口。
+/// 桌面端支持文件夹上传；移动端保留文件选择入口并提示文件夹上传仅支持桌面端。
 void showUploadDialog(BuildContext context) {
-  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-    pickAndUploadFiles(context, FileType.any);
-    return;
-  }
-
   showGeneralDialog(
     context: context,
     barrierDismissible: true,
@@ -118,6 +114,63 @@ Future<void> pickAndUploadFiles(
   }
 }
 
+
+Future<void> pickAndUploadFolder(
+  BuildContext context, {
+  bool closeDialog = false,
+}) async {
+  if (!Platform.isWindows && !Platform.isLinux && !Platform.isMacOS) {
+    ToastHelper.warning('文件夹上传仅支持桌面端');
+    return;
+  }
+
+  try {
+    final uploadManager = Provider.of<UploadManagerProvider>(
+      context,
+      listen: false,
+    );
+    final fileManager = Provider.of<FileManagerProvider>(
+      context,
+      listen: false,
+    );
+
+    final directoryPath = await FilePicker.platform.getDirectoryPath(
+      dialogTitle: '选择要上传的文件夹',
+    );
+
+    if (closeDialog && context.mounted) {
+      Navigator.of(context).pop();
+    }
+
+    if (!context.mounted) return;
+    if (directoryPath == null || directoryPath.trim().isEmpty) {
+      ToastHelper.warning('未选择文件夹');
+      return;
+    }
+
+    uploadManager.markShouldShowDialog();
+    final result = await uploadManager.startUploadDirectory(
+      Directory(directoryPath),
+      fileManager.currentPath,
+    );
+
+    unawaited(fileManager.loadFiles(refresh: true));
+
+    if (context.mounted) {
+      if (result.isEmpty) {
+        ToastHelper.warning('所选文件夹为空或不可读取');
+      } else {
+        ToastHelper.info(
+          '文件夹上传已开始：${result.queuedFiles} 个文件，${result.ensuredFolders} 个文件夹',
+        );
+      }
+    }
+  } catch (e) {
+    if (!context.mounted) return;
+    ToastHelper.failure('选择文件夹失败: $e');
+  }
+}
+
 String _nativePickerType(FileType type) {
   switch (type) {
     case FileType.image:
@@ -179,7 +232,7 @@ class _UploadDialogContent extends StatelessWidget {
           Icon(LucideIcons.uploadCloud, size: 20, color: theme.hintColor),
           const SizedBox(width: 10),
           Text(
-            '选择要上传的文件',
+            '上传文件 / 文件夹',
             style: theme.textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.w600,
             ),
@@ -198,13 +251,52 @@ class _UploadDialogContent extends StatelessWidget {
 
   Widget _buildFileSelectionButtons(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final isDesktop = Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+
     return Column(
       mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _buildUploadOption(
           context,
+          icon: LucideIcons.file,
+          label: '上传文件',
+          description: '选择一个或多个文件上传到当前目录',
+          color: colorScheme.primary,
+          onTap: () => _pickFiles(context, FileType.any),
+        ),
+        const SizedBox(height: 12),
+        _buildUploadOption(
+          context,
+          icon: LucideIcons.folderOpen,
+          label: '上传文件夹',
+          description: isDesktop ? '选择整个文件夹，保留目录层级上传' : '文件夹上传仅支持 Windows / macOS / Linux',
+          color: Colors.teal.shade400,
+          onTap: () => _pickFolder(context),
+        ),
+        const SizedBox(height: 18),
+        Row(
+          children: [
+            Expanded(child: Divider(color: Theme.of(context).dividerColor.withValues(alpha: 0.55))),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: Text(
+                '按类型快速选择',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(context).hintColor,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            Expanded(child: Divider(color: Theme.of(context).dividerColor.withValues(alpha: 0.55))),
+          ],
+        ),
+        const SizedBox(height: 12),
+        _buildUploadOption(
+          context,
           icon: LucideIcons.image,
-          label: '选择图片',
+          label: '上传图片',
           description: 'JPG, PNG, GIF, WebP 等',
           color: Colors.purple.shade400,
           onTap: () => _pickFiles(context, FileType.image),
@@ -213,19 +305,10 @@ class _UploadDialogContent extends StatelessWidget {
         _buildUploadOption(
           context,
           icon: LucideIcons.video,
-          label: '选择视频',
+          label: '上传视频',
           description: 'MP4, AVI, MKV 等',
           color: Colors.orange.shade400,
           onTap: () => _pickFiles(context, FileType.video),
-        ),
-        const SizedBox(height: 12),
-        _buildUploadOption(
-          context,
-          icon: LucideIcons.file,
-          label: '选择所有文件',
-          description: '任意类型文件',
-          color: colorScheme.primary,
-          onTap: () => _pickFiles(context, FileType.any),
         ),
       ],
     );
@@ -320,6 +403,10 @@ class _UploadDialogContent extends StatelessWidget {
 
   Future<void> _pickFiles(BuildContext context, FileType type) async {
     await pickAndUploadFiles(context, type, closeDialog: true);
+  }
+
+  Future<void> _pickFolder(BuildContext context) async {
+    await pickAndUploadFolder(context, closeDialog: true);
   }
 
 }

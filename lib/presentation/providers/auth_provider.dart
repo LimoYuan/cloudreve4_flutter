@@ -9,6 +9,7 @@ import '../../services/storage_service.dart';
 import '../../services/api_service.dart';
 import '../../core/exceptions/app_exception.dart';
 import '../../core/utils/app_logger.dart';
+import '../../core/utils/user_friendly_error.dart';
 
 /// 认证状态
 enum AuthState { loading, authenticated, unauthenticated, error }
@@ -170,7 +171,11 @@ Future<bool> passwordLogin({
     setState(AuthState.unauthenticated);
     rethrow;
   } catch (e) {
-    _errorMessage = e.toString();
+    _errorMessage = UserFriendlyError.fromObject(
+        e,
+        action: 'login',
+        fallback: '操作失败，请检查网络、服务器地址或账号信息后重试。',
+      );
     _user = null;
     setState(AuthState.error);
     return false;
@@ -204,7 +209,11 @@ Future<bool> passwordLogin({
       setState(AuthState.authenticated);
       return true;
     } catch (e) {
-      _errorMessage = e.toString();
+      _errorMessage = UserFriendlyError.fromObject(
+        e,
+        action: 'login',
+        fallback: '操作失败，请检查网络、服务器地址或账号信息后重试。',
+      );
       _user = null;
       // 2FA 验证失败仍然停留在登录流程，不应把全局认证状态切到 error，
       // 否则登录页/弹窗可能被错误状态打断。
@@ -237,7 +246,11 @@ Future<bool> passwordLogin({
       // 即使出错也要清除本地状态
       _clearUserData();
       setState(AuthState.unauthenticated);
-      _errorMessage = e.toString();
+      _errorMessage = UserFriendlyError.fromObject(
+        e,
+        action: 'login',
+        fallback: '操作失败，请检查网络、服务器地址或账号信息后重试。',
+      );
     }
   }
 
@@ -255,7 +268,11 @@ Future<bool> passwordLogin({
         );
       }
     } catch (e) {
-      _errorMessage = e.toString();
+      _errorMessage = UserFriendlyError.fromObject(
+        e,
+        action: 'login',
+        fallback: '操作失败，请检查网络、服务器地址或账号信息后重试。',
+      );
     }
   }
 
@@ -282,7 +299,11 @@ Future<bool> passwordLogin({
       ToastHelper.error('刷新 token 失败: $e');
       AppLogger.d('刷新 token 失败: $e');
       _user = null;
-      _errorMessage = e.toString();
+      _errorMessage = UserFriendlyError.fromObject(
+        e,
+        action: 'login',
+        fallback: '操作失败，请检查网络、服务器地址或账号信息后重试。',
+      );
       notifyListeners();
       rethrow;
     }
@@ -355,7 +376,11 @@ Future<bool> passwordLogin({
       setState(AuthState.unauthenticated);
       return false;
     } catch (e) {
-      _errorMessage = e.toString();
+      _errorMessage = UserFriendlyError.fromObject(
+        e,
+        action: 'login',
+        fallback: '操作失败，请检查网络、服务器地址或账号信息后重试。',
+      );
       _user = null;
       setState(AuthState.error);
       return false;
@@ -392,7 +417,11 @@ Future<bool> passwordLogin({
       setState(AuthState.unauthenticated);
       return false;
     } catch (e) {
-      _errorMessage = e.toString();
+      _errorMessage = UserFriendlyError.fromObject(
+        e,
+        action: 'login',
+        fallback: '操作失败，请检查网络、服务器地址或账号信息后重试。',
+      );
       _user = null;
       setState(AuthState.error);
       return false;
@@ -438,7 +467,11 @@ Future<bool> passwordLogin({
 
       return removingCurrent;
     } catch (e) {
-      _errorMessage = e.toString();
+      _errorMessage = UserFriendlyError.fromObject(
+        e,
+        action: 'login',
+        fallback: '操作失败，请检查网络、服务器地址或账号信息后重试。',
+      );
       notifyListeners();
       rethrow;
     }

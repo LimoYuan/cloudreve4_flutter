@@ -11,6 +11,7 @@ import 'widgets/quick_access_grid.dart';
 import 'widgets/recent_activity_list.dart';
 import 'widgets/search_entry_card.dart';
 
+import 'package:cloudreve4_flutter/mkw_packager/generated/qr_login_config.dart';
 /// 入场动画包装：交错淡入 + 缩放 + 上滑。
 /// 监听 NavigationProvider，切回概览页时自动重播。
 class _OverviewEntrance extends StatefulWidget {
@@ -97,8 +98,9 @@ class OverviewPage extends StatefulWidget {
 
 class _OverviewPageState extends State<OverviewPage> {
   bool get _showQrScanEntry =>
-      defaultTargetPlatform == TargetPlatform.android ||
-      defaultTargetPlatform == TargetPlatform.iOS;
+      mkwQrLoginEnabled &&
+      (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS);
 
   @override
   void initState() {

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -5,11 +6,13 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../../../data/models/user_model.dart';
 import '../../../data/models/user_setting_model.dart';
 import '../../../services/user_setting_service.dart';
+import '../../../services/app_update_service.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/user_setting_provider.dart';
 import '../../widgets/user_avatar.dart';
 import '../../widgets/toast_helper.dart';
 import '../../widgets/desktop_constrained.dart';
+import '../../widgets/app_update_dialog.dart';
 import 'profile_edit_page.dart';
 import 'security_settings_page.dart';
 import 'file_preferences_page.dart';
@@ -18,6 +21,7 @@ import 'credit_history_page.dart';
 import 'quick_access_settings_page.dart';
 import '../../../router/app_router.dart';
 
+import 'package:cloudreve4_flutter/mkw_packager/generated/update_config.dart' as mkw_update;
 /// 设置主页
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -118,13 +122,13 @@ class _SettingsPageState extends State<SettingsPage> {
                 subtitle: '自定义概览页快捷目录',
                 onTap: () => _navigateTo(context, const QuickAccessSettingsPage()),
               ),
-              _SettingsTile(
+              if (mkw_update.mkwShowUpdateEntry) _SettingsTile(
                 icon: Icons.folder_outlined,
                 title: '文件偏好',
                 subtitle: '版本保留、视图同步、分享可见性',
                 onTap: () => _navigateTo(context, const FilePreferencesPage()),
               ),
-              _SettingsTile(
+              if (mkw_update.mkwShowUpdateEntry) _SettingsTile(
                 icon: Icons.tune,
                 title: '应用设置',
                 subtitle: '缓存、主题、语言',
@@ -137,16 +141,26 @@ class _SettingsPageState extends State<SettingsPage> {
           _buildSection(
             title: '关于',
             children: [
-              ListTile(
+              if (mkw_update.mkwShowUpdateEntry) ListTile(
                 leading: const Icon(Icons.info_outline),
                 title: const Text('应用名称'),
                 subtitle: const Text('Cloudreve V4.0'),
               ),
-              ListTile(
+              if (mkw_update.mkwShowUpdateEntry) ListTile(
                 leading: const Icon(Icons.tag),
                 title: const Text('版本号'),
                 subtitle: Text(_appVersion.isEmpty ? '加载中...' : _appVersion),
               ),
+              if (mkw_update.mkwShowUpdateEntry &&
+                  (defaultTargetPlatform == TargetPlatform.android ||
+                      defaultTargetPlatform == TargetPlatform.windows))
+                ListTile(
+                  leading: const Icon(Icons.system_update_alt),
+                  title: const Text('检查更新'),
+                  subtitle: const Text('检查并安装/打开新版本'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => _checkUpdate(context),
+                ),
               ListTile(
                 leading: const Icon(Icons.code),
                 title: const Text('GitHub'),
@@ -451,6 +465,54 @@ class _SettingsPageState extends State<SettingsPage> {
       if (mounted) ToastHelper.success('会员已取消');
     } catch (e) {
       if (mounted) ToastHelper.failure('取消会员失败: $e');
+    }
+  }
+
+
+  Future<void> _checkUpdate(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      const SnackBar(content: Text('正在检查更新...')),
+    );
+
+    try {
+      final result = await AppUpdateService.instance.check(force: true);
+      if (!context.mounted) return;
+
+      final update = result.update;
+      if (update == null) {
+        messenger.hideCurrentSnackBar();
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('已是最新版本：${result.current.version} (${result.current.buildNumber})'),
+          ),
+        );
+        return;
+      }
+
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        const SnackBar(content: Text('发现新版本，正在后台准备更新包...')),
+      );
+
+      final packagePath = await AppUpdateService.instance.downloadPackage(update);
+      if (!context.mounted) return;
+
+      messenger.hideCurrentSnackBar();
+      await AppUpdateDialog.show(
+        context,
+        update: update,
+        currentVersion: result.current.version,
+        currentBuild: result.current.buildNumber,
+        preDownloadedPath: packagePath,
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(content: Text('检查更新失败：$e')),
+      );
     }
   }
 

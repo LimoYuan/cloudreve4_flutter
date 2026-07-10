@@ -362,16 +362,12 @@ class DownloadTasksTab extends StatelessWidget {
         // 速度/完成时间
         DataCell(
           Text(
-            task.status == DownloadStatus.completed
-                ? (task.completedAt != null
-                      ? _formatDateTime(task.completedAt!)
-                      : '-')
-                : (task.speed > 0 ? task.speedText : '-'),
+            _buildSpeedOrCompletionText(task),
             style: TextStyle(
               fontSize: 13,
               color: task.status == DownloadStatus.completed
                   ? null
-                  : (task.speed > 0 ? colorScheme.primary : null),
+                  : (task.speed > 0 ? colorScheme.primary : colorScheme.onSurfaceVariant),
             ),
           ),
         ),
@@ -389,6 +385,22 @@ class DownloadTasksTab extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  String _buildSpeedOrCompletionText(DownloadTaskModel task) {
+    if (task.status == DownloadStatus.completed) {
+      return task.completedAt != null ? _formatDateTime(task.completedAt!) : '-';
+    }
+    if (task.speed > 0) return task.speedText;
+    if (task.status == DownloadStatus.archiving) return '服务端打包中';
+    if (task.status == DownloadStatus.waiting) {
+      return task.waitingForWifi ? '等待 WiFi' : '等待连接';
+    }
+    if (task.status == DownloadStatus.downloading) {
+      return task.downloadedBytes > 0 ? '持续下载中' : '建立连接中';
+    }
+    if (task.status == DownloadStatus.paused) return '已暂停';
+    return '-';
   }
 
   String _getProgressLabel(DownloadTaskModel task) {

@@ -8,8 +8,10 @@ import '../core/utils/direct_http_client.dart';
 import 'package:flutter/foundation.dart';
 import 'package:file_picker/file_picker.dart';
 
+import '../config/brand_config.dart';
 import '../core/constants/storage_keys.dart';
 import '../core/utils/app_logger.dart';
+import '../core/utils/user_friendly_error.dart';
 import '../data/models/upload_task_model.dart';
 import 'api_service.dart';
 import 'storage_service.dart';
@@ -460,7 +462,7 @@ class UploadService extends ChangeNotifier {
       if (activeTasks.isEmpty) {
         unawaited(
           UploadForegroundService.showFinishedThenStop(
-            title: 'Cloudreve 上传完成',
+            title: '${BrandConfig.appName} 上传完成',
             text: task.fileName,
           ),
         );
@@ -505,10 +507,10 @@ class UploadService extends ChangeNotifier {
         unawaited(
           UploadForegroundService.showFinishedThenStop(
             title: isPaused
-                ? 'Cloudreve 上传已暂停'
+                ? '${BrandConfig.appName} 上传已暂停'
                 : isCancelled
-                    ? 'Cloudreve 上传已取消'
-                    : 'Cloudreve 上传失败',
+                    ? '${BrandConfig.appName} 上传已取消'
+                    : '${BrandConfig.appName} 上传失败',
             text: task.fileName,
           ),
         );
@@ -1729,37 +1731,11 @@ class UploadService extends ChangeNotifier {
   }
 
   String _formatUploadError(Object e) {
-    if (e is DioException) {
-      final data = e.response?.data;
-      final status = e.response?.statusCode;
-
-      final map = _asMap(data);
-      if (map != null) {
-        final code = map['code'];
-        final msg = map['msg'] ?? map['message'] ?? map['error'];
-        if (code == 40004) {
-          return '文件已存在，请改名后再上传或先删除云端同名文件 (code: 40004)';
-        }
-        if (msg != null) {
-          return '上传失败: $msg${code != null ? ' (code: $code)' : ''}';
-        }
-        return '上传失败: HTTP $status, $map';
-      }
-
-      if (data is String && data.isNotEmpty) {
-        return '上传失败: HTTP $status, $data';
-      }
-
-      return '上传失败: HTTP $status, ${e.message ?? e.type.name}';
-    }
-
-    final text = e.toString();
-
-    if (text.contains('Object existed') || text.contains('40004')) {
-      return '文件已存在，请改名后再上传或先删除云端同名文件 (code: 40004)';
-    }
-
-    return text;
+    return UserFriendlyError.fromObject(
+      e,
+      action: 'upload',
+      fallback: '上传失败，请检查网络、账号权限或云端存储状态后重试。',
+    );
   }
 }
 

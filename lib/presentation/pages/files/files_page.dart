@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:cross_file/cross_file.dart';
@@ -89,6 +90,7 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
   final GlobalKey<SpeedDialFabState> _fabKey = GlobalKey<SpeedDialFabState>();
   final ScrollController _scrollController = ScrollController();
   final ScrollController _breadcrumbController = ScrollController();
+  String? _lastViewportFillToken;
 
   // 滑动手势追踪
   Offset? _swipeStartPos;
@@ -151,7 +153,7 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
         final fileUri = targetPath.endsWith('/')
             ? '$targetPath$fileName'
             : '$targetPath/$fileName';
-        fileManager.addFileByUri(fileUri);
+        unawaited(fileManager.addFileByUri(fileUri));
       }
     };
   }
@@ -171,11 +173,70 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
   void _onScrollForPagination() {
     if (!_scrollController.hasClients) return;
     final fileManager = Provider.of<FileManagerProvider>(context, listen: false);
-    if (!fileManager.hasMore || fileManager.isLoadingMore || fileManager.isLoading) return;
-    final position = _scrollController.position;
-    if (position.pixels >= position.maxScrollExtent - 320) {
+    _maybeLoadMoreFromMetrics(fileManager, _scrollController.position);
+  }
+
+  void _maybeLoadMoreFromMetrics(
+    FileManagerProvider fileManager,
+    ScrollMetrics metrics,
+  ) {
+    if (!fileManager.hasMore ||
+        fileManager.isLoadingMore ||
+        fileManager.isLoading ||
+        metrics.axis != Axis.vertical) {
+      return;
+    }
+
+    if (metrics.pixels >= metrics.maxScrollExtent - 480) {
       fileManager.loadMoreFiles();
     }
+  }
+
+  bool _handleFileScrollNotification(
+    ScrollNotification notification,
+    FileManagerProvider fileManager,
+  ) {
+    _maybeLoadMoreFromMetrics(fileManager, notification.metrics);
+    return _fabKey.currentState?.onScrollNotification(notification) ?? false;
+  }
+
+  void _scheduleLoadMoreIfViewportNotFilled(FileManagerProvider fileManager) {
+    final token = fileManager.nextPageToken;
+    if (token == null ||
+        token.isEmpty ||
+        token == _lastViewportFillToken ||
+        fileManager.isLoading ||
+        fileManager.isLoadingMore) {
+      return;
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      if (!fileManager.hasMore ||
+          fileManager.isLoading ||
+          fileManager.isLoadingMore ||
+          fileManager.nextPageToken != token) {
+        return;
+      }
+
+      final position = _scrollController.position;
+      if (position.maxScrollExtent <= 48 ||
+          position.pixels >= position.maxScrollExtent - 480) {
+        _lastViewportFillToken = token;
+        fileManager.loadMoreFiles();
+      }
+    });
+  }
+
+  double _mobileFileListBottomPadding(
+    BuildContext context,
+    FileManagerProvider fileManager,
+  ) {
+    final safeBottom = MediaQuery.of(context).padding.bottom;
+    // AppShell bottom navigation / selection bar and the floating upload button
+    // can visually cover the last row on Android. Give the list a real scrollable
+    // tail so the final file can move above those overlays.
+    return safeBottom + (fileManager.hasSelection ? 104.0 : 116.0);
   }
 
   void _onScrollForSummaryCollapse() {
@@ -1247,6 +1308,7 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
           onSearch: () => SearchDialog.show(context),
           onUpload: () => showUploadDialog(context),
           onCreateFolder: () => FileOperationDialogs.showCreateDialog(context, fileManager),
+          onCreateFile: () => _showCreateTextFileDialog(context, fileManager),
           onRemoteDownload: () => Navigator.of(context).pushNamed(RouteNames.remoteDownload),
           onToggleViewType: () {
             fileManager.setViewType(
@@ -1303,6 +1365,7 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
     required String displayTargetName,
   }) async {
     final files = <File>[];
+    final directories = <Directory>[];
     var skipped = 0;
 
     for (final xFile in droppedFiles) {
@@ -1312,26 +1375,49 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
         continue;
       }
 
-      final entityType = FileSystemEntity.typeSync(path, followLinks: true);
+      final entityType = FileSystemEntity.typeSync(path, followLinks: false);
       if (entityType == FileSystemEntityType.file) {
         files.add(File(path));
+      } else if (entityType == FileSystemEntityType.directory) {
+        directories.add(Directory(path));
       } else {
         skipped++;
       }
     }
 
-    if (files.isEmpty) {
-      ToastHelper.warning('没有可上传的文件；暂不支持直接拖拽文件夹');
+    if (files.isEmpty && directories.isEmpty) {
+      ToastHelper.warning('没有可上传的文件或文件夹');
       return;
     }
 
     try {
       final uploadManager = Provider.of<UploadManagerProvider>(context, listen: false);
+      final fileManager = Provider.of<FileManagerProvider>(context, listen: false);
       uploadManager.markShouldShowDialog();
-      await uploadManager.startUpload(files, targetPath);
 
-      final skippedText = skipped > 0 ? '，已跳过 $skipped 个文件夹或不可读项目' : '';
-      ToastHelper.info('已添加 ${files.length} 个文件到「$displayTargetName」上传队列$skippedText');
+      var queuedFiles = 0;
+      var createdFolders = 0;
+
+      if (files.isNotEmpty) {
+        final ids = await uploadManager.startUpload(files, targetPath);
+        queuedFiles += ids.length;
+      }
+
+      for (final directory in directories) {
+        final result = await uploadManager.startUploadDirectory(directory, targetPath);
+        queuedFiles += result.queuedFiles;
+        createdFolders += result.ensuredFolders;
+        skipped += result.skippedEntries;
+      }
+
+      unawaited(fileManager.loadFiles(refresh: true));
+
+      final folderText = directories.isNotEmpty ? '，包含 ${directories.length} 个文件夹' : '';
+      final createdText = createdFolders > 0 ? '，已创建/确认 $createdFolders 个远程文件夹' : '';
+      final skippedText = skipped > 0 ? '，已跳过 $skipped 个不可读项目' : '';
+      ToastHelper.info(
+        '已添加 $queuedFiles 个文件到「$displayTargetName」上传队列$folderText$createdText$skippedText',
+      );
     } catch (error) {
       ToastHelper.error('拖拽上传失败：$error');
     }
@@ -1406,6 +1492,7 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
     final isDesktop = MediaQuery.of(context).size.width >= 1000;
     final showCheckbox = fileManager.hasSelection;
     final itemCount = fileManager.files.length + (fileManager.hasMore || fileManager.isLoadingMore ? 1 : 0);
+    _scheduleLoadMoreIfViewportNotFilled(fileManager);
 
     // 高亮文件时滚动到对应位置
     if (fileManager.highlightPath != null &&
@@ -1440,7 +1527,7 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
           child: RefreshIndicator(
             onRefresh: () => _onRefresh(fileManager),
             child: NotificationListener<ScrollNotification>(
-              onNotification: _fabKey.currentState?.onScrollNotification ?? ((_) => false),
+              onNotification: (notification) => _handleFileScrollNotification(notification, fileManager),
               child: Listener(
                 onPointerSignal: _onPointerSignal,
                 child: ListView.builder(
@@ -1448,6 +1535,9 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
                 key: PageStorageKey('files_list_${fileManager.currentPath}'),
                 cacheExtent: 900,
                 keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                padding: EdgeInsets.only(
+                  bottom: isDesktop ? 8 : _mobileFileListBottomPadding(context, fileManager),
+                ),
                 itemCount: itemCount,
                 itemBuilder: (context, index) {
                   if (index >= fileManager.files.length) {
@@ -1514,6 +1604,7 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
         .clamp(screenWidth < 420 ? 2 : 3, 9);
     final showCheckbox = fileManager.hasSelection;
     final itemCount = fileManager.files.length + (fileManager.hasMore || fileManager.isLoadingMore ? 1 : 0);
+    _scheduleLoadMoreIfViewportNotFilled(fileManager);
 
     // 高亮文件时滚动到对应位置
     if (fileManager.highlightPath != null &&
@@ -1537,7 +1628,7 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
     return RefreshIndicator(
       onRefresh: () => _onRefresh(fileManager),
       child: NotificationListener<ScrollNotification>(
-        onNotification: _fabKey.currentState?.onScrollNotification ?? ((_) => false),
+        onNotification: (notification) => _handleFileScrollNotification(notification, fileManager),
         child: Listener(
           onPointerSignal: _onPointerSignal,
           child: GridView.builder(
@@ -1545,7 +1636,12 @@ class _FilesPageState extends State<FilesPage> with TickerProviderStateMixin {
           key: PageStorageKey('files_grid_${fileManager.currentPath}'),
           cacheExtent: 1100,
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 8),
+          padding: EdgeInsets.fromLTRB(
+            horizontalPadding,
+            8,
+            horizontalPadding,
+            isDesktop ? 8 : _mobileFileListBottomPadding(context, fileManager),
+          ),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: crossAxisCount,
             mainAxisSpacing: spacing,

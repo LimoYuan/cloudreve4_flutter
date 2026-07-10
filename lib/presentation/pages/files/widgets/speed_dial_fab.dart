@@ -8,6 +8,7 @@ class SpeedDialFab extends StatefulWidget {
   final VoidCallback onSearch;
   final VoidCallback onUpload;
   final VoidCallback onCreateFolder;
+  final VoidCallback onCreateFile;
   final VoidCallback onRemoteDownload;
   final VoidCallback onToggleViewType;
   final bool isListView;
@@ -17,6 +18,7 @@ class SpeedDialFab extends StatefulWidget {
     required this.onSearch,
     required this.onUpload,
     required this.onCreateFolder,
+    required this.onCreateFile,
     required this.onRemoteDownload,
     required this.onToggleViewType,
     required this.isListView,
@@ -110,6 +112,14 @@ class SpeedDialFabState extends State<SpeedDialFab> {
             ),
             _buildSubItem(
               index: 3,
+              icon: Icons.note_add_outlined,
+              label: '新建文件',
+              isDark: isDark,
+              colorScheme: colorScheme,
+              onTap: widget.onCreateFile,
+            ),
+            _buildSubItem(
+              index: 4,
               icon: LucideIcons.download,
               label: '离线下载',
               isDark: isDark,
@@ -117,7 +127,7 @@ class SpeedDialFabState extends State<SpeedDialFab> {
               onTap: widget.onRemoteDownload,
             ),
             _buildSubItem(
-              index: 4,
+              index: 5,
               icon: widget.isListView ? LucideIcons.layoutGrid : LucideIcons.list,
               label: widget.isListView ? '网格视图' : '列表视图',
               isDark: isDark,

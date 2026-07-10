@@ -67,7 +67,7 @@ class DesktopActionButtons extends StatelessWidget {
             IconButton(
               icon: const Icon(LucideIcons.upload, size: 19),
               onPressed: () => showUploadDialog(context),
-              tooltip: '上传',
+              tooltip: '上传文件 / 文件夹',
               visualDensity: VisualDensity.compact,
             ),
             PopupMenuButton<String>(

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../data/models/upload_task_model.dart';
 import '../../services/native_content_reader.dart';
+import '../../services/file_service.dart';
 import '../../services/upload_service.dart';
 
 /// 上传管理 Provider
@@ -54,6 +55,132 @@ class UploadManagerProvider extends ChangeNotifier {
     }
 
     return pathPart.isEmpty ? 'cloudreve://my' : 'cloudreve://my/$pathPart';
+  }
+
+
+  String _localName(String path) {
+    final normalized = path.replaceAll(RegExp(r'[\\/]+$'), '');
+    final parts = normalized.split(RegExp(r'[\\/]+'));
+    return parts.isEmpty || parts.last.trim().isEmpty ? '未命名文件夹' : parts.last.trim();
+  }
+
+  String _plainRemotePath(String targetPath) {
+    var text = targetPath.trim();
+    if (text.startsWith('cloudreve://my')) {
+      text = text.substring('cloudreve://my'.length);
+    }
+    if (text.isEmpty || text == '/') return '/';
+    return text.startsWith('/') ? text : '/$text';
+  }
+
+  String _joinRemotePath(String base, Iterable<String> segments) {
+    final parts = <String>[];
+    final baseText = _plainRemotePath(base).replaceAll(RegExp(r'^/+|/+$'), '');
+    if (baseText.isNotEmpty) {
+      parts.addAll(baseText.split('/').where((part) => part.trim().isNotEmpty));
+    }
+    for (final segment in segments) {
+      final clean = segment.trim().replaceAll(RegExp(r'^[\\/]+|[\\/]+$'), '');
+      if (clean.isEmpty) continue;
+      parts.add(clean);
+    }
+    return parts.isEmpty ? '/' : '/${parts.join('/')}';
+  }
+
+  List<String> _relativeSegments(String rootPath, String childPath) {
+    final root = rootPath.replaceAll('\\', '/').replaceAll(RegExp(r'/+$'), '');
+    final child = childPath.replaceAll('\\', '/');
+    var relative = child.startsWith('$root/') ? child.substring(root.length + 1) : _localName(childPath);
+    return relative
+        .split('/')
+        .where((part) => part.trim().isNotEmpty)
+        .toList(growable: false);
+  }
+
+  Future<bool> _ensureRemoteFolder(String remotePath) async {
+    try {
+      await FileService().createFile(
+        uri: remotePath,
+        type: 'folder',
+        errOnConflict: false,
+      );
+      return true;
+    } catch (_) {
+      // 文件夹已存在、无返回体或服务端兼容差异时，不中断后续文件上传。
+      return false;
+    }
+  }
+
+  /// 桌面端文件夹上传：先按本地目录结构创建远程文件夹，再把文件加入上传队列。
+  Future<FolderUploadResult> startUploadDirectory(
+    Directory directory,
+    String targetPath, {
+    bool overwrite = false,
+    bool hidden = false,
+  }) async {
+    if (!await directory.exists()) {
+      return const FolderUploadResult();
+    }
+
+    final rootPath = directory.absolute.path;
+    final rootName = _localName(rootPath);
+    final remoteFolders = <String>{_joinRemotePath(targetPath, [rootName])};
+    final fileEntries = <_FolderUploadFile>[];
+    var skipped = 0;
+
+    await for (final entity in directory.list(recursive: true, followLinks: false)) {
+      final type = await FileSystemEntity.type(entity.path, followLinks: false);
+      final segments = _relativeSegments(rootPath, entity.path);
+      if (segments.isEmpty) {
+        skipped++;
+        continue;
+      }
+
+      if (type == FileSystemEntityType.directory) {
+        remoteFolders.add(_joinRemotePath(targetPath, [rootName, ...segments]));
+      } else if (type == FileSystemEntityType.file) {
+        final parentSegments = segments.length > 1
+            ? segments.sublist(0, segments.length - 1)
+            : const <String>[];
+        final remoteParent = _joinRemotePath(targetPath, [rootName, ...parentSegments]);
+        remoteFolders.add(remoteParent);
+        fileEntries.add(_FolderUploadFile(File(entity.path), remoteParent));
+      } else {
+        skipped++;
+      }
+    }
+
+    final orderedFolders = remoteFolders.toList()
+      ..sort((a, b) => a.length == b.length ? a.compareTo(b) : a.length.compareTo(b.length));
+
+    var ensuredFolders = 0;
+    for (final remoteFolder in orderedFolders) {
+      if (await _ensureRemoteFolder(remoteFolder)) ensuredFolders++;
+    }
+
+    final ids = <String>[];
+    for (final entry in fileEntries) {
+      final file = entry.file;
+      final task = UploadTaskModel(
+        id: '${DateTime.now().millisecondsSinceEpoch}_${file.path}',
+        file: file,
+        fileName: _localName(file.path),
+        fileSize: await file.length(),
+        targetPath: _normalizeTargetPath(entry.remoteParentPath),
+        overwrite: overwrite,
+        hidden: hidden,
+      );
+      _uploadService.addTask(task);
+      _uploadService.startUpload(task);
+      ids.add(task.id);
+    }
+
+    return FolderUploadResult(
+      queuedFiles: ids.length,
+      ensuredFolders: ensuredFolders,
+      skippedEntries: skipped,
+      taskIds: ids,
+    );
   }
 
   /// 兼容旧入口：从 dart:io File 开始上传。
@@ -199,3 +326,27 @@ class UploadManagerProvider extends ChangeNotifier {
     super.dispose();
   }
 }
+
+class FolderUploadResult {
+  final int queuedFiles;
+  final int ensuredFolders;
+  final int skippedEntries;
+  final List<String> taskIds;
+
+  const FolderUploadResult({
+    this.queuedFiles = 0,
+    this.ensuredFolders = 0,
+    this.skippedEntries = 0,
+    this.taskIds = const [],
+  });
+
+  bool get isEmpty => queuedFiles == 0 && ensuredFolders == 0;
+}
+
+class _FolderUploadFile {
+  final File file;
+  final String remoteParentPath;
+
+  const _FolderUploadFile(this.file, this.remoteParentPath);
+}
+

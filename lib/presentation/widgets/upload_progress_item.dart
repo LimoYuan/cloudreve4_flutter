@@ -1,6 +1,8 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+
+import '../../core/utils/user_friendly_error.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import '../../data/models/upload_task_model.dart';
 
@@ -133,7 +135,11 @@ class UploadProgressItem extends StatelessWidget {
                 ] else if (isFailed && task.errorMessage != null) ...[
                   const SizedBox(height: 8),
                   Text(
-                    task.errorMessage!,
+                    UserFriendlyError.fromText(
+                      task.errorMessage,
+                      action: 'upload',
+                      fallback: '上传失败，请检查网络、账号权限或云端存储状态后重试。',
+                    ),
                     style: TextStyle(
                       fontSize: 12,
                       color: Colors.red.shade700,

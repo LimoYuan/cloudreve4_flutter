@@ -30,6 +30,7 @@ import 'widgets/auth_server_sheets.dart';
 import 'widgets/login_error_parser.dart';
 import 'widgets/two_factor_dialog.dart';
 
+import 'package:cloudreve4_flutter/mkw_packager/generated/qr_login_config.dart';
 class LoginDesktopPage extends StatefulWidget {
   final bool showBackButton;
 
@@ -70,7 +71,7 @@ class _LoginDesktopPageState extends State<LoginDesktopPage>
   bool _isLoading = false;
   String? _inlineAuthError;
 
-  _LoginMode _loginMode = _LoginMode.qr;
+  _LoginMode _loginMode = mkwQrLoginEnabled && BrandConfig.qrLoginEnabled ? _LoginMode.qr : _LoginMode.password;
   bool _isQrLoading = false;
   String? _qrError;
   bool _qrRelayUnavailable = false;
@@ -120,7 +121,7 @@ class _LoginDesktopPageState extends State<LoginDesktopPage>
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _loadLoginConfig();
       await _loadSiteBrand();
-      if (mounted) _startQrLogin();
+      if (mounted && mkwQrLoginEnabled) _startQrLogin();
     });
   }
 
@@ -177,6 +178,7 @@ class _LoginDesktopPageState extends State<LoginDesktopPage>
       if (!mounted) return;
       setState(() => _loginConfig = config);
 
+      CaptchaService.instance.clearCaptcha();
       if (config.loginCaptcha) {
         await CaptchaService.instance.loadCaptcha(server.baseUrl);
         if (mounted) setState(() {});
@@ -604,6 +606,10 @@ class _LoginDesktopPageState extends State<LoginDesktopPage>
   }
 
   Future<void> _startQrLogin() async {
+    if (!BrandConfig.qrLoginEnabled) {
+      _qrPollTimer?.cancel();
+      return;
+    }
     final server = ServerService.instance.currentServer;
     if (server == null) {
       setState(() {
@@ -1079,10 +1085,15 @@ class _LoginDesktopPageState extends State<LoginDesktopPage>
                       );
                     },
                     child: switch (_loginMode) {
-                      _LoginMode.qr => _buildQrLoginPanel(
-                        theme,
-                        scale: panelScale,
-                      ),
+                      _LoginMode.qr => mkwQrLoginEnabled
+                          ? _buildQrLoginPanel(
+                              theme,
+                              scale: panelScale,
+                            )
+                          : _buildPasswordLoginPanel(
+                              theme,
+                              scale: panelScale,
+                            ),
                       _LoginMode.password => _buildPasswordLoginPanel(
                         theme,
                         scale: panelScale,
@@ -1385,6 +1396,7 @@ class _LoginDesktopPageState extends State<LoginDesktopPage>
                   ),
                 ),
               ),
+              if (mkwQrLoginEnabled)
               TextButton.icon(
                 onPressed: () => _switchLoginMode(_LoginMode.qr),
                 icon: const Icon(LucideIcons.qrCode, size: 18),

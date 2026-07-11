@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:ui';
@@ -32,6 +33,7 @@ import 'services/api_service.dart';
 import 'services/server_service.dart';
 import 'services/cache_manager_service.dart';
 import 'services/avatar_cache_service.dart';
+import 'services/site_brand_cache_service.dart';
 import 'core/utils/video_fullscreen.dart';
 import 'services/desktop_service.dart';
 import 'services/global_shortcuts_service.dart';
@@ -80,6 +82,9 @@ void main() async {
     AppLogger.setLevel(level);
   }
   AppLogger.i("应用启动，日志系统就绪");
+
+  // 后台迁移旧版站点品牌缓存（base64 in prefs -> 文件系统），不阻塞启动
+  unawaited(SiteBrandCacheService.instance.migrateAllLegacy());
 
   UploadForegroundService.initCommunicationPort();
 

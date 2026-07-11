@@ -1,10 +1,8 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../../config/app_config.dart';
@@ -14,6 +12,7 @@ import '../../core/utils/server_url_utils.dart';
 import '../../data/models/server_model.dart';
 import '../../services/qr_login_service.dart';
 import '../../services/server_service.dart';
+import '../../services/site_brand_cache_service.dart';
 
 class DesktopTitleBar extends StatefulWidget implements PreferredSizeWidget {
   const DesktopTitleBar({super.key});
@@ -26,8 +25,6 @@ class DesktopTitleBar extends StatefulWidget implements PreferredSizeWidget {
 }
 
 class _DesktopTitleBarState extends State<DesktopTitleBar> {
-  static const String _cacheVersion = 'v11_once';
-
   String? _siteName;
   String? _siteIconUrl;
   Uint8List? _siteIconBytes;
@@ -116,17 +113,10 @@ class _DesktopTitleBarState extends State<DesktopTitleBar> {
     _lastBaseUrl = baseUrl;
 
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final cacheKey = _cacheKey(baseUrl);
-      final cachedName = prefs.getString('${cacheKey}_name');
-      final cachedIconUrl = prefs.getString('${cacheKey}_icon_url');
-      final cachedIconBytesText = prefs.getString('${cacheKey}_icon_bytes');
-      Uint8List? cachedIconBytes;
-      if (cachedIconBytesText != null && cachedIconBytesText.isNotEmpty) {
-        try {
-          cachedIconBytes = base64Decode(cachedIconBytesText);
-        } catch (_) {}
-      }
+      final cacheService = SiteBrandCacheService.instance;
+      final cachedName = await cacheService.getName(baseUrl);
+      final cachedIconUrl = await cacheService.getIconUrl(baseUrl);
+      final cachedIconBytes = await cacheService.getIconBytes(baseUrl);
 
       final hasCompletedCache = !force &&
           cachedName != null &&
@@ -162,12 +152,12 @@ class _DesktopTitleBarState extends State<DesktopTitleBar> {
         }
       }
 
-      await prefs.setString('${cacheKey}_name', name);
+      await cacheService.saveName(baseUrl, name);
       if (iconUrl != null && iconUrl.trim().isNotEmpty) {
-        await prefs.setString('${cacheKey}_icon_url', iconUrl);
+        await cacheService.saveIconUrl(baseUrl, iconUrl);
       }
       if (iconBytes != null && iconBytes.isNotEmpty) {
-        await prefs.setString('${cacheKey}_icon_bytes', base64Encode(iconBytes));
+        await cacheService.saveIconBytes(baseUrl, iconBytes);
       }
 
       await _applyWindowTitle(name);
@@ -185,15 +175,6 @@ class _DesktopTitleBarState extends State<DesktopTitleBar> {
     } finally {
       _loadingBrand = false;
     }
-  }
-
-  String _cacheKey(String baseUrl) {
-    final normalized = ServerUrlUtils.toApiBaseUrl(baseUrl)
-        .replaceAll(RegExp(r'[^a-zA-Z0-9]+'), '_')
-        .replaceAll(RegExp(r'_+'), '_');
-    // v11 缓存策略：第一次成功获取站点名称和小图标后永久沿用。
-    // 不再每天刷新，避免每次启动先显示默认名称/图标再跳变。
-    return 'mkw_desktop_titlebar_site_brand_${_cacheVersion}_$normalized';
   }
 
   Future<_SiteBrand> _fetchSiteBrand(String baseUrl) async {

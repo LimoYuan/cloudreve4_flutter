@@ -26,14 +26,14 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.limo.cloudreve4_flutter" "\\0"
-            VALUE "FileDescription", "cloudreve4_flutter" "\\0"
-            VALUE "FileVersion", VERSION_AS_STRING "\\0"
-            VALUE "InternalName", "cloudreve4_flutter" "\\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.limo.cloudreve4_flutter. All rights reserved." "\\0"
-            VALUE "OriginalFilename", "cloudreve4_flutter.exe" "\\0"
-            VALUE "ProductName", "cloudreve4_flutter" "\\0"
-            VALUE "ProductVersion", VERSION_AS_STRING "\\0"
+            VALUE "CompanyName", "com.limo" "\0"
+            VALUE "FileDescription", "cloudreve4_flutter" "\0"
+            VALUE "FileVersion", VERSION_AS_STRING "\0"
+            VALUE "InternalName", "cloudreve4_flutter" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 com.limo.cloudreve4_flutter. All rights reserved." "\0"
+            VALUE "OriginalFilename", "cloudreve4_flutter.exe" "\0"
+            VALUE "ProductName", "cloudreve4_flutter" "\0"
+            VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END
     BLOCK "VarFileInfo"

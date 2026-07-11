@@ -4,6 +4,7 @@ import '../data/models/server_model.dart';
 import '../data/models/user_model.dart';
 import 'storage_service.dart';
 import '../core/utils/app_logger.dart';
+import 'site_brand_cache_service.dart';
 
 /// 服务器服务 - 管理多个服务器配置
 ///
@@ -277,6 +278,17 @@ class ServerService {
     _ensureServerEditable();
     if (_servers.length == 1) {
       throw Exception('至少保留一个服务器配置');
+    }
+
+    // 删除前清理站点品牌缓存（桌面标题栏图标等）
+    final server = _servers.firstWhere(
+      (s) => s.label == label,
+      orElse: () => _servers.first,
+    );
+    try {
+      await SiteBrandCacheService.instance.evict(server.baseUrl);
+    } catch (e) {
+      AppLogger.d('清理站点品牌缓存失败: $e');
     }
 
     _servers.removeWhere((s) => s.label == label);

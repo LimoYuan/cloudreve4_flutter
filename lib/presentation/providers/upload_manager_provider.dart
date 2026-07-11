@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -19,6 +20,13 @@ class UploadManagerProvider extends ChangeNotifier {
 
   List<UploadTaskModel> get allTasks => _uploadService.allTasks;
   List<UploadTaskModel> get activeTasks => _uploadService.activeTasks;
+
+  /// 进行中任务数量（O(1)，不遍历 _tasks）
+  int get activeCount => _uploadService.activeCount;
+
+  /// 所有任务的 Iterable（不创建 List，用于遍历场景避免 GC 压力）
+  Iterable<UploadTaskModel> get allTasksIterable =>
+      _uploadService.allTasksIterable;
 
   /// 初始化上传管理器
   Future<void> initialize() async {
@@ -129,16 +137,18 @@ class UploadManagerProvider extends ChangeNotifier {
     var skipped = 0;
 
     await for (final entity in directory.list(recursive: true, followLinks: false)) {
-      final type = await FileSystemEntity.type(entity.path, followLinks: false);
       final segments = _relativeSegments(rootPath, entity.path);
       if (segments.isEmpty) {
         skipped++;
         continue;
       }
 
-      if (type == FileSystemEntityType.directory) {
+      // 直接用 entity 运行时类型判断，避免对每个 entity 再发起一次
+      // FileSystemEntity.type 的 Win32 GetFileAttributesEx 调用。
+      // 1000 个文件的文件夹会因此多出 1000 次同步 IO，阻塞 event queue。
+      if (entity is Directory) {
         remoteFolders.add(_joinRemotePath(targetPath, [rootName, ...segments]));
-      } else if (type == FileSystemEntityType.file) {
+      } else if (entity is File) {
         final parentSegments = segments.length > 1
             ? segments.sublist(0, segments.length - 1)
             : const <String>[];
@@ -153,26 +163,54 @@ class UploadManagerProvider extends ChangeNotifier {
     final orderedFolders = remoteFolders.toList()
       ..sort((a, b) => a.length == b.length ? a.compareTo(b) : a.length.compareTo(b.length));
 
+    // 并发批量创建远程文件夹：最大并发 5，避免 1000 个文件夹串行 await
     var ensuredFolders = 0;
-    for (final remoteFolder in orderedFolders) {
-      if (await _ensureRemoteFolder(remoteFolder)) ensuredFolders++;
+    const folderConcurrency = 5;
+    for (var i = 0; i < orderedFolders.length; i += folderConcurrency) {
+      final batch = orderedFolders.skip(i).take(folderConcurrency).toList();
+      final results = await Future.wait(
+        batch.map((remoteFolder) => _ensureRemoteFolder(remoteFolder)),
+      );
+      ensuredFolders += results.where((ok) => ok).length;
     }
 
-    final ids = <String>[];
-    for (final entry in fileEntries) {
-      final file = entry.file;
-      final task = UploadTaskModel(
-        id: '${DateTime.now().millisecondsSinceEpoch}_${file.path}',
-        file: file,
-        fileName: _localName(file.path),
-        fileSize: await file.length(),
+    // 并发获取文件大小：IOService 默认只有 4 个 isolate，batch 50 既能让
+    // IOService 充分并行，又不会压垮队列。串行 await 1000 次 file.length()
+    // 在 Windows 上会串行触发 1000 次 GetFileSizeEx，event queue 被占满，
+    // UI 事件响应延迟 → 切换 tab 看起来"无响应"。
+    const sizeBatchSize = 50;
+    final sizes = List<int>.filled(fileEntries.length, 0);
+    for (var i = 0; i < fileEntries.length; i += sizeBatchSize) {
+      final end = (i + sizeBatchSize).clamp(0, fileEntries.length);
+      final batch = fileEntries.sublist(i, end);
+      final batchSizes = await Future.wait(
+        batch.map((e) => e.file.length()),
+      );
+      for (var j = 0; j < batchSizes.length; j++) {
+        sizes[i + j] = batchSizes[j];
+      }
+    }
+
+    final tasks = <UploadTaskModel>[];
+    for (var i = 0; i < fileEntries.length; i++) {
+      final entry = fileEntries[i];
+      tasks.add(UploadTaskModel(
+        id: '${DateTime.now().millisecondsSinceEpoch}_${entry.file.path}',
+        file: entry.file,
+        fileName: _localName(entry.file.path),
+        fileSize: sizes[i],
         targetPath: _normalizeTargetPath(entry.remoteParentPath),
         overwrite: overwrite,
         hidden: hidden,
-      );
-      _uploadService.addTask(task);
-      _uploadService.startUpload(task);
-      ids.add(task.id);
+      ));
+    }
+    // 批量入队：只触发一次 notifyListeners + 一次 DB batch 写入，
+    // 避免 1000 个文件触发 1000 次 shell 重建。
+    _uploadService.addTasks(tasks);
+    final ids = tasks.map((t) => t.id).toList();
+    // 入队后再启动上传（startUpload 内部 _UploadSemaphore(10) 限流）
+    for (final task in tasks) {
+      unawaited(_uploadService.startUpload(task));
     }
 
     return FolderUploadResult(
@@ -195,10 +233,10 @@ class UploadManagerProvider extends ChangeNotifier {
     bool hidden = false,
   }) async {
     final uri = _normalizeTargetPath(targetPath);
-    final ids = <String>[];
+    final tasks = <UploadTaskModel>[];
 
     for (final file in files) {
-      final task = UploadTaskModel(
+      tasks.add(UploadTaskModel(
         id: '${DateTime.now().millisecondsSinceEpoch}_${file.path}',
         file: file,
         fileName: file.uri.pathSegments.isNotEmpty
@@ -208,13 +246,13 @@ class UploadManagerProvider extends ChangeNotifier {
         targetPath: uri,
         overwrite: overwrite,
         hidden: hidden,
-      );
-
-      _uploadService.addTask(task);
-      _uploadService.startUpload(task);
-      ids.add(task.id);
+      ));
     }
-    return ids;
+    _uploadService.addTasks(tasks);
+    for (final task in tasks) {
+      unawaited(_uploadService.startUpload(task));
+    }
+    return tasks.map((t) => t.id).toList();
   }
 
   /// 从 file_picker 的 PlatformFile 开始上传。
@@ -228,6 +266,7 @@ class UploadManagerProvider extends ChangeNotifier {
     String targetPath,
   ) async {
     final uri = _normalizeTargetPath(targetPath);
+    final tasks = <UploadTaskModel>[];
 
     for (final pickedFile in platformFiles) {
       final identifier = pickedFile.identifier;
@@ -246,17 +285,18 @@ class UploadManagerProvider extends ChangeNotifier {
         continue;
       }
 
-      final task = UploadTaskModel(
+      tasks.add(UploadTaskModel(
         id: '${DateTime.now().millisecondsSinceEpoch}_${pickedFile.name}',
         file: File(fallbackPath),
         fileName: pickedFile.name,
         fileSize: pickedFile.size,
         targetPath: uri,
         sourceUri: sourceUri,
-      );
-
-      _uploadService.addTask(task);
-      _uploadService.startUpload(task);
+      ));
+    }
+    _uploadService.addTasks(tasks);
+    for (final task in tasks) {
+      unawaited(_uploadService.startUpload(task));
     }
   }
 
@@ -268,6 +308,7 @@ class UploadManagerProvider extends ChangeNotifier {
     String targetPath,
   ) async {
     final uri = _normalizeTargetPath(targetPath);
+    final tasks = <UploadTaskModel>[];
 
     for (final nativeFile in nativeFiles) {
       if (nativeFile.uri.isEmpty || nativeFile.size <= 0) {
@@ -276,17 +317,18 @@ class UploadManagerProvider extends ChangeNotifier {
 
       await NativeContentReader.instance.persistReadPermission(nativeFile.uri);
 
-      final task = UploadTaskModel(
+      tasks.add(UploadTaskModel(
         id: '${DateTime.now().millisecondsSinceEpoch}_${nativeFile.name}',
         file: File(''),
         fileName: nativeFile.name,
         fileSize: nativeFile.size,
         targetPath: uri,
         sourceUri: nativeFile.uri,
-      );
-
-      _uploadService.addTask(task);
-      _uploadService.startUpload(task);
+      ));
+    }
+    _uploadService.addTasks(tasks);
+    for (final task in tasks) {
+      unawaited(_uploadService.startUpload(task));
     }
   }
 

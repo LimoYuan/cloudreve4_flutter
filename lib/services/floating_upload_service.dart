@@ -470,7 +470,8 @@ class _FloatingUploadBridgeState extends State<FloatingUploadBridge> {
   void _snapshotUploadStatuses(UploadManagerProvider upload) {
     _uploadStatuses
       ..clear()
-      ..addEntries(upload.allTasks.map((task) => MapEntry(task.id, task.status)));
+      ..addEntries(
+          upload.allTasksIterable.map((task) => MapEntry(task.id, task.status)));
   }
 
   void _snapshotDownloadStatuses(DownloadManagerProvider download) {
@@ -483,7 +484,7 @@ class _FloatingUploadBridgeState extends State<FloatingUploadBridge> {
     final upload = _uploadManager;
     if (upload == null) return;
 
-    for (final task in upload.allTasks) {
+    for (final task in upload.allTasksIterable) {
       final previous = _uploadStatuses[task.id];
       if (previous != task.status) {
         if (task.status == UploadStatus.completed) {

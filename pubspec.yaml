@@ -119,6 +119,13 @@ dependencies:
   # 字符编码（GBK/GB18030/Big5/UTF-16 等非 UTF-8 解码）
   enough_convert: ^1.6.0
 
+  # 任务持久化数据库（上传/下载任务从 SharedPreferences 迁移到 drift + SQLite）
+  # drift：类型安全 ORM；drift_flutter：集成 sqlite3_flutter_libs + path_provider；
+  # sqlite3_flutter_libs：全平台原生 SQLite 二进制（Windows/Linux/macOS/Android/iOS）
+  drift: ^2.21.0
+  drift_flutter: ^0.2.4
+  sqlite3_flutter_libs: ^0.5.28
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -133,6 +140,8 @@ dev_dependencies:
   json_serializable: ^6.7.1
   flutter_launcher_icons: ^0.13.1
   freezed: ^3.1.0
+  # drift 代码生成器
+  drift_dev: ^2.21.0
 
 flutter_launcher_icons:
   android: "launcher_icon"

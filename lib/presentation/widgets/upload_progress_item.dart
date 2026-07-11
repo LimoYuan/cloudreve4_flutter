@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 
 import '../../core/utils/user_friendly_error.dart';
@@ -28,9 +26,15 @@ class UploadProgressItem extends StatelessWidget {
   });
 
   static String _formatBytes(int bytes) {
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    if (bytes < 1024) {
+      return '$bytes B';
+    }
+    if (bytes < 1024 * 1024) {
+      return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    }
+    if (bytes < 1024 * 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
   }
 
@@ -43,114 +47,103 @@ class UploadProgressItem extends StatelessWidget {
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: Container(
-            decoration: BoxDecoration(
-              color: _getCardColor(context, task.status),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: _getBorderColor(context, task.status),
-              ),
-            ),
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      child: Container(
+        decoration: BoxDecoration(
+          color: _getCardColor(context, task.status),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: _getBorderColor(context, task.status)),
+        ),
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               children: [
-                Row(
-                  children: [
-                    _buildStatusIcon(context, task.status),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            task.fileName,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w500,
-                              fontSize: 14,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 4),
-                          _buildStatusRow(context, task),
-                        ],
+                _buildStatusIcon(context, task.status),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        task.fileName,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w500,
+                          fontSize: 14,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                    ),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: _buildActionButtons(context, task),
-                    ),
-                  ],
+                      const SizedBox(height: 4),
+                      _buildStatusRow(context, task),
+                    ],
+                  ),
                 ),
-                if (isUploading || isWaiting || isPaused) ...[
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: LinearProgressIndicator(
-                          value: isPaused ? null : task.progress,
-                          backgroundColor: Colors.grey.shade200,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            Theme.of(context).colorScheme.primary,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Text(
-                        isPaused ? '已暂停' : task.progressText,
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Text(
-                        '${_formatBytes(task.uploadedBytes)}/${task.readableFileSize}',
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                      const Spacer(),
-                      if (isUploading && task.speedText.isNotEmpty) ...[
-                        Text(
-                          task.speedText,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Theme.of(context).colorScheme.primary,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                      ],
-                      Text(
-                        task.readableFileSize,
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                    ],
-                  ),
-                ] else if (isFailed && task.errorMessage != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    UserFriendlyError.fromText(
-                      task.errorMessage,
-                      action: 'upload',
-                      fallback: '上传失败，请检查网络、账号权限或云端存储状态后重试。',
-                    ),
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.red.shade700,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: _buildActionButtons(context, task),
+                ),
               ],
             ),
-          ),
+            if (isUploading || isWaiting || isPaused) ...[
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: LinearProgressIndicator(
+                      value: isPaused ? null : task.progress,
+                      backgroundColor: Colors.grey.shade200,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    isPaused ? '已暂停' : task.progressText,
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Text(
+                    '${_formatBytes(task.uploadedBytes)}/${task.readableFileSize}',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  const Spacer(),
+                  if (isUploading && task.speedText.isNotEmpty) ...[
+                    Text(
+                      task.speedText,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.primary,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  Text(
+                    task.readableFileSize,
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ],
+              ),
+            ] else if (isFailed && task.errorMessage != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                UserFriendlyError.fromText(
+                  task.errorMessage,
+                  action: 'upload',
+                  fallback: '上传失败，请检查网络、账号权限或云端存储状态后重试。',
+                ),
+                style: TextStyle(fontSize: 12, color: Colors.red.shade700),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ],
         ),
       ),
     );
@@ -167,11 +160,7 @@ class UploadProgressItem extends StatelessWidget {
         color: color.withValues(alpha: isDark ? 0.2 : 0.1),
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Icon(
-        _getStatusIcon(status),
-        size: 18,
-        color: color,
-      ),
+      child: Icon(_getStatusIcon(status), size: 18, color: color),
     );
   }
 
@@ -181,10 +170,7 @@ class UploadProgressItem extends StatelessWidget {
 
     return Row(
       children: [
-        Text(
-          task.statusText,
-          style: TextStyle(fontSize: 12, color: color),
-        ),
+        Text(task.statusText, style: TextStyle(fontSize: 12, color: color)),
         if (isCompleted) ...[
           Text(
             ' · ',
@@ -207,10 +193,7 @@ class UploadProgressItem extends StatelessWidget {
     );
   }
 
-  List<Widget> _buildActionButtons(
-    BuildContext context,
-    UploadTaskModel task,
-  ) {
+  List<Widget> _buildActionButtons(BuildContext context, UploadTaskModel task) {
     final errorColor = Theme.of(context).colorScheme.error;
 
     switch (task.status) {
@@ -310,12 +293,18 @@ class UploadProgressItem extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     switch (status) {
       case UploadStatus.completed:
-        return isDark ? Colors.green.withValues(alpha: 0.08) : Colors.green.withValues(alpha: 0.05);
+        return isDark
+            ? Colors.green.withValues(alpha: 0.08)
+            : Colors.green.withValues(alpha: 0.05);
       case UploadStatus.failed:
       case UploadStatus.cancelled:
-        return isDark ? Colors.red.withValues(alpha: 0.08) : Colors.red.withValues(alpha: 0.05);
+        return isDark
+            ? Colors.red.withValues(alpha: 0.08)
+            : Colors.red.withValues(alpha: 0.05);
       default:
-        return isDark ? Colors.white.withValues(alpha: 0.05) : Colors.white.withValues(alpha: 0.6);
+        return isDark
+            ? Colors.white.withValues(alpha: 0.05)
+            : Colors.white.withValues(alpha: 0.6);
     }
   }
 
@@ -328,7 +317,9 @@ class UploadProgressItem extends StatelessWidget {
       case UploadStatus.cancelled:
         return Colors.red.withValues(alpha: isDark ? 0.2 : 0.15);
       default:
-        return isDark ? Colors.white.withValues(alpha: 0.1) : Colors.white.withValues(alpha: 0.3);
+        return isDark
+            ? Colors.white.withValues(alpha: 0.1)
+            : Colors.white.withValues(alpha: 0.3);
     }
   }
 

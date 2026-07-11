@@ -1,4 +1,3 @@
-import 'package:cloudreve4_flutter/data/models/upload_task_model.dart';
 import 'package:cloudreve4_flutter/presentation/providers/download_manager_provider.dart';
 import 'package:cloudreve4_flutter/presentation/providers/upload_manager_provider.dart';
 import 'package:flutter/material.dart';
@@ -42,12 +41,7 @@ class _TasksTabBar extends StatelessWidget implements PreferredSizeWidget {
 
     return Consumer2<UploadManagerProvider, DownloadManagerProvider>(
       builder: (context, uploadManager, downloadManager, _) {
-        final uploadActiveCount = uploadManager.allTasks
-            .where((t) =>
-                t.status == UploadStatus.uploading ||
-                t.status == UploadStatus.waiting ||
-                t.status == UploadStatus.paused)
-            .length;
+        final uploadActiveCount = uploadManager.activeCount;
         final downloadActiveCount = downloadManager.activeTaskCount;
 
         return TabBar(

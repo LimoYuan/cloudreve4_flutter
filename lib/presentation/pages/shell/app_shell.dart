@@ -559,7 +559,7 @@ class _AppShellState extends State<AppShell> with GestureHandlerMixin, TickerPro
           child: Consumer2<UploadManagerProvider, DownloadManagerProvider>(
           builder: (context, uploadManager, downloadManager, _) {
             final activeCount =
-                uploadManager.activeTasks.length + downloadManager.downloadingCount;
+                uploadManager.activeCount + downloadManager.downloadingCount;
 
             return NavigationBar(
               height: 80,
@@ -917,7 +917,7 @@ class _AppShellState extends State<AppShell> with GestureHandlerMixin, TickerPro
                   order: 2,
                   child: Consumer2<UploadManagerProvider, DownloadManagerProvider>(
                     builder: (context, uploadManager, downloadManager, _) {
-                      final activeCount = uploadManager.activeTasks.length + downloadManager.downloadingCount;
+                      final activeCount = uploadManager.activeCount + downloadManager.downloadingCount;
                       return Badge(
                         isLabelVisible: activeCount > 0,
                         label: Text('$activeCount'),

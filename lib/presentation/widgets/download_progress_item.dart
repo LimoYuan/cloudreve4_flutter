@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
@@ -46,125 +45,116 @@ class DownloadProgressItem extends StatelessWidget {
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: Container(
-            decoration: BoxDecoration(
-              color: _getCardColor(
-                context,
-                latestTask.status,
-                waitingForWifi: latestTask.waitingForWifi,
-              ),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: _getBorderColor(
+      child: Container(
+        decoration: BoxDecoration(
+          color: _getCardColor(
+            context,
+            latestTask.status,
+            waitingForWifi: latestTask.waitingForWifi,
+          ),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: _getBorderColor(
+              context,
+              latestTask.status,
+              waitingForWifi: latestTask.waitingForWifi,
+            ),
+          ),
+        ),
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                _buildStatusIcon(
                   context,
                   latestTask.status,
                   waitingForWifi: latestTask.waitingForWifi,
                 ),
-              ),
-            ),
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    _buildStatusIcon(
-                      context,
-                      latestTask.status,
-                      waitingForWifi: latestTask.waitingForWifi,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            task.fileName,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w500,
-                              fontSize: 14,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 4),
-                          _buildStatusRow(context, latestTask),
-                        ],
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        task.fileName,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w500,
+                          fontSize: 14,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                    ),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: _buildActionButtons(context, latestTask),
-                    ),
-                  ],
+                      const SizedBox(height: 4),
+                      _buildStatusRow(context, latestTask),
+                    ],
+                  ),
                 ),
-                if (isArchiving || isDownloading || isPaused) ...[
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: LinearProgressIndicator(
-                          value:
-                              isPaused ||
-                                  isArchiving ||
-                                  latestTask.fileSize <= 0
-                              ? null
-                              : latestTask.progress,
-                          backgroundColor: Colors.grey.shade200,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            Theme.of(context).colorScheme.primary,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Text(
-                        _getProgressLabel(latestTask),
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Text(
-                        latestTask.fileSize > 0
-                            ? '${DownloadService.getReadableFileSize(latestTask.downloadedBytes)} / '
-                                  '${DownloadService.getReadableFileSize(latestTask.fileSize)}'
-                            : latestTask.downloadedBytes > 0
-                            ? '${DownloadService.getReadableFileSize(latestTask.downloadedBytes)} / 未知'
-                            : '未知大小',
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                      if (_shouldShowSpeedHint(latestTask)) ...[
-                        const SizedBox(width: 12),
-                        Text(
-                          _buildSpeedHint(latestTask),
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: latestTask.speed > 0
-                                ? Theme.of(context).colorScheme.primary
-                                : Theme.of(context).hintColor,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ] else if (isFailed && latestTask.errorMessage != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    latestTask.errorMessage!,
-                    style: TextStyle(fontSize: 12, color: Colors.red.shade700),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: _buildActionButtons(context, latestTask),
+                ),
               ],
             ),
-          ),
+            if (isArchiving || isDownloading || isPaused) ...[
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: LinearProgressIndicator(
+                      value: isPaused || isArchiving || latestTask.fileSize <= 0
+                          ? null
+                          : latestTask.progress,
+                      backgroundColor: Colors.grey.shade200,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    _getProgressLabel(latestTask),
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Text(
+                    latestTask.fileSize > 0
+                        ? '${DownloadService.getReadableFileSize(latestTask.downloadedBytes)} / '
+                              '${DownloadService.getReadableFileSize(latestTask.fileSize)}'
+                        : latestTask.downloadedBytes > 0
+                        ? '${DownloadService.getReadableFileSize(latestTask.downloadedBytes)} / 未知'
+                        : '未知大小',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  if (_shouldShowSpeedHint(latestTask)) ...[
+                    const SizedBox(width: 12),
+                    Text(
+                      _buildSpeedHint(latestTask),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: latestTask.speed > 0
+                            ? Theme.of(context).colorScheme.primary
+                            : Theme.of(context).hintColor,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ] else if (isFailed && latestTask.errorMessage != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                latestTask.errorMessage!,
+                style: TextStyle(fontSize: 12, color: Colors.red.shade700),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ],
         ),
       ),
     );

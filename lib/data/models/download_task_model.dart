@@ -1,3 +1,7 @@
+import 'package:drift/drift.dart';
+
+import '../../services/task_database.dart';
+
 /// 下载状态
 enum DownloadStatus {
   waiting, // 等待中
@@ -164,6 +168,48 @@ class DownloadTaskModel {
           ? DateTime.parse(json['completedAt'] as String)
           : null,
       errorMessage: json['errorMessage'] as String?,
+    );
+  }
+
+  /// 转换为 drift Companion（用于 upsert 到 download_tasks 表）
+  ///
+  /// waitingForWifi 不持久化（与原 _saveTasks 一致）。
+  DownloadTasksCompanion toCompanion() {
+    return DownloadTasksCompanion(
+      id: Value(id),
+      fileName: Value(fileName),
+      fileUri: Value(fileUri),
+      downloadUrl: Value(downloadUrl),
+      fileSize: Value(fileSize),
+      savePath: Value(savePath),
+      backgroundTaskId: Value(backgroundTaskId),
+      status: Value(status.index),
+      downloadedBytes: Value(downloadedBytes),
+      speed: Value(speed),
+      createdAt: Value(createdAt.toIso8601String()),
+      completedAt: Value(completedAt?.toIso8601String()),
+      errorMessage: Value(errorMessage),
+      updatedAt: Value(DateTime.now().toIso8601String()),
+    );
+  }
+
+  /// 从 drift Entry 创建（用于查询结果转换）
+  factory DownloadTaskModel.fromEntry(DownloadTaskEntry entry) {
+    return DownloadTaskModel(
+      id: entry.id,
+      fileName: entry.fileName,
+      fileUri: entry.fileUri,
+      downloadUrl: entry.downloadUrl,
+      fileSize: entry.fileSize,
+      savePath: entry.savePath,
+      backgroundTaskId: entry.backgroundTaskId,
+      status: DownloadStatus.values[entry.status],
+      downloadedBytes: entry.downloadedBytes,
+      speed: entry.speed,
+      createdAt: DateTime.parse(entry.createdAt),
+      completedAt:
+          entry.completedAt == null ? null : DateTime.parse(entry.completedAt!),
+      errorMessage: entry.errorMessage,
     );
   }
 }

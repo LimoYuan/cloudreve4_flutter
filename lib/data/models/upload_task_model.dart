@@ -1,4 +1,9 @@
+import 'dart:convert';
 import 'dart:io';
+
+import 'package:drift/drift.dart';
+
+import '../../services/task_database.dart';
 
 /// 上传状态
 enum UploadStatus {
@@ -354,6 +359,64 @@ class UploadTaskModel {
             )
           : null,
       speed: (json['speed'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  /// 转换为 drift Companion（用于 upsert 到 upload_tasks 表）
+  ///
+  /// hidden 字段不持久化（与原 _saveTasks 过滤一致）。
+  /// session 字段序列化为 JSON 字符串存储。
+  UploadTasksCompanion toCompanion() {
+    return UploadTasksCompanion(
+      id: Value(id),
+      filePath: Value(file.path),
+      fileName: Value(fileName),
+      fileSize: Value(fileSize),
+      targetPath: Value(targetPath),
+      sourceUri: Value(sourceUri),
+      overwrite: Value(overwrite),
+      createdAt: Value(createdAt.toIso8601String()),
+      completedAt: Value(completedAt?.toIso8601String()),
+      status: Value(status.index),
+      uploadedBytes: Value(uploadedBytes),
+      progress: Value(progress),
+      uploadedChunks: Value(uploadedChunks),
+      totalChunks: Value(totalChunks),
+      errorMessage: Value(errorMessage),
+      session: Value(session == null ? null : jsonEncode(session!.toJson())),
+      speed: Value(speed),
+      updatedAt: Value(DateTime.now().toIso8601String()),
+    );
+  }
+
+  /// 从 drift Entry 创建（用于查询结果转换）
+  factory UploadTaskModel.fromEntry(UploadTaskEntry entry) {
+    return UploadTaskModel(
+      id: entry.id,
+      file: File(entry.filePath),
+      fileName: entry.fileName,
+      fileSize: entry.fileSize,
+      targetPath: entry.targetPath,
+      sourceUri: entry.sourceUri,
+      overwrite: entry.overwrite,
+      createdAt: DateTime.parse(entry.createdAt),
+      completedAt: entry.completedAt == null
+          ? null
+          : DateTime.parse(entry.completedAt!),
+      status: UploadStatus.values[entry.status],
+      uploadedBytes: entry.uploadedBytes,
+      progress: entry.progress,
+      uploadedChunks: entry.uploadedChunks,
+      totalChunks: entry.totalChunks,
+      errorMessage: entry.errorMessage,
+      session: entry.session == null || entry.session!.isEmpty
+          ? null
+          : UploadSessionModel.fromJson(
+              Map<String, dynamic>.from(
+                jsonDecode(entry.session!) as Map,
+              ),
+            ),
+      speed: entry.speed,
     );
   }
 }

@@ -9,12 +9,11 @@ import 'package:flutter/foundation.dart';
 import 'package:file_picker/file_picker.dart';
 
 import '../config/brand_config.dart';
-import '../core/constants/storage_keys.dart';
 import '../core/utils/app_logger.dart';
 import '../core/utils/user_friendly_error.dart';
 import '../data/models/upload_task_model.dart';
 import 'api_service.dart';
-import 'storage_service.dart';
+import 'task_database.dart';
 import 'upload_foreground_service.dart';
 import 'native_content_reader.dart';
 
@@ -39,6 +38,34 @@ class UploadService extends ChangeNotifier {
 
   final Map<String, UploadTaskModel> _tasks = {};
 
+  /// 进行中任务计数器（waiting/uploading/paused 且非 hidden）。
+  ///
+  /// 避免 activeTasks getter 每次 rebuild 都遍历全部 _tasks + 创建新 List。
+  /// 导航栏角标 / Consumer 在上传过程中频繁 rebuild，O(n) 遍历会累积占用 CPU。
+  int _activeCount = 0;
+
+  bool _isActiveStatus(UploadStatus status) =>
+      status == UploadStatus.uploading ||
+      status == UploadStatus.waiting ||
+      status == UploadStatus.paused;
+
+  bool _isActive(UploadTaskModel task) =>
+      !task.hidden && _isActiveStatus(task.status);
+
+  /// 进行中任务数量（O(1) 访问，不遍历 _tasks）
+  int get activeCount => _activeCount;
+
+  /// 上传并发控制：最大 10 个任务同时上传。
+  final _UploadSemaphore _uploadSemaphore = _UploadSemaphore(10);
+
+  /// 进度更新节流写库缓冲。
+  ///
+  /// _updateRuntimeTask 只更新内存 + notifyListeners；同时把任务缓存到这里，
+  /// 由 _throttleWriteTimer 每 500ms 批量写库一次（uploadedBytes/progress/speed/updatedAt）。
+  /// 状态变更（completed/failed/paused/cancelled）走 updateTask 立即写库，不经过这里。
+  final Map<String, UploadTaskModel> _runtimeTaskBuffer = {};
+  Timer? _throttleWriteTimer;
+
   /// 上传完成回调：参数为 (目标路径, 文件名)
   void Function(String targetPath, String fileName)? onUploadCompleted;
 
@@ -57,37 +84,125 @@ class UploadService extends ChangeNotifier {
   /// 添加任务
   void addTask(UploadTaskModel task) {
     _tasks[task.id] = task;
+    if (_isActive(task)) _activeCount++;
     if (!_progressControllers.containsKey(task.id)) {
       _progressControllers[task.id] = StreamController<double>.broadcast();
     }
     AppLogger.d('UploadTaskModel -> addTask > ${task.toJson()}');
-    _saveTasks();
+    // hidden 任务不持久化（与原 _saveTasks 过滤一致）
+    if (!task.hidden) {
+      unawaited(TaskDatabase.instance.upsertUploadTask(task.toCompanion()));
+    }
     notifyListeners();
     _syncForegroundNotification();
   }
 
-  /// 更新任务
+  /// 批量添加任务（用于文件夹上传等场景）。
+  ///
+  /// 一次性入队所有任务，只触发一次 notifyListeners + 一次 _syncForegroundNotification
+  /// + 一次数据库 batch 写入，避免 N 个文件触发 N 次 shell 重建 + N 次单条 DB 写入。
+  void addTasks(List<UploadTaskModel> tasks) {
+    if (tasks.isEmpty) return;
+    final companions = <UploadTasksCompanion>[];
+    for (final task in tasks) {
+      _tasks[task.id] = task;
+      if (_isActive(task)) _activeCount++;
+      if (!_progressControllers.containsKey(task.id)) {
+        _progressControllers[task.id] = StreamController<double>.broadcast();
+      }
+      if (!task.hidden) {
+        companions.add(task.toCompanion());
+      }
+    }
+    AppLogger.d('addTasks 批量入队 ${tasks.length} 个任务');
+    if (companions.isNotEmpty) {
+      unawaited(TaskDatabase.instance.batchUpsertUploadTasks(companions));
+    }
+    notifyListeners();
+    _syncForegroundNotification();
+  }
+
+  /// 更新任务（状态变更用，整行写库）
   void updateTask(UploadTaskModel task) {
     if (_tasks.containsKey(task.id)) {
+      final old = _tasks[task.id]!;
+      final wasActive = _isActive(old);
+      final isActive = _isActive(task);
+      if (!wasActive && isActive) {
+        _activeCount++;
+      } else if (wasActive && !isActive) {
+        _activeCount--;
+      }
       _tasks[task.id] = task;
-      _saveTasks();
+      // hidden 任务不持久化
+      if (!task.hidden) {
+        unawaited(TaskDatabase.instance.upsertUploadTask(task.toCompanion()));
+      }
       notifyListeners();
       _syncForegroundNotification();
     }
   }
 
-  /// 仅更新运行时进度，不频繁写入本地存储。
+  /// 仅更新运行时进度，节流写库（500ms 批量）+ 节流 notifyListeners（50ms）
+  ///
+  /// 进度更新不需要 20次/秒 的 UI 刷新，50ms 节流（20次/秒 -> 20次/秒 合并到
+  /// 一次 rebuild）足够流畅，且避免上传过程中频繁 rebuild 阻塞路由切换。
+  /// 状态变更（completed/failed/paused/cancelled）走 updateTask 立即 notifyListeners。
   void _updateRuntimeTask(UploadTaskModel task) {
     if (_tasks.containsKey(task.id)) {
       _tasks[task.id] = task;
+      _runtimeTaskBuffer[task.id] = task;
+      _scheduleThrottleWrite();
+      _scheduleNotifyListeners();
+    }
+  }
+
+  Timer? _notifyThrottleTimer;
+
+  void _scheduleNotifyListeners() {
+    _notifyThrottleTimer?.cancel();
+    _notifyThrottleTimer = Timer(const Duration(milliseconds: 50), () {
       notifyListeners();
       _syncForegroundNotification();
+    });
+  }
+
+  /// 调度 500ms 节流写库
+  void _scheduleThrottleWrite() {
+    _throttleWriteTimer?.cancel();
+    _throttleWriteTimer = Timer(const Duration(milliseconds: 500), () {
+      _flushRuntimeTaskBuffer();
+    });
+  }
+
+  /// 立即刷新缓冲并写库（用于 dispose 或需要立即持久化的场景）
+  Future<void> _flushRuntimeTaskBuffer() async {
+    if (_runtimeTaskBuffer.isEmpty) return;
+    _throttleWriteTimer?.cancel();
+    _throttleWriteTimer = null;
+    final buffer = Map<String, UploadTaskModel>.from(_runtimeTaskBuffer);
+    _runtimeTaskBuffer.clear();
+    final now = DateTime.now().toIso8601String();
+    for (final task in buffer.values) {
+      try {
+        await TaskDatabase.instance.updateUploadTaskFields(
+          task.id,
+          uploadedBytes: task.uploadedBytes,
+          progress: task.progress,
+          uploadedChunks: task.uploadedChunks,
+          speed: task.speed,
+          updatedAt: now,
+        );
+      } catch (e) {
+        AppLogger.d('节流写库失败 task=${task.id}: $e');
+      }
     }
   }
 
   void _syncForegroundNotification() {
-    final visible =
-        _tasks.values.where((t) => !t.hidden).toList(growable: false);
+    final visible = _tasks.values
+        .where((t) => !t.hidden)
+        .toList(growable: false);
     unawaited(UploadForegroundService.syncWithTasks(visible));
   }
 
@@ -97,6 +212,10 @@ class UploadService extends ChangeNotifier {
   /// 获取所有任务
   List<UploadTaskModel> get allTasks =>
       _tasks.values.where((t) => !t.hidden).toList();
+
+  /// 获取所有任务（Iterable，不创建 List，用于遍历场景避免 GC 压力）
+  Iterable<UploadTaskModel> get allTasksIterable =>
+      _tasks.values.where((t) => !t.hidden);
 
   /// 获取进行中的任务
   List<UploadTaskModel> get activeTasks => _tasks.values
@@ -116,17 +235,21 @@ class UploadService extends ChangeNotifier {
     // 失败/取消/未完成的上传任务如果已经创建了 Cloudreve 上传会话，
     // 需要显式删除会话释放 Cloudreve 侧的上传锁，否则文件列表中可能残留
     // 正在上传的占位文件，删除时出现 Lock conflict (code: 40073)。
-    if (task != null && task.session != null && task.status != UploadStatus.completed) {
+    if (task != null &&
+        task.session != null &&
+        task.status != UploadStatus.completed) {
       unawaited(_deleteUploadSessionForTask(task));
     }
 
+    if (task != null && _isActive(task)) _activeCount--;
     _tasks.remove(id);
+    _runtimeTaskBuffer.remove(id);
     _pauseRequestedTaskIds.remove(id);
     _cancelTokens.remove(id);
     final controller = _progressControllers.remove(id);
     controller?.close();
     _speedTrackers.remove(id);
-    _saveTasks();
+    unawaited(TaskDatabase.instance.deleteUploadTask(id));
     notifyListeners();
     _syncForegroundNotification();
   }
@@ -151,11 +274,13 @@ class UploadService extends ChangeNotifier {
       controller.close();
     }
     _tasks.clear();
+    _runtimeTaskBuffer.clear();
     _pauseRequestedTaskIds.clear();
     _cancelTokens.clear();
     _progressControllers.clear();
     _speedTrackers.clear();
-    _saveTasks();
+    _activeCount = 0;
+    unawaited(TaskDatabase.instance.deleteAllUploadTasks());
     notifyListeners();
     _syncForegroundNotification();
   }
@@ -174,7 +299,6 @@ class UploadService extends ChangeNotifier {
     for (final id in completedIds) {
       removeTask(id);
     }
-    _saveTasks();
   }
 
   /// 清除失败的任务
@@ -187,7 +311,6 @@ class UploadService extends ChangeNotifier {
     for (final id in failedIds) {
       removeTask(id);
     }
-    _saveTasks();
   }
 
   /// 初始化上传服务
@@ -195,61 +318,29 @@ class UploadService extends ChangeNotifier {
     await _loadTasks();
   }
 
-  /// 从本地存储加载上传任务
+  /// 从数据库加载未完成的上传任务（启动恢复）
+  ///
+  /// 只加载 waiting/uploading/paused 状态的任务（通常 < 100 条）。
+  /// completed/failed/cancelled 任务保留在数据库中，UI 通过 StreamBuilder 分页按需加载。
   Future<void> _loadTasks() async {
     try {
-      final tasksJson = await StorageService.instance.getString(
-        StorageKeys.uploadTasks,
-      );
-      if (tasksJson == null || tasksJson.isEmpty) {
-        AppLogger.d('没有保存的上传任务');
-        return;
-      }
-
-      final tasksList = jsonDecode(tasksJson) as List<dynamic>;
+      final entries = await TaskDatabase.instance.queryActiveUploadTasks();
       final loadedTasks = <UploadTaskModel>[];
 
-      final now = DateTime.now();
-      for (final taskJson in tasksList) {
+      for (final entry in entries) {
         try {
-          final task = UploadTaskModel.fromJson(
-            taskJson as Map<String, dynamic>,
-          );
+          final task = UploadTaskModel.fromEntry(entry);
 
           // 检查文件是否存在。
           // Android content:// 来源不依赖本地 File 路径，不能用 File.exists() 判断。
           if (!task.usesContentUri && !await task.file.exists()) {
             AppLogger.d('上传任务文件不存在，跳过: ${task.fileName}');
+            // 文件不存在的任务从数据库清除，避免下次启动重复加载
+            unawaited(TaskDatabase.instance.deleteUploadTask(task.id));
             continue;
           }
 
-          // 过滤掉已取消的任务
-          if (task.status == UploadStatus.cancelled) {
-            continue;
-          }
-
-          // 如果任务已完成，只保留配置天数内的记录
-          if (task.status == UploadStatus.completed) {
-            if (task.completedAt == null) {
-              continue;
-            }
-            final retentionDays =
-                await StorageService.instance.getInt(
-                  StorageKeys.taskRetentionDays,
-                ) ??
-                7;
-            if (retentionDays > 0) {
-              final daysSinceCompletion = now
-                  .difference(task.completedAt!)
-                  .inDays;
-              if (daysSinceCompletion > retentionDays) {
-                AppLogger.d('跳过超过$retentionDays天的已完成任务: ${task.fileName}');
-                continue;
-              }
-            }
-          }
-
-          // 对于未完成的任务，重置状态为等待（因为应用关闭后上传已停止）
+          // 对于 uploading/waiting 状态，重置为 waiting，清零进度（应用关闭后上传已停止）
           if (task.status == UploadStatus.uploading ||
               task.status == UploadStatus.waiting) {
             loadedTasks.add(
@@ -260,6 +351,19 @@ class UploadService extends ChangeNotifier {
                 uploadedChunks: 0,
                 errorMessage: null,
                 speed: 0,
+              ),
+            );
+            // 同步数据库状态
+            unawaited(
+              TaskDatabase.instance.updateUploadTaskFields(
+                task.id,
+                status: UploadStatus.waiting.index,
+                uploadedBytes: 0,
+                progress: 0.0,
+                uploadedChunks: 0,
+                speed: 0,
+                errorMessage: null,
+                updatedAt: DateTime.now().toIso8601String(),
               ),
             );
           } else {
@@ -277,8 +381,10 @@ class UploadService extends ChangeNotifier {
           _progressControllers[task.id] = StreamController<double>.broadcast();
         }
       }
+      // queryActiveUploadTasks 只返回 active 任务，loadedTasks 都是 active
+      _activeCount = loadedTasks.length;
 
-      AppLogger.d('从存储加载了 ${loadedTasks.length} 个上传任务');
+      AppLogger.d('从数据库加载了 ${loadedTasks.length} 个未完成上传任务');
 
       // 通知 UI 更新
       if (loadedTasks.isNotEmpty) {
@@ -286,24 +392,6 @@ class UploadService extends ChangeNotifier {
       }
     } catch (e) {
       AppLogger.d('加载上传任务失败: $e');
-    }
-  }
-
-  /// 保存上传任务到本地存储
-  Future<void> _saveTasks() async {
-    try {
-      final tasksList = _tasks.values
-          .where((t) => !t.hidden)
-          .map((task) => task.toJson())
-          .toList();
-      final tasksJson = jsonEncode(tasksList);
-      await StorageService.instance.setString(
-        StorageKeys.uploadTasks,
-        tasksJson,
-      );
-      AppLogger.d('已保存 ${tasksList.length} 个上传任务到存储');
-    } catch (e) {
-      AppLogger.d('保存上传任务失败: $e');
     }
   }
 
@@ -358,7 +446,8 @@ class UploadService extends ChangeNotifier {
     // 非 OneDrive 策略没有统一的已上传分片查询接口，重试时重新创建会话更稳。
     var taskForRetry = task;
     if (task.session != null &&
-        (!task.session!._isOneDriveUpload || _isUploadSessionExpired(task.session!))) {
+        (!task.session!._isOneDriveUpload ||
+            _isUploadSessionExpired(task.session!))) {
       await _deleteUploadSessionForTask(task);
       taskForRetry = task.copyWith(session: null);
     }
@@ -392,6 +481,8 @@ class UploadService extends ChangeNotifier {
     final cancelToken = CancelToken();
     _cancelTokens[task.id] = cancelToken;
 
+    // 并发控制：最大 10 个任务同时上传
+    await _uploadSemaphore.acquire();
     try {
       // 步骤1：创建或复用上传会话。
       // OneDrive upload session 本身支持查询 nextExpectedRanges，失败重试时可以复用会话。
@@ -478,7 +569,8 @@ class UploadService extends ChangeNotifier {
 
       final latestTask = getTask(task.id) ?? task;
 
-      if (isCancelled || (!isPaused && _shouldDeleteUploadSessionAfterFailure(e))) {
+      if (isCancelled ||
+          (!isPaused && _shouldDeleteUploadSessionAfterFailure(e))) {
         await _deleteUploadSessionForTask(latestTask);
       }
 
@@ -487,15 +579,16 @@ class UploadService extends ChangeNotifier {
           status: isPaused
               ? UploadStatus.paused
               : isCancelled
-                  ? UploadStatus.cancelled
-                  : UploadStatus.failed,
+              ? UploadStatus.cancelled
+              : UploadStatus.failed,
           errorMessage: isPaused ? null : _formatUploadError(e),
           speed: 0,
         ),
       );
       _cleanSpeedTracker(task.id);
 
-      if (isCancelled || (!isPaused && _shouldDeleteUploadSessionAfterFailure(e))) {
+      if (isCancelled ||
+          (!isPaused && _shouldDeleteUploadSessionAfterFailure(e))) {
         unawaited(_clearPickerTemporaryFiles());
       }
 
@@ -509,14 +602,16 @@ class UploadService extends ChangeNotifier {
             title: isPaused
                 ? '${BrandConfig.appName} 上传已暂停'
                 : isCancelled
-                    ? '${BrandConfig.appName} 上传已取消'
-                    : '${BrandConfig.appName} 上传失败',
+                ? '${BrandConfig.appName} 上传已取消'
+                : '${BrandConfig.appName} 上传失败',
             text: task.fileName,
           ),
         );
       }
 
       _purgeHiddenTaskIfTerminal(task.id);
+    } finally {
+      _uploadSemaphore.release();
     }
   }
 
@@ -596,16 +691,15 @@ class UploadService extends ChangeNotifier {
     if (fileSize <= 0) return 1;
 
     if (session._isOneDriveUpload) {
-      final serverChunkSize = session.chunkSize > 0 ? session.chunkSize : fileSize;
+      final serverChunkSize = session.chunkSize > 0
+          ? session.chunkSize
+          : fileSize;
       final clientChunkSize = _adaptiveOneDriveChunkSize(
         fileSize: fileSize,
         usesContentUri: usesContentUri,
       );
 
-      return math.min(
-        fileSize,
-        math.min(serverChunkSize, clientChunkSize),
-      );
+      return math.min(fileSize, math.min(serverChunkSize, clientChunkSize));
     }
 
     if (session.chunkSize > 0) {
@@ -1194,9 +1288,11 @@ class UploadService extends ChangeNotifier {
   bool _isOneDriveFragmentOverlap(DioException e) {
     final data = _asMap(e.response?.data);
     final error = _asMap(data?['error']);
-    final innerError = _asMap(error?['innererror']) ?? _asMap(error?['innerError']);
+    final innerError =
+        _asMap(error?['innererror']) ?? _asMap(error?['innerError']);
     final code = innerError?['code']?.toString() ?? error?['code']?.toString();
-    final message = error?['message']?.toString() ?? e.response?.data?.toString() ?? '';
+    final message =
+        error?['message']?.toString() ?? e.response?.data?.toString() ?? '';
 
     return code == 'fragmentOverlap' || message.contains('fragmentOverlap');
   }
@@ -1254,9 +1350,7 @@ class UploadService extends ChangeNotifier {
           data: _chunkedUploadBodyStream(chunkData),
           options: Options(
             contentType: 'application/octet-stream',
-            headers: {
-              'Content-Length': chunkData.length.toString(),
-            },
+            headers: {'Content-Length': chunkData.length.toString()},
           ),
           cancelToken: cancelToken,
           onSendProgress: onProgress,
@@ -1313,13 +1407,17 @@ class UploadService extends ChangeNotifier {
         final dio = _buildRawUploadDio();
         await dio.post(
           completeUrl,
-          data: completedParts.isEmpty ? '' : _buildS3CompleteXml(completedParts),
+          data: completedParts.isEmpty
+              ? ''
+              : _buildS3CompleteXml(completedParts),
           options: Options(contentType: 'application/octet-stream'),
         );
       } else {
         await ApiService.instance.post<dynamic>(
           completeUrl,
-          data: completedParts.isEmpty ? <String, dynamic>{} : {'parts': completedParts},
+          data: completedParts.isEmpty
+              ? <String, dynamic>{}
+              : {'parts': completedParts},
           isNoData: true,
         );
       }
@@ -1340,7 +1438,9 @@ class UploadService extends ChangeNotifier {
     } else if (callbackSecret != null && callbackSecret.isNotEmpty) {
       callbackPath = '/callback/onedrive/${session.sessionId}/$callbackSecret';
     } else {
-      throw Exception('OneDrive 上传完成，但上传会话缺少 completeURL/callback_secret，无法通知 Cloudreve');
+      throw Exception(
+        'OneDrive 上传完成，但上传会话缺少 completeURL/callback_secret，无法通知 Cloudreve',
+      );
     }
 
     AppLogger.d('Completing OneDrive upload callback: $callbackPath');
@@ -1362,7 +1462,9 @@ class UploadService extends ChangeNotifier {
         );
       }
     } catch (e) {
-      AppLogger.d('OneDrive complete callback failed: ${_formatUploadError(e)}');
+      AppLogger.d(
+        'OneDrive complete callback failed: ${_formatUploadError(e)}',
+      );
       rethrow;
     }
   }
@@ -1392,7 +1494,9 @@ class UploadService extends ChangeNotifier {
       e.message,
     ].whereType<String>().join(' ').toLowerCase();
 
-    return text.contains('暂停') || text.contains('pause') || text.contains('paused');
+    return text.contains('暂停') ||
+        text.contains('pause') ||
+        text.contains('paused');
   }
 
   bool _shouldDeleteUploadSessionAfterFailure(Object e) {
@@ -1422,10 +1526,7 @@ class UploadService extends ChangeNotifier {
     try {
       final response = await ApiService.instance.dio.delete<dynamic>(
         '/file/upload',
-        data: {
-          'id': sessionId,
-          'uri': uri,
-        },
+        data: {'id': sessionId, 'uri': uri},
         options: Options(contentType: 'application/json'),
       );
 
@@ -1442,10 +1543,7 @@ class UploadService extends ChangeNotifier {
           await _forceUnlock(tokens);
           await ApiService.instance.dio.delete<dynamic>(
             '/file/upload',
-            data: {
-              'id': sessionId,
-              'uri': uri,
-            },
+            data: {'id': sessionId, 'uri': uri},
             options: Options(contentType: 'application/json'),
           );
           return;
@@ -1618,7 +1716,8 @@ class UploadService extends ChangeNotifier {
         connectTimeout: const Duration(minutes: 2),
         receiveTimeout: const Duration(minutes: 10),
         sendTimeout: const Duration(minutes: 60),
-        validateStatus: (status) => status != null && status >= 200 && status < 300,
+        validateStatus: (status) =>
+            status != null && status >= 200 && status < 300,
       ),
     );
     dio.httpClientAdapter = DirectHttpClientFactory.dioAdapter(
@@ -1702,7 +1801,6 @@ class UploadService extends ChangeNotifier {
     _speedTrackers.remove(taskId);
   }
 
-
   Future<void> _clearPickerTemporaryFiles() async {
     if (!Platform.isAndroid) return;
 
@@ -1744,7 +1842,9 @@ extension _UploadSessionModelCompat on UploadSessionModel {
 
   bool get _isOneDriveUpload {
     final type = _policyType;
-    if (type == 'onedrive' || type == 'one_drive' || type.contains('onedrive')) {
+    if (type == 'onedrive' ||
+        type == 'one_drive' ||
+        type.contains('onedrive')) {
       return true;
     }
 
@@ -1807,5 +1907,40 @@ class _SpeedTracker {
     lastBytes = currentBytes;
     lastTime = now;
     return smoothedSpeed < 0 ? 0 : smoothedSpeed;
+  }
+}
+
+/// 上传并发信号量
+///
+/// 限制同时进行中的上传任务数，避免一次启动 500 个文件夹上传时
+/// 同时创建 500 个 Dio 请求 / 500 个 Cloudreve 上传会话。
+///
+/// acquire() 拿不到许可时挂起在 Completer 上，release() 唤醒队首等待者。
+class _UploadSemaphore {
+  _UploadSemaphore(this.maxConcurrency) : _available = maxConcurrency;
+
+  final int maxConcurrency;
+  int _available;
+  final List<Completer<void>> _waiters = <Completer<void>>[];
+
+  Future<void> acquire() {
+    if (_available > 0) {
+      _available--;
+      return Future<void>.value();
+    }
+    final completer = Completer<void>();
+    _waiters.add(completer);
+    return completer.future;
+  }
+
+  void release() {
+    if (_waiters.isEmpty) {
+      if (_available < maxConcurrency) {
+        _available++;
+      }
+      return;
+    }
+    final completer = _waiters.removeAt(0);
+    completer.complete();
   }
 }

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -7,6 +6,7 @@ import '../../core/constants/storage_keys.dart';
 import '../../data/models/download_task_model.dart';
 import '../../services/download_service.dart';
 import '../../services/storage_service.dart';
+import '../../services/task_database.dart';
 import '../../core/utils/app_logger.dart';
 
 /// 下载管理Provider
@@ -22,6 +22,14 @@ class DownloadManagerProvider extends ChangeNotifier {
   DateTime? _lastProgressPersistTime;
   Timer? _activeDownloadSampler;
   bool _isSamplingLocalProgress = false;
+
+  /// 进度更新节流写库缓冲。
+  ///
+  /// 下载进度回调很密集，每次都写库会过度触发 IO。
+  /// 这里缓冲 500ms 批量写一次（downloadedBytes/speed/updatedAt）。
+  /// 状态变更（completed/failed/paused/cancelled）走 _persistTask 立即写库。
+  final Map<String, DownloadTaskModel> _runtimeTaskBuffer = {};
+  Timer? _throttleWriteTimer;
 
 
   /// 暂停/恢复后的基准字节数。
@@ -100,7 +108,7 @@ class DownloadManagerProvider extends ChangeNotifier {
             status: DownloadStatus.waiting,
             waitingForWifi: false,
           );
-          await _saveTasks();
+          await _persistTask(_tasks[task.id]!);
           // 重新开始下载
           await _downloadService.startDownload(_tasks[task.id]!);
         }
@@ -155,7 +163,7 @@ class DownloadManagerProvider extends ChangeNotifier {
     );
 
     _tasks[id] = task;
-    await _saveTasks();
+    await _persistTask(task);
     notifyListeners();
     _ensureActiveDownloadSampler();
 
@@ -172,6 +180,7 @@ class DownloadManagerProvider extends ChangeNotifier {
         status: DownloadStatus.failed,
         errorMessage: '无法创建下载任务',
       );
+      await _persistTask(_tasks[id]!);
       notifyListeners();
       return null;
     }
@@ -183,7 +192,7 @@ class DownloadManagerProvider extends ChangeNotifier {
         backgroundTaskId: bdTaskId.startsWith('dio:') ? startedTask.backgroundTaskId : bdTaskId,
         waitingForWifi: false,
       );
-      await _saveTasks();
+      await _persistTask(_tasks[id]!);
       notifyListeners();
     }
 
@@ -353,8 +362,18 @@ class DownloadManagerProvider extends ChangeNotifier {
         _shouldPersistProgress(now, updatedTask);
 
     if (shouldPersistNow) {
-      await _saveTasks();
+      // 非下载中（终态/暂停/重置）整行写库；下载中走节流字段更新
+      if (effectiveStatus == DownloadStatus.downloading) {
+        _scheduleThrottleWrite(updatedTask);
+      } else {
+        await _persistTask(updatedTask);
+      }
       _lastProgressPersistTime = now;
+    } else {
+      // 节流窗口内的进度更新也走节流写库
+      if (effectiveStatus == DownloadStatus.downloading) {
+        _scheduleThrottleWrite(updatedTask);
+      }
     }
 
     notifyListeners();
@@ -444,7 +463,16 @@ class DownloadManagerProvider extends ChangeNotifier {
 
       if (changed) {
         if (shouldPersist) {
-          await _saveTasks();
+          // 批量节流写库：把所有 changed 的活跃任务加入缓冲
+          for (final entry in _tasks.entries) {
+            if (entry.value.status == DownloadStatus.downloading ||
+                entry.value.status == DownloadStatus.archiving ||
+                entry.value.status == DownloadStatus.waiting) {
+              _runtimeTaskBuffer[entry.key] = entry.value;
+            }
+          }
+          _throttleWriteTimer?.cancel();
+          await _flushRuntimeTaskBuffer();
           _lastProgressPersistTime = now;
         }
         notifyListeners();
@@ -510,7 +538,7 @@ class DownloadManagerProvider extends ChangeNotifier {
         speed: 0,
         waitingForWifi: false,
       );
-      await _saveTasks();
+      await _persistTask(_tasks[taskId]!);
       notifyListeners();
 
       await _downloadService.resumeDownload(taskId);
@@ -532,7 +560,7 @@ class DownloadManagerProvider extends ChangeNotifier {
         );
         _lastProgressTime.remove(taskId);
         _lastProgressBytes.remove(taskId);
-        await _saveTasks();
+        await _persistTask(_tasks[taskId]!);
         notifyListeners();
       }
     }
@@ -549,14 +577,15 @@ class DownloadManagerProvider extends ChangeNotifier {
         status: DownloadStatus.cancelled,
         waitingForWifi: false,
       );
-      await _saveTasks();
+      await _persistTask(_tasks[taskId]!);
       notifyListeners();
 
-      // 延迟移除任务，同时从存储中删除
+      // 延迟移除任务，同时从数据库删除
       Future.delayed(const Duration(seconds: 2), () {
         _tasks.remove(taskId);
+        _runtimeTaskBuffer.remove(taskId);
         _downloadService.disposeTask(taskId);
-        _saveTasks();
+        _deleteTask(taskId);
         notifyListeners();
       });
     }
@@ -575,8 +604,9 @@ class DownloadManagerProvider extends ChangeNotifier {
 
       _resumeBaseBytes.remove(taskId);
       _tasks.remove(taskId);
+      _runtimeTaskBuffer.remove(taskId);
       _downloadService.disposeTask(taskId);
-      await _saveTasks();
+      await _deleteTask(taskId);
       notifyListeners();
     }
   }
@@ -600,7 +630,7 @@ class DownloadManagerProvider extends ChangeNotifier {
       _resumeBaseBytes.remove(taskId);
       _lastProgressTime.remove(taskId);
       _lastProgressBytes.remove(taskId);
-      await _saveTasks();
+      await _persistTask(_tasks[taskId]!);
       notifyListeners();
 
       // 重新开始下载
@@ -621,10 +651,11 @@ class DownloadManagerProvider extends ChangeNotifier {
     final failedTasks = getTasksByStatus(DownloadStatus.failed);
     for (final task in failedTasks) {
       _resumeBaseBytes.remove(task.id);
+      _runtimeTaskBuffer.remove(task.id);
       _tasks.remove(task.id);
       _downloadService.disposeTask(task.id);
+      await _deleteTask(task.id);
     }
-    await _saveTasks();
     notifyListeners();
   }
 
@@ -633,42 +664,32 @@ class DownloadManagerProvider extends ChangeNotifier {
     return _tasks[taskId];
   }
 
-  /// 从本地存储加载下载任务
+  /// 从数据库加载未完成的下载任务（启动恢复）
+  ///
+  /// 只加载 waiting/downloading/paused/archiving 状态的任务。
+  /// completed/failed/cancelled 任务保留在数据库中，UI 通过 StreamBuilder 分页按需加载。
   Future<void> _loadTasks() async {
     try {
-      final tasksJson = await StorageService.instance.getString(
-        StorageKeys.downloadTasks,
-      );
-      if (tasksJson == null || tasksJson.isEmpty) {
-        AppLogger.d('没有保存的下载任务');
-        return;
-      }
-
-      final tasksList = jsonDecode(tasksJson) as List<dynamic>;
+      final entries = await TaskDatabase.instance.queryActiveDownloadTasks();
       final loadedTasks = <DownloadTaskModel>[];
 
       final now = DateTime.now();
-      for (final taskJson in tasksList) {
+      for (final entry in entries) {
         try {
-          final task = DownloadTaskModel.fromJson(
-            taskJson as Map<String, dynamic>,
-          );
-          // 过滤掉已取消的任务（修复4：已取消任务不恢复）
+          final task = DownloadTaskModel.fromEntry(entry);
+          // 过滤掉已取消的任务（与原逻辑一致）
           if (task.status == DownloadStatus.cancelled) {
             continue;
           }
 
           // 如果任务已完成，只保留配置天数内的记录
           if (task.status == DownloadStatus.completed) {
-            if (task.completedAt == null) {
-              continue;
-            }
+            if (task.completedAt == null) continue;
             final retentionDays =
                 await StorageService.instance.getInt(
                   StorageKeys.taskRetentionDays,
                 ) ??
                 7;
-            // retentionDays == -1 表示永不过期
             if (retentionDays > 0) {
               final daysSinceCompletion = now
                   .difference(task.completedAt!)
@@ -691,7 +712,7 @@ class DownloadManagerProvider extends ChangeNotifier {
         _tasks[task.id] = task;
       }
 
-      AppLogger.d('从存储加载了 ${loadedTasks.length} 个下载任务');
+      AppLogger.d('从数据库加载了 ${loadedTasks.length} 个下载任务');
 
       // 通知 UI 更新
       if (loadedTasks.isNotEmpty) {
@@ -710,7 +731,7 @@ class DownloadManagerProvider extends ChangeNotifier {
           // 使用 resumeDownloadAfterRestart 支持断点续传
           await _downloadService.resumeDownloadAfterRestart(task);
         } else if (task.status == DownloadStatus.paused) {
-          // 修复5：暂停的任务需要重建 bdTasks 映射，以便继续下载
+          // 暂停的任务需要重建 bdTasks 映射，以便继续下载
           AppLogger.d('重建暂停任务映射: ${task.fileName}');
           _resumeBaseBytes[task.id] = task.downloadedBytes;
           await _downloadService.resumeDownloadAfterRestart(task);
@@ -723,18 +744,52 @@ class DownloadManagerProvider extends ChangeNotifier {
     }
   }
 
-  /// 保存下载任务到本地存储
-  Future<void> _saveTasks() async {
+  /// 整行持久化任务（用于新增/状态变更/移除）
+  Future<void> _persistTask(DownloadTaskModel task) async {
     try {
-      final tasksList = _tasks.values.map((task) => task.toJson()).toList();
-      final tasksJson = jsonEncode(tasksList);
-      await StorageService.instance.setString(
-        StorageKeys.downloadTasks,
-        tasksJson,
-      );
-      AppLogger.t('已保存 ${_tasks.length} 个下载任务到存储');
+      await TaskDatabase.instance.upsertDownloadTask(task.toCompanion());
     } catch (e) {
-      AppLogger.d('保存下载任务失败: $e');
+      AppLogger.d('持久化下载任务失败: $e');
+    }
+  }
+
+  /// 删除任务记录
+  Future<void> _deleteTask(String taskId) async {
+    try {
+      await TaskDatabase.instance.deleteDownloadTask(taskId);
+    } catch (e) {
+      AppLogger.d('删除下载任务记录失败: $e');
+    }
+  }
+
+  /// 节流写库：更新进度字段（downloadedBytes/speed/updatedAt）
+  void _scheduleThrottleWrite(DownloadTaskModel task) {
+    _runtimeTaskBuffer[task.id] = task;
+    _throttleWriteTimer?.cancel();
+    _throttleWriteTimer = Timer(const Duration(milliseconds: 500), () {
+      _flushRuntimeTaskBuffer();
+    });
+  }
+
+  Future<void> _flushRuntimeTaskBuffer() async {
+    if (_runtimeTaskBuffer.isEmpty) return;
+    _throttleWriteTimer?.cancel();
+    _throttleWriteTimer = null;
+    final buffer = Map<String, DownloadTaskModel>.from(_runtimeTaskBuffer);
+    _runtimeTaskBuffer.clear();
+    final now = DateTime.now().toIso8601String();
+    for (final task in buffer.values) {
+      try {
+        await TaskDatabase.instance.updateDownloadTaskFields(
+          task.id,
+          downloadedBytes: task.downloadedBytes,
+          speed: task.speed,
+          fileSize: task.fileSize,
+          updatedAt: now,
+        );
+      } catch (e) {
+        AppLogger.d('节流写库失败 task=${task.id}: $e');
+      }
     }
   }
 
@@ -742,6 +797,9 @@ class DownloadManagerProvider extends ChangeNotifier {
   void dispose() {
     _activeDownloadSampler?.cancel();
     _activeDownloadSampler = null;
+    _throttleWriteTimer?.cancel();
+    _throttleWriteTimer = null;
+    _runtimeTaskBuffer.clear();
     _lastProgressTime.clear();
     _lastProgressBytes.clear();
     _downloadService.dispose();

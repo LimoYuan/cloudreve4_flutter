@@ -3,60 +3,212 @@ import 'package:cloudreve4_flutter/presentation/providers/file_manager_provider.
 import 'package:cloudreve4_flutter/presentation/providers/navigation_provider.dart';
 import 'package:cloudreve4_flutter/presentation/providers/upload_manager_provider.dart';
 import 'package:cloudreve4_flutter/presentation/widgets/upload_progress_item.dart';
+import 'package:cloudreve4_flutter/services/task_database.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:provider/provider.dart';
 
-class UploadTasksTab extends StatelessWidget {
+class UploadTasksTab extends StatefulWidget {
   const UploadTasksTab({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+  State<UploadTasksTab> createState() => _UploadTasksTabState();
+}
 
+class _UploadTasksTabState extends State<UploadTasksTab> {
+  static const int _pageSize = 15;
+
+  /// 进行中任务当前页码（0-based）
+  int _activePage = 0;
+
+  /// 失败/取消任务当前页码（0-based）
+  int _failedPage = 0;
+
+  /// 已完成任务当前页码（0-based）
+  int _completedPage = 0;
+
+  @override
+  Widget build(BuildContext context) {
     return Consumer<UploadManagerProvider>(
       builder: (context, uploadManager, _) {
-        final allTasks = uploadManager.allTasks;
-        final activeTasks = allTasks.where((t) =>
-            t.status == UploadStatus.uploading || t.status == UploadStatus.waiting || t.status == UploadStatus.paused).toList();
-        final completedTasks = allTasks.where((t) => t.status == UploadStatus.completed).toList();
-        final failedTasks = allTasks.where((t) =>
-            t.status == UploadStatus.failed || t.status == UploadStatus.cancelled).toList();
-
-        if (allTasks.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(LucideIcons.upload, size: 48, color: theme.hintColor.withValues(alpha: 0.4)),
-                const SizedBox(height: 16),
-                Text('暂无上传任务', style: TextStyle(color: theme.hintColor)),
-              ],
-            ),
-          );
-        }
+        // 进行中任务（waiting/uploading/paused）走内存，实时更新进度
+        final activeTasks = uploadManager.activeTasks;
 
         return LayoutBuilder(
           builder: (context, constraints) {
             final isDesktop = constraints.maxWidth >= 800;
 
             if (isDesktop) {
-              return _buildDesktopLayout(
-                context,
-                uploadManager,
-                allTasks: allTasks,
-                activeTasks: activeTasks,
-                failedTasks: failedTasks,
-                completedTasks: completedTasks,
-              );
+              return _buildDesktopLayout(context, uploadManager, activeTasks);
             }
 
-            return _buildMobileLayout(
-              context,
-              uploadManager,
-              activeTasks: activeTasks,
-              failedTasks: failedTasks,
-              completedTasks: completedTasks,
+            return _buildMobileLayout(context, uploadManager, activeTasks);
+          },
+        );
+      },
+    );
+  }
+
+  // ============ 分页 Stream ============
+
+  Stream<List<UploadTaskEntry>> _failedTasksStream() {
+    return TaskDatabase.instance.watchUploadTasks(
+      statusIndexes: [
+        UploadStatus.failed.index,
+        UploadStatus.cancelled.index,
+      ],
+      limit: _pageSize,
+      offset: _failedPage * _pageSize,
+    );
+  }
+
+  Stream<int> _failedTasksCountStream() {
+    return TaskDatabase.instance.watchUploadTasksCount([
+      UploadStatus.failed.index,
+      UploadStatus.cancelled.index,
+    ]);
+  }
+
+  Stream<List<UploadTaskEntry>> _completedTasksStream() {
+    return TaskDatabase.instance.watchUploadTasks(
+      statusIndexes: [UploadStatus.completed.index],
+      limit: _pageSize,
+      offset: _completedPage * _pageSize,
+    );
+  }
+
+  Stream<int> _completedTasksCountStream() {
+    return TaskDatabase.instance.watchUploadTasksCount([
+      UploadStatus.completed.index,
+    ]);
+  }
+
+  // ============ Mobile Layout ============
+
+  Widget _buildMobileLayout(
+    BuildContext context,
+    UploadManagerProvider uploadManager,
+    List<UploadTaskModel> activeTasks,
+  ) {
+    final theme = Theme.of(context);
+
+    return ListView(
+      padding: const EdgeInsets.only(top: 8, bottom: 80),
+      children: [
+        // 进行中任务分页 section（内存数据，避免 1000 个 Widget 全量渲染卡死）
+        _buildActiveSection(context, uploadManager, activeTasks),
+        // 失败任务分页 section
+        _buildFailedSection(context, uploadManager, activeTasks, theme),
+        // 已完成任务分页 section
+        _buildCompletedSection(context, uploadManager, activeTasks, theme),
+      ],
+    );
+  }
+
+  /// 进行中任务分页 section
+  ///
+  /// active 任务在内存里（UploadService._tasks），不走数据库 Stream。
+  /// 文件夹上传可能产生上千个 waiting 任务，全量渲染会卡死 UI，所以也分页。
+  Widget _buildActiveSection(
+    BuildContext context,
+    UploadManagerProvider uploadManager,
+    List<UploadTaskModel> activeTasks,
+  ) {
+    if (activeTasks.isEmpty) return const SizedBox.shrink();
+
+    final totalCount = activeTasks.length;
+    final totalPages = (totalCount / _pageSize).ceil();
+    // 当前页越界（任务完成后总数减少），回退到最后一页
+    if (_activePage >= totalPages) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          setState(() => _activePage = (totalPages - 1).clamp(0, totalPages - 1));
+        }
+      });
+    }
+    final safePage = _activePage.clamp(0, totalPages - 1);
+    final start = safePage * _pageSize;
+    final end = (start + _pageSize).clamp(0, totalCount);
+    final pageTasks = activeTasks.sublist(start, end);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildSectionHeader(context, '进行中', totalCount),
+        ...pageTasks.map((task) => UploadProgressItem(
+          task: task,
+          onPause: () => uploadManager.pauseUpload(task.id),
+          onResume: () => uploadManager.retryUpload(task.id),
+          onCancel: () => uploadManager.cancelUpload(task.id),
+        )),
+        _buildPaginationControls(
+          context: context,
+          currentPage: safePage,
+          totalPages: totalPages,
+          onPrev: safePage > 0
+              ? () => setState(() => _activePage--)
+              : null,
+          onNext: safePage < totalPages - 1
+              ? () => setState(() => _activePage++)
+              : null,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFailedSection(
+    BuildContext context,
+    UploadManagerProvider uploadManager,
+    List<UploadTaskModel> activeTasks,
+    ThemeData theme,
+  ) {
+    return StreamBuilder<int>(
+      stream: _failedTasksCountStream(),
+      builder: (context, countSnapshot) {
+        final totalCount = countSnapshot.data ?? 0;
+        // 总数变化导致当前页超出范围时回退
+        if (totalCount == 0) return const SizedBox.shrink();
+        final totalPages = (totalCount / _pageSize).ceil();
+        // 当前页越界（例如清除任务后），回退到最后一页
+        if (_failedPage >= totalPages) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) setState(() => _failedPage = (totalPages - 1).clamp(0, totalPages - 1));
+          });
+        }
+        return StreamBuilder<List<UploadTaskEntry>>(
+          stream: _failedTasksStream(),
+          builder: (context, snapshot) {
+            final entries = snapshot.data ?? const [];
+            final failedTasks = entries
+                .map((e) => UploadTaskModel.fromEntry(e))
+                .toList();
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildSectionHeader(context, '失败', totalCount,
+                    actionLabel: '清除失败',
+                    onAction: () => _confirmClear(context, '失败',
+                        totalCount, () {
+                      uploadManager.clearFailedTasks();
+                      setState(() => _failedPage = 0);
+                    })),
+                ...failedTasks.map((task) => UploadProgressItem(
+                  task: task,
+                  onRetry: () => uploadManager.retryUpload(task.id),
+                  onDelete: () => _confirmDeleteUploadTask(context, task, uploadManager),
+                )),
+                _buildPaginationControls(
+                  context: context,
+                  currentPage: _failedPage,
+                  totalPages: totalPages,
+                  onPrev: _failedPage > 0
+                      ? () => setState(() => _failedPage--)
+                      : null,
+                  onNext: _failedPage < totalPages - 1
+                      ? () => setState(() => _failedPage++)
+                      : null,
+                ),
+              ],
             );
           },
         );
@@ -64,78 +216,176 @@ class UploadTasksTab extends StatelessWidget {
     );
   }
 
-  Widget _buildMobileLayout(
+  Widget _buildCompletedSection(
     BuildContext context,
-    UploadManagerProvider uploadManager, {
-    required List<UploadTaskModel> activeTasks,
-    required List<UploadTaskModel> failedTasks,
-    required List<UploadTaskModel> completedTasks,
-  }) {
-    return ListView(
-      padding: const EdgeInsets.only(top: 8, bottom: 80),
-      children: [
-        if (activeTasks.isNotEmpty) ...[
-          _buildSectionHeader(context, '进行中', activeTasks.length),
-          ...activeTasks.map((task) => UploadProgressItem(
-            task: task,
-            onPause: () => uploadManager.pauseUpload(task.id),
-            onResume: () => uploadManager.retryUpload(task.id),
-            onCancel: () => uploadManager.cancelUpload(task.id),
-          )),
-        ],
-        if (failedTasks.isNotEmpty) ...[
-          _buildSectionHeader(context, '失败', failedTasks.length,
-              actionLabel: '清除失败',
-              onAction: () => _confirmClear(context, '失败', failedTasks.length, () => uploadManager.clearFailedTasks())),
-          ...failedTasks.map((task) => UploadProgressItem(
-            task: task,
-            onRetry: () => uploadManager.retryUpload(task.id),
-            onDelete: () => _confirmDeleteUploadTask(context, task, uploadManager),
-          )),
-        ],
-        if (completedTasks.isNotEmpty) ...[
-          _buildSectionHeader(context, '已完成', completedTasks.length,
-              actionLabel: '清除已完成',
-              onAction: () => _confirmClear(context, '已完成', completedTasks.length, () => uploadManager.clearCompletedTasks())),
-          ...completedTasks.map((task) => UploadProgressItem(
-            task: task,
-            onNavigate: () => _navigateToUploadedFile(context, task),
-            onDelete: () => _confirmDeleteUploadTask(context, task, uploadManager),
-          )),
-        ],
-      ],
+    UploadManagerProvider uploadManager,
+    List<UploadTaskModel> activeTasks,
+    ThemeData theme,
+  ) {
+    return StreamBuilder<int>(
+      stream: _completedTasksCountStream(),
+      builder: (context, countSnapshot) {
+        final totalCount = countSnapshot.data ?? 0;
+        if (totalCount == 0) {
+          // 失败和已完成都为空且进行中也空 -> 显示空态
+          if (activeTasks.isEmpty &&
+              !snapshotHasData(countSnapshot)) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(LucideIcons.upload, size: 48,
+                      color: theme.hintColor.withValues(alpha: 0.4)),
+                  const SizedBox(height: 16),
+                  Text('暂无上传任务', style: TextStyle(color: theme.hintColor)),
+                ],
+              ),
+            );
+          }
+          return const SizedBox.shrink();
+        }
+        final totalPages = (totalCount / _pageSize).ceil();
+        if (_completedPage >= totalPages) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) setState(() => _completedPage = (totalPages - 1).clamp(0, totalPages - 1));
+          });
+        }
+        return StreamBuilder<List<UploadTaskEntry>>(
+          stream: _completedTasksStream(),
+          builder: (context, snapshot) {
+            final entries = snapshot.data ?? const [];
+            final completedTasks = entries
+                .map((e) => UploadTaskModel.fromEntry(e))
+                .toList();
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildSectionHeader(context, '已完成', totalCount,
+                    actionLabel: '清除已完成',
+                    onAction: () => _confirmClear(context, '已完成',
+                        totalCount, () {
+                      uploadManager.clearCompletedTasks();
+                      setState(() => _completedPage = 0);
+                    })),
+                ...completedTasks.map((task) => UploadProgressItem(
+                  task: task,
+                  onNavigate: () => _navigateToUploadedFile(context, task),
+                  onDelete: () => _confirmDeleteUploadTask(context, task, uploadManager),
+                )),
+                _buildPaginationControls(
+                  context: context,
+                  currentPage: _completedPage,
+                  totalPages: totalPages,
+                  onPrev: _completedPage > 0
+                      ? () => setState(() => _completedPage--)
+                      : null,
+                  onNext: _completedPage < totalPages - 1
+                      ? () => setState(() => _completedPage++)
+                      : null,
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 
+  bool snapshotHasData(AsyncSnapshot<int> snapshot) => snapshot.hasData;
+
+  /// 分页控件：[上一页] 第 X/Y 页 [下一页]
+  Widget _buildPaginationControls({
+    required BuildContext context,
+    required int currentPage,
+    required int totalPages,
+    VoidCallback? onPrev,
+    VoidCallback? onNext,
+  }) {
+    // 只有一页时不显示分页控件
+    if (totalPages <= 1) return const SizedBox.shrink();
+
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.chevron_left, size: 20),
+            onPressed: onPrev,
+            tooltip: '上一页',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            color: onPrev == null ? theme.disabledColor : theme.colorScheme.primary,
+          ),
+          const SizedBox(width: 12),
+          Text(
+            '第 ${currentPage + 1} / $totalPages 页',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.hintColor,
+            ),
+          ),
+          const SizedBox(width: 12),
+          IconButton(
+            icon: const Icon(Icons.chevron_right, size: 20),
+            onPressed: onNext,
+            tooltip: '下一页',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            color: onNext == null ? theme.disabledColor : theme.colorScheme.primary,
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ============ Desktop Layout ============
+
   Widget _buildDesktopLayout(
     BuildContext context,
-    UploadManagerProvider uploadManager, {
-    required List<UploadTaskModel> allTasks,
-    required List<UploadTaskModel> activeTasks,
-    required List<UploadTaskModel> failedTasks,
-    required List<UploadTaskModel> completedTasks,
-  }) {
+    UploadManagerProvider uploadManager,
+    List<UploadTaskModel> activeTasks,
+  ) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    final sortedTasks = [
-      ...activeTasks.reversed,
-      ...failedTasks.reversed,
-      ...completedTasks.reversed,
-    ];
+    // 对 active 任务分页，避免 1000 个 DataRow 全量渲染卡死 DataTable
+    final activeTotal = activeTasks.length;
+    final activeTotalPages = activeTotal == 0 ? 0 : (activeTotal / _pageSize).ceil();
+    if (activeTotalPages > 0 && _activePage >= activeTotalPages) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          setState(() => _activePage = (activeTotalPages - 1).clamp(0, activeTotalPages - 1));
+        }
+      });
+    }
+    final activeSafePage = activeTotalPages > 0
+        ? _activePage.clamp(0, activeTotalPages - 1)
+        : 0;
+    final activeStart = activeSafePage * _pageSize;
+    final activeEnd = (activeStart + _pageSize).clamp(0, activeTotal);
+    final pagedActiveTasks = activeTasks.sublist(activeStart, activeEnd);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         children: [
-            if (failedTasks.isNotEmpty)
-              Align(
+          // 失败任务的清除按钮
+          StreamBuilder<int>(
+            stream: _failedTasksCountStream(),
+            builder: (context, snapshot) {
+              final failedCount = snapshot.data ?? 0;
+              if (failedCount == 0) return const SizedBox.shrink();
+              return Align(
                 alignment: Alignment.centerRight,
                 child: Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: TextButton.icon(
                     icon: const Icon(LucideIcons.trash2, size: 14),
                     label: const Text('清除失败', style: TextStyle(fontSize: 12)),
-                    onPressed: () => _confirmClear(context, '失败', failedTasks.length, () => uploadManager.clearFailedTasks()),
+                    onPressed: () => _confirmClear(context, '失败', failedCount, () {
+                      uploadManager.clearFailedTasks();
+                      setState(() => _failedPage = 0);
+                    }),
                     style: TextButton.styleFrom(
                       foregroundColor: colorScheme.error,
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -144,47 +394,144 @@ class UploadTasksTab extends StatelessWidget {
                     ),
                   ),
                 ),
-              ),
-            if (completedTasks.isNotEmpty && failedTasks.isEmpty)
-              Align(
-                alignment: Alignment.centerRight,
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: TextButton.icon(
-                    icon: const Icon(LucideIcons.trash2, size: 14),
-                    label: const Text('清除已完成', style: TextStyle(fontSize: 12)),
-                    onPressed: () => _confirmClear(context, '已完成', completedTasks.length, () => uploadManager.clearCompletedTasks()),
-                    style: TextButton.styleFrom(
-                      foregroundColor: colorScheme.error,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              );
+            },
+          ),
+          // 已完成任务的清除按钮（仅在失败任务为空时显示）
+          StreamBuilder<int>(
+            stream: _failedTasksCountStream(),
+            builder: (context, failedSnapshot) {
+              final failedCount = failedSnapshot.data ?? 0;
+              if (failedCount > 0) return const SizedBox.shrink();
+              return StreamBuilder<int>(
+                stream: _completedTasksCountStream(),
+                builder: (context, completedSnapshot) {
+                  final completedCount = completedSnapshot.data ?? 0;
+                  if (completedCount == 0) return const SizedBox.shrink();
+                  return Align(
+                    alignment: Alignment.centerRight,
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: TextButton.icon(
+                        icon: const Icon(LucideIcons.trash2, size: 14),
+                        label: const Text('清除已完成', style: TextStyle(fontSize: 12)),
+                        onPressed: () => _confirmClear(context, '已完成', completedCount, () {
+                          uploadManager.clearCompletedTasks();
+                          setState(() => _completedPage = 0);
+                        }),
+                        style: TextButton.styleFrom(
+                          foregroundColor: colorScheme.error,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                      ),
                     ),
-                  ),
+                  );
+                },
+              );
+            },
+          ),
+          SizedBox(
+            width: double.infinity,
+            child: Card(
+              margin: EdgeInsets.zero,
+              clipBehavior: Clip.antiAlias,
+              child: _buildTasksDataTable(context, uploadManager, pagedActiveTasks),
+            ),
+          ),
+          // 进行中任务分页控件
+          if (activeTotalPages > 1)
+            _buildPaginationControls(
+              context: context,
+              currentPage: activeSafePage,
+              totalPages: activeTotalPages,
+              onPrev: activeSafePage > 0
+                  ? () => setState(() => _activePage--)
+                  : null,
+              onNext: activeSafePage < activeTotalPages - 1
+                  ? () => setState(() => _activePage++)
+                  : null,
+            ),
+          // 已完成任务分页控件
+          StreamBuilder<int>(
+            stream: _completedTasksCountStream(),
+            builder: (context, snapshot) {
+              final totalCount = snapshot.data ?? 0;
+              if (totalCount <= _pageSize) return const SizedBox.shrink();
+              final totalPages = (totalCount / _pageSize).ceil();
+              return _buildPaginationControls(
+                context: context,
+                currentPage: _completedPage,
+                totalPages: totalPages,
+                onPrev: _completedPage > 0
+                    ? () => setState(() => _completedPage--)
+                    : null,
+                onNext: _completedPage < totalPages - 1
+                    ? () => setState(() => _completedPage++)
+                    : null,
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 桌面端 DataTable：进行中任务来自内存，失败/已完成任务来自 Stream（当前页）
+  Widget _buildTasksDataTable(
+    BuildContext context,
+    UploadManagerProvider uploadManager,
+    List<UploadTaskModel> activeTasks,
+  ) {
+    return StreamBuilder<List<UploadTaskEntry>>(
+      stream: _failedTasksStream(),
+      builder: (context, failedSnapshot) {
+        final failedTasks = (failedSnapshot.data ?? const [])
+            .map((e) => UploadTaskModel.fromEntry(e))
+            .toList();
+        return StreamBuilder<List<UploadTaskEntry>>(
+          stream: _completedTasksStream(),
+          builder: (context, completedSnapshot) {
+            final completedTasks = (completedSnapshot.data ?? const [])
+                .map((e) => UploadTaskModel.fromEntry(e))
+                .toList();
+
+            final sortedTasks = <UploadTaskModel>[
+              ...activeTasks.reversed,
+              ...failedTasks.reversed,
+              ...completedTasks.reversed,
+            ];
+
+            if (sortedTasks.isEmpty) {
+              return SizedBox(
+                height: 200,
+                child: Center(
+                  child: Text('暂无上传任务',
+                      style: TextStyle(color: Theme.of(context).hintColor)),
                 ),
-              ),
-            SizedBox(
-              width: double.infinity,
-              child: Card(
-                margin: EdgeInsets.zero,
-                clipBehavior: Clip.antiAlias,
-                child: DataTable(
-                headingRowColor: WidgetStateProperty.all(colorScheme.surfaceContainerHighest),
-                columnSpacing: 24,
-                columns: const [
-                  DataColumn(label: Text('名称')),
-                  DataColumn(label: Text('状态')),
-                  DataColumn(label: Text('进度')),
-                  DataColumn(label: Text('大小')),
-                  DataColumn(label: Text('速度/完成时间')),
-                  DataColumn(label: Text('操作')),
-                ],
-                rows: sortedTasks.map((task) => _buildUploadDataRow(context, task, uploadManager)).toList(),
-              ),
-            ),
-            ),
-          ],
-        ),
+              );
+            }
+
+            return DataTable(
+              headingRowColor: WidgetStateProperty.all(
+                  Theme.of(context).colorScheme.surfaceContainerHighest),
+              columnSpacing: 24,
+              columns: const [
+                DataColumn(label: Text('名称')),
+                DataColumn(label: Text('状态')),
+                DataColumn(label: Text('进度')),
+                DataColumn(label: Text('大小')),
+                DataColumn(label: Text('速度/完成时间')),
+                DataColumn(label: Text('操作')),
+              ],
+              rows: sortedTasks
+                  .map((task) => _buildUploadDataRow(context, task, uploadManager))
+                  .toList(),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -203,7 +550,6 @@ class UploadTasksTab extends StatelessWidget {
 
     return DataRow(
       cells: [
-        // 名称 (with status icon)
         DataCell(
           Row(
             mainAxisSize: MainAxisSize.min,
@@ -228,14 +574,12 @@ class UploadTasksTab extends StatelessWidget {
             ],
           ),
         ),
-        // 状态
         DataCell(
           Text(
             task.statusText,
             style: TextStyle(color: statusColor, fontSize: 13),
           ),
         ),
-        // 进度
         DataCell(
           isActive
               ? Row(
@@ -261,9 +605,7 @@ class UploadTasksTab extends StatelessWidget {
                   style: const TextStyle(fontSize: 12),
                 ),
         ),
-        // 大小
         DataCell(Text(task.readableFileSize, style: const TextStyle(fontSize: 13))),
-        // 速度/完成时间
         DataCell(
           Text(
             task.status == UploadStatus.completed
@@ -277,7 +619,6 @@ class UploadTasksTab extends StatelessWidget {
             ),
           ),
         ),
-        // 操作
         DataCell(
           Row(
             mainAxisSize: MainAxisSize.min,
@@ -488,7 +829,6 @@ class UploadTasksTab extends StatelessWidget {
   }
 
   void _navigateToUploadedFile(BuildContext context, UploadTaskModel task) {
-    // targetPath 格式: cloudreve://my/folder
     final targetPath = task.targetPath;
     String relativePath;
     if (targetPath.startsWith('cloudreve://my')) {
@@ -498,7 +838,6 @@ class UploadTasksTab extends StatelessWidget {
       relativePath = targetPath;
     }
 
-    // 构造文件完整路径用于高亮
     final filePath = targetPath.endsWith('/')
         ? '$targetPath${task.fileName}'
         : '$targetPath/${task.fileName}';

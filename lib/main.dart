@@ -11,6 +11,7 @@ import 'package:flutter_single_instance/flutter_single_instance.dart';
 import 'package:provider/provider.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:oktoast/oktoast.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
 import 'config/app_config.dart';
 import 'core/constants/storage_keys.dart';
@@ -28,6 +29,9 @@ import 'presentation/providers/theme_provider.dart';
 import 'services/upload_service.dart';
 import 'services/upload_foreground_service.dart';
 import 'services/android_compat_service.dart';
+import 'services/task_database.dart';
+import 'data/models/upload_task_model.dart';
+import 'data/models/download_task_model.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'services/api_service.dart';
 import 'services/server_service.dart';
@@ -65,6 +69,78 @@ Level _parseLogLevel(String level) {
     'trace' => Level.trace,
     _ => Level.info,
   };
+}
+
+/// 迁移旧版上传/下载任务（SharedPreferences JSON -> drift SQLite）
+///
+/// 旧版本把任务列表序列化为 JSON 存在 SharedPreferences 中：
+/// - StorageKeys.uploadTasks: 上传任务 JSON
+/// - StorageKeys.downloadTasks: 下载任务 JSON
+///
+/// 新版本改用 drift + SQLite，启动时一次性把旧数据迁移到数据库，
+/// 迁移成功后清除旧 key，重复启动不会重复迁移。
+/// 任何异常都不阻塞启动。
+Future<void> _migrateLegacyTasks() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+
+    // ===== 上传任务迁移 =====
+    final uploadJson = prefs.getString(StorageKeys.uploadTasks);
+    if (uploadJson != null && uploadJson.isNotEmpty) {
+      try {
+        final list = jsonDecode(uploadJson) as List<dynamic>;
+        final companions = <UploadTasksCompanion>[];
+        for (final item in list) {
+          try {
+            final task = UploadTaskModel.fromJson(
+              item as Map<String, dynamic>,
+            );
+            // hidden 任务不持久化（与原 _saveTasks 过滤一致）
+            if (!task.hidden) {
+              companions.add(task.toCompanion());
+            }
+          } catch (_) {
+            // 单条解析失败跳过，不阻塞整体迁移
+          }
+        }
+        if (companions.isNotEmpty) {
+          await TaskDatabase.instance.batchUpsertUploadTasks(companions);
+          AppLogger.i('迁移 ${companions.length} 个上传任务到 drift');
+        }
+        await prefs.remove(StorageKeys.uploadTasks);
+      } catch (e) {
+        AppLogger.e('迁移上传任务失败: $e');
+      }
+    }
+
+    // ===== 下载任务迁移 =====
+    final downloadJson = prefs.getString(StorageKeys.downloadTasks);
+    if (downloadJson != null && downloadJson.isNotEmpty) {
+      try {
+        final list = jsonDecode(downloadJson) as List<dynamic>;
+        final companions = <DownloadTasksCompanion>[];
+        for (final item in list) {
+          try {
+            final task = DownloadTaskModel.fromJson(
+              item as Map<String, dynamic>,
+            );
+            // 已取消任务不迁移（与 _loadTasks 过滤一致）
+            if (task.status == DownloadStatus.cancelled) continue;
+            companions.add(task.toCompanion());
+          } catch (_) {}
+        }
+        if (companions.isNotEmpty) {
+          await TaskDatabase.instance.batchUpsertDownloadTasks(companions);
+          AppLogger.i('迁移 ${companions.length} 个下载任务到 drift');
+        }
+        await prefs.remove(StorageKeys.downloadTasks);
+      } catch (e) {
+        AppLogger.e('迁移下载任务失败: $e');
+      }
+    }
+  } catch (e) {
+    AppLogger.e('迁移旧任务数据失败: $e');
+  }
 }
 
 void main() async {
@@ -188,6 +264,10 @@ void main() async {
 
   // 初始化上传前台服务配置（Android 后台上传通知）。
   await UploadForegroundService.initialize();
+
+  // 迁移旧版上传/下载任务（SharedPreferences JSON -> drift SQLite）
+  // 失败不阻塞启动；已迁移成功的 key 会被清除，重复启动不会重复迁移。
+  await _migrateLegacyTasks();
 
   // Android 15+ targetSdk 35/36 会默认 Edge-to-edge；这里显式开启，
   // 并由各 Scaffold / SafeArea 处理系统栏避让。

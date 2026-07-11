@@ -457,29 +457,41 @@ class UploadService extends ChangeNotifier {
     final task = _tasks[taskId];
     if (task == null) return;
 
-    // 如果失败任务保留了仍有效的 OneDrive 上传会话，继续使用它；
-    // 这样可以利用 OneDrive upload session 的 nextExpectedRanges 机制续传。
-    // 非 OneDrive 策略没有统一的已上传分片查询接口，重试时重新创建会话更稳。
+    final isResumeFromPause = task.status == UploadStatus.paused;
+    final session = task.session;
+    // 可断点续传的策略：
+    // - OneDrive: 通过 upload session 的 nextExpectedRanges 查询服务端真实续传点
+    // - 本地/中转/从机: 服务端按 index 记录已上传分片，最后一个分片上传后自动完成，
+    //   跳过已上传分片是安全的。
+    // S3-like 策略的 complete 需要提交所有 parts 的 ETag，跳过分片会导致 complete 失败，
+    // 因此 S3-like 暂停恢复时仍走"删除 session 重新创建"的失败重试路径。
+    final canResume = session != null &&
+        (session._isOneDriveUpload ||
+            session.isRelayUpload ||
+            session._isRemoteSlaveUpload);
+
     var taskForRetry = task;
-    if (task.session != null &&
-        (!task.session!._isOneDriveUpload ||
-            _isUploadSessionExpired(task.session!))) {
+    if (isResumeFromPause && canResume) {
+      // 暂停恢复 + 可续传策略：保留 session，从已上传位置继续
+    } else if (session != null &&
+        (!session._isOneDriveUpload ||
+            _isUploadSessionExpired(session))) {
+      // 失败重试 / S3-like 暂停 / OneDrive 过期：删除 session 重新创建
       await _deleteUploadSessionForTask(task);
       taskForRetry = task.copyWith(session: null);
     }
 
+    // 暂停恢复 + 可续传策略 保留进度；OneDrive 失败重试也保留（复用 session）；
+    // 其他场景重置为 0（重新创建会话从头上传）
+    final keepProgress = (isResumeFromPause && canResume) ||
+        taskForRetry.session?._isOneDriveUpload == true;
+
     // 重置任务状态
     final resetTask = taskForRetry.copyWith(
       status: UploadStatus.waiting,
-      uploadedBytes: taskForRetry.session?._isOneDriveUpload == true
-          ? taskForRetry.uploadedBytes
-          : 0,
-      progress: taskForRetry.session?._isOneDriveUpload == true
-          ? taskForRetry.progress
-          : 0,
-      uploadedChunks: taskForRetry.session?._isOneDriveUpload == true
-          ? taskForRetry.uploadedChunks
-          : 0,
+      uploadedBytes: keepProgress ? taskForRetry.uploadedBytes : 0,
+      progress: keepProgress ? taskForRetry.progress : 0,
+      uploadedChunks: keepProgress ? taskForRetry.uploadedChunks : 0,
       errorMessage: null,
       speed: 0,
     );
@@ -501,15 +513,19 @@ class UploadService extends ChangeNotifier {
     await _uploadSemaphore.acquire();
     try {
       // 步骤1：创建或复用上传会话。
-      // OneDrive upload session 本身支持查询 nextExpectedRanges，失败重试时可以复用会话。
+      // 可断点续传的策略（OneDrive/本地/中转/从机）在 session 未过期时复用，
+      // 这样暂停恢复时能从已上传位置继续。S3-like 策略的 complete 需要所有 parts
+      // 的 ETag，跳过分片会导致 complete 失败，因此 S3-like 不复用 session。
       UploadSessionModel session;
       if (task.session != null &&
-          task.session!._isOneDriveUpload &&
-          !_isUploadSessionExpired(task.session!)) {
+          !_isUploadSessionExpired(task.session!) &&
+          (task.session!._isOneDriveUpload ||
+              task.session!.isRelayUpload ||
+              task.session!._isRemoteSlaveUpload)) {
         session = task.session!;
         AppLogger.d(
-          'UploadService.startUpload: 复用 OneDrive 上传会话，'
-          'sessionId=${session.sessionId}',
+          'UploadService.startUpload: 复用上传会话，'
+          'sessionId=${session.sessionId}, policy=${session._policyType}',
         );
       } else {
         if (task.session != null && task.status != UploadStatus.completed) {
@@ -815,6 +831,18 @@ class UploadService extends ChangeNotifier {
           );
         }
       }
+    } else if (task.uploadedBytes > 0 &&
+        (session.isRelayUpload || session._isRemoteSlaveUpload)) {
+      // 本地/中转/从机策略：服务端按 index 记录已上传分片，
+      // 最后一个分片上传后自动完成（_completeUploadIfNeeded 中 return），
+      // 跳过已上传分片是安全的。
+      // S3-like 策略不走这里：complete 需要提交所有 parts 的 ETag，
+      // 跳过分片会导致 complete 时 parts 列表不完整而失败。
+      resumeStart = math.min(task.uploadedBytes, totalSize);
+      AppLogger.d(
+        'Resume from uploadedBytes=$resumeStart/$totalSize '
+        '(relay=${session.isRelayUpload}, remote=${session._isRemoteSlaveUpload})',
+      );
     }
 
     RandomAccessFile? raf;

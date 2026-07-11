@@ -640,21 +640,39 @@ class DownloadManagerProvider extends ChangeNotifier {
 
   /// 清空所有已完成的任务
   Future<void> clearCompletedTasks() async {
+    // 批量删除 db 中所有 completed 任务。
+    // _tasks 内存里只有 active 任务（启动时只加载未完成），
+    // completed 任务只在 db 里，必须走批量 SQL 才能清掉，
+    // 否则重启后 UI 通过 StreamBuilder 显示的历史任务点"清除"不生效。
+    await TaskDatabase.instance.deleteDownloadTasksByStatus([
+      DownloadStatus.completed.index,
+    ]);
+
+    // 同步清理内存（本次会话内完成的任务仍在 _tasks 里）
     final completedTasks = getTasksByStatus(DownloadStatus.completed);
     for (final task in completedTasks) {
-      await deleteDownloadTask(task.id);
+      _resumeBaseBytes.remove(task.id);
+      _tasks.remove(task.id);
+      _runtimeTaskBuffer.remove(task.id);
+      _downloadService.disposeTask(task.id);
     }
+    notifyListeners();
   }
 
   /// 清空所有失败的任务
   Future<void> clearFailedTasks() async {
+    // 批量删除 db 中所有 failed 任务（同 clearCompletedTasks 的理由）
+    await TaskDatabase.instance.deleteDownloadTasksByStatus([
+      DownloadStatus.failed.index,
+    ]);
+
+    // 同步清理内存
     final failedTasks = getTasksByStatus(DownloadStatus.failed);
     for (final task in failedTasks) {
       _resumeBaseBytes.remove(task.id);
       _runtimeTaskBuffer.remove(task.id);
       _tasks.remove(task.id);
       _downloadService.disposeTask(task.id);
-      await _deleteTask(task.id);
     }
     notifyListeners();
   }

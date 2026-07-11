@@ -287,6 +287,16 @@ class UploadService extends ChangeNotifier {
 
   /// 清除已完成的任务
   void clearCompletedTasks() {
+    // 批量删除 db 中所有 completed/cancelled 任务。
+    // _tasks 内存里只有 active 任务（启动时 queryActiveUploadTasks 只加载未完成），
+    // completed/cancelled 任务只在 db 里，必须走批量 SQL 才能清掉，
+    // 否则重启后 UI 通过 StreamBuilder 显示的历史任务点"清除"不生效。
+    unawaited(TaskDatabase.instance.deleteUploadTasksByStatus([
+      UploadStatus.completed.index,
+      UploadStatus.cancelled.index,
+    ]));
+
+    // 同步清理内存中对应的任务（本次会话内完成的任务仍在 _tasks 里）
     final completedIds = _tasks.values
         .where(
           (t) =>
@@ -303,6 +313,12 @@ class UploadService extends ChangeNotifier {
 
   /// 清除失败的任务
   void clearFailedTasks() {
+    // 批量删除 db 中所有 failed 任务（同 clearCompletedTasks 的理由）
+    unawaited(TaskDatabase.instance.deleteUploadTasksByStatus([
+      UploadStatus.failed.index,
+    ]));
+
+    // 清理内存 + 删除 Cloudreve 上传会话（failed 任务可能持有上传锁）
     final failedIds = _tasks.values
         .where((t) => t.status == UploadStatus.failed)
         .map((t) => t.id)

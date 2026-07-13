@@ -1,63 +1,86 @@
 # Cloudreve4 Flutter
 
-[![Flutter](https://img.shields.io/badge/Flutter-3.41.6-blue?logo=flutter)](https://flutter.dev)
-[![Dart](https://img.shields.io/badge/Dart-3.11.4-blue?logo=dart)](https://dart.dev)
+[![Flutter](https://img.shields.io/badge/Flutter-3.41.9-blue?logo=flutter)](https://flutter.dev)
+[![Dart](https://img.shields.io/badge/Dart-3.11.5-blue?logo=dart)](https://dart.dev)
+[![Rust](https://img.shields.io/badge/Rust-2021-orange?logo=rust)](https://www.rust-lang.org)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
+[![Version](https://img.shields.io/badge/version-1.4.0-brightgreen)](./CHANGELOG_v1.4.0.md)
 
-> 🚀 基于 Flutter 的 Cloudreve v4 第三方客户端，提供移动端便捷Cloudreve管理体验
+> 🚀 基于 Flutter + Rust 的 Cloudreve v4 全平台第三方客户端，提供网盘管理、媒体预览、双向同步等完整能力
 
 ---
 
 ## 📖 项目简介
 
-Cloudreve4 Flutter 是一个功能丰富的云存储客户端，支持文件上传、下载、管理和分享。针对 Cloudreve v4 API 进行了基本完整适配和优化。
+Cloudreve4 Flutter 是一个面向 Cloudreve v4 后端的开源客户端，覆盖 **Android / Windows / Linux** 三端（Web 实验性支持）。除了完整对接 Cloudreve V4 的网盘管理能力，本项目内置了一个用 **Rust 编写的同步引擎** (`sync-core`)，实现真正可用的双向同步、Windows Cloud Filter 占位符、Linux FUSE 挂载等高级能力。
 
 ### ✨ 特性亮点
 
-- 🎯 现支持的功能基本完整适配 Cloudreve v4 API
-- 📱 跨平台支持（Android / Linux / Windows / Web）
-- 🎨 现代化 Material Design 3 界面
-- ⚡ 支持断点续传和下载进度监听
-- 🔐 安全的 Token 认证机制
+- 🦀 **Rust 同步引擎**：双向同步、SSE 实时事件、三路差异、冲突策略、带宽限速
+- 🪟 **Windows Cloud Filter 镜像挂载**：占位符 + 按需水合，本地零空间占用
+- 🐧 **Linux FUSE 读写挂载**：云端文件按需下载，本地写入自动上传
+- 📱 **Android 相册自动备份**：DCIM/Camera 自动同步
+- 🔐 **QR 码扫码登录**：X25519 + AES-GCM 加密中继 [**@mkw3627-ui**](https://github.com/mkw3627-ui)
+- 🎬 **完整媒体预览**：图片 / PDF / 音视频 / Markdown / 代码（189 种语言高亮）
+- 📂 **强大的文件管理**：分页加载、多字段排序、拖拽上传、键盘快捷键、面包屑导航
+- 🎨 **现代化 Material 3 界面**：响应式布局，桌面端深度优化
+- ⚡ **统一任务管理**：上传/下载任务 drift 持久化 + 分页加载，全平台 `background_downloader` 支持暂停 / 恢复 / 断点续传
+- 🌐 **完整分享体系(服务端Pro)**：剪贴板自动检测、密码保护、跨域分享、批量转存
+- 📦 **应用内自动更新**：Windows ZIP 覆盖更新 / Android APK 安装 `@mkw3627-ui 打包器支持, 兜底github`
+- 🧩 **打包构建器**：站长专用, 适用于自定义构建, 品牌logo, 定制在线更新等一键打包, 请加入下方群组联系 `@mkw2233`
+- 🧩 **数据迁移插件**：站长专用, 适用于站长下属用户一键迁移三方网盘数据, 请加入下方群组联系我
+---
 
 ## 📸 截图
 
 <table>
-  <!-- 第一行：3个截图 -->
   <tr>
     <td align="center">
-      <img src="screenshots/home.jpg" width="250"/><br/>
-      <sub>home</sub>
+      <img src="screenshots/home.png" width="250"/><br/>
+      <sub>概览</sub>
+    </td>
+    <td align="center">
+      <img src="screenshots/file_manager.jpg" width="250"/><br/>
+      <sub>文件管理</sub>
+    </td>
+    <td align="center">
+      <img src="screenshots/sync.jpg" width="250"/><br/>
+      <sub>同步引擎</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="screenshots/editor.png" width="250"/><br/>
+      <sub>文本编辑器</sub>
     </td>
     <td align="center">
       <img src="screenshots/markdown.jpg" width="250"/><br/>
-      <sub>markdown</sub>
+      <sub>Markdown 预览</sub>
     </td>
     <td align="center">
       <img src="screenshots/pdf.jpg" width="250"/><br/>
-      <sub>pdf</sub>
+      <sub>PDF 预览</sub>
     </td>
   </tr>
-  <!-- 第二行：3个截图 -->
   <tr>
     <td align="center">
       <img src="screenshots/code.jpg" width="250"/><br/>
-      <sub>code</sub>
+      <sub>代码预览</sub>
     </td>
     <td align="center">
       <img src="screenshots/share.jpg" width="250"/><br/>
-      <sub>share</sub>
+      <sub>分享管理</sub>
     </td>
     <td align="center">
       <img src="screenshots/offline-download.png" width="250"/><br/>
-      <sub>offline-download</sub>
+      <sub>离线下载</sub>
     </td>
   </tr>
 </table>
 
 ## 🎬 视频演示
 
-[<img src="screenshots/music.jpg" width="200" title="点击观看 B 站视频演示"/>](https://www.bilibili.com/video/BV1EjZcBCEp7)
+[<img src="" width="200" title=""/>]()
 
 ---
 
@@ -65,127 +88,116 @@ Cloudreve4 Flutter 是一个功能丰富的云存储客户端，支持文件上�
 
 | 组件 | 版本 |
 |------|------|
-| Flutter | 3.41.6 |
-| Dart | 3.11.4 |
-| 后端 API | Cloudreve v4.15 |
+| Flutter | 3.41.9 |
+| Dart | 3.11.5 |
+| Rust | 2021 edition |
+| flutter_rust_bridge (FRB) | 最新 |
+| 后端 API | Cloudreve v4.15+ |
 
-**开发环境详情：**
-
-```
-Debia
-Flutter 3.41.6 • channel stable
-Framework • revision db50e20168 • 2026-03-25
-Dart 3.11.4 • DevTools 2.54.2
-```
-
-**构建环境详情：**
+**开发环境：**
 
 ```
-Android: compileAPI: 36, targetAPI: 36, miniAPI: 34
+Flutter 3.41.9 • channel stable
+Tools • Dart 3.11.5 • DevTools 2.54.2
+```
+
+**构建环境：**
+
+```
+Android: compileSDK 36, targetSDK 36, minSDK 34
 Windows: 11
-Linux: Debian 12
+Linux: Debian 13
 ```
 
-📚 [API 文档](https://cloudrevev4.apifox.cn/)
+**核心依赖：**
+
+- 状态管理：`provider`
+- 网络：`dio` + `http`
+- 本地存储：`shared_preferences` + `hive` + `drift`（任务持久化）
+- 文件下载：`background_downloader`（全平台统一）
+- 媒体预览：`media_kit` (音视频, 基于 mpv) / `pdfrx` (PDF) / `photo_view` (图片) / `markdown_widget` (MD) / `code_text_field + flutter_highlight` (代码)
+- WebView：`webview_flutter` (Android) + `flutter_inappwebview` (桌面)
+- Rust 同步引擎：`tokio` / `tracing` / `notify-debouncer-full` / `reqwest` / `rusqlite` / `walkdir` / `windows` (CFApi) / `fuser` (FUSE) / `jni` (Android)
+
+📚 [Cloudreve V4 API 文档](https://cloudrevev4.apifox.cn/)
 
 ---
 
-## 📋 功能状态
+## 📋 功能矩阵
 
 ### ✅ 基础功能
 
-| 功能模块   | 状态 | 说明                                     |
-|--------|------|----------------------------------------|
-| 用户登录   | ✅ | 自定义服务器, Token 认证、持久化                   |
-| 文件列表   | ✅ | 列表/网格双视图                               |
-| 刷新列表   | ✅ | 增量更新                                   |
-| 全屏手势   | ✅ | 右侧左滑返回上级目录, 根目录提示退出                    |
-| 文件下载   | ✅ | 原生/浏览器双实现、进度监听、断点续传、后台下载               |
-| 文件上传   | ✅ | 进度展示、分片上传<服务端需要开启> Windows/Linux支持拖拽上传 |
-| 删除文件   | ✅ | 删除文件                                   |
-| 重命名    | ✅ | 重命名文件                                  |
-| 移动复制   | ✅ | 移动/复制文件, 添加文件夹选择器对话框                   |
-| 我的分享   | ✅ | 完整的分享功能, 包括创建,删除,管理列表,编辑等              |
-| 找回密码   | ✅ | 使用邮箱找回密码 (依赖控制台STMP可用性)                |
-| 用户注册   | ✅ | 使用邮箱注册新用户 (依赖控制台允许注册新用户)               |
-| 回收站    | ✅ | 文件恢复/彻底删除                              |
-| WebDav | ✅ | 增删改查(硬编码查50条)                          |
-| 文件搜索   | ✅ | 全局搜索功能, 点击跳转到对应目录                      |
-| 设置页面   | ✅ | 增加多个实用的设置项                             |
-| 离线下载   | ✅ | 离线下载(依赖服务端aria2可用)                     |
-| 缩略图    | ✅ | 网格布局缩略图懒加载支持                           |
+| 功能          | 状态 | 说明                                                 |
+|-------------|------|----------------------------------------------------|
+| 多服务器管理      | ✅ | 自由切换、增删改、URL 自动规范化                                 |
+| 账号登录        | ✅ | Token 自动刷新、2FA、找回密码、注册                             |
+| QR 码扫码登录    | ✅ | X25519 + AES-GCM 加密中继                              |
+| Captcha 验证码 | ✅ | 全平台 WebView 接入（含 Turnstile）                        |
+| 文件列表        | ✅ | 列表 / 网格双视图、分页加载、增量更新                               |
+| 文件排序        | ✅ | 名称 / 大小 / 修改时间 / 创建时间，升降序，桌面端表头点击                  |
+| 文件搜索        | ✅ | Ctrl+F 快捷键、实时搜索、搜索历史、防抖                            |
+| 文件下载        | ✅ | `background_downloader` 全平台后台下载、断点续传、可暂停取消         |
+| 文件夹打包下载     | ✅ | 异步打包状态展示，多选支持                                      |
+| 文件上传        | ✅ | 分片上传、进度展示、桌面拖拽上传、悬浮窗、文件夹上传、暂停恢复断点续传、drift 持久化+分页加载 |
+| 删除 / 重命名    | ✅ | 增量更新，不触发全量刷新                                       |
+| 移动 / 复制     | ✅ | 批量、文件夹选择器对话框                                       |
+| 我的分享        | ✅ | 创建 / 删除 / 管理 / 编辑、密码保护                             |
+| 跨域分享        | ✅ | 自动识别同源/异源、剪贴板自动检测链接, 同源保存, 异源走离线下载                 |
+| 回收站         | ✅ | 恢复 / 彻底删除                                          |
+| WebDAV      | ✅ | 增删改查                                               |
+| 离线下载        | ✅ | 依赖服务端 aria2                                        |
+| 应用内更新       | ✅ | Windows ZIP 覆盖更新 / Android APK 安装                  |
+| 缩略图         | ✅ | 网格懒加载                                              |
+| 应用内手势       | ✅ | 右侧左滑返回上级                                           |
+| 文本编辑器       | ✅ | 类vscode风格                                          |
+| ...         | ✅ | ...                                                |
 
->   文件下载
->   原生/浏览器双实现原因:
->
->   >   ~~选型使用了 `flutter_downloader` 来实现Android后台下载, 避免切换后台下载异常, 但这玩意儿不支持跨平台, 所以PC端就实现了获取文件url地址在浏览器打开进行下载; 正常应该选用 `background_downloader`~~
->
->   文件上传
->
->   >   看后端接口文档, 必须要按分片顺序上传, 看着是不支持多分片并发上传, 差点意思, 效率不高.
+### 🦀 同步功能 (Rust sync-core)
 
-------
+| 同步模式 | 平台 | 说明 |
+|---------|------|------|
+| 全量同步 (Full) | 全平台 | 双向同步，6 种冲突策略 |
+| 仅上传 (UploadOnly) | 全平台 | 本地 → 远程 |
+| 仅下载 (DownloadOnly) | 全平台 | 远程 → 本地 |
+| 镜像同步 (MirrorWcf) | Windows | CFApi 占位符 + 按需水合 |
+| 镜像挂载 (FUSE) | Linux | FUSE 读写挂载 + 按需水合 |
+| 相册同步 (AlbumUpload) | Android | DCIM/Camera 自动备份 |
+| 相册同步 (AlbumDownload) | Android | 远程相册同步到本地 |
 
-### ✅  设置页面
+**冲突策略**：`keep_both` / `keep_local` / `keep_remote` / `newest_wins` / `largest_wins` / `manual`
 
-| 功能模块 | 状态 | 说明                                  |
-|------|----|-------------------------------------|
-| 个人资料 | ✅  | 修改昵称和头像                             |
-| 安全设置 | ✅  | 修改密码/2FA等                           |
-| 快捷入口 | ✅  | 概览页快捷入口设置, 默认4个, 支持新增修改和调整顺序        |
-| 文件偏好 | ✅  | 历史版本开关, 视图同步, 个人主页分享链接可见性           |
-| 应用设置 | ✅  | 深色模式/主题/语言/gravatar镜像/下载设置/缓存/日志管理等 |
-| 关于   | ✅  | APP信息                               |
+**核心能力**：
 
-> Cloudreve 的控制面板实在是太复杂了, 本来打算实现一些user资料等相关的设置, 后来思虑再三, 发现其实也没这么强需求, 索性就想到啥加啥
+- SSE 远程事件订阅 + notify 本地文件监听 + 500ms 防抖
+- 三路差异算法（本地 vs 远程 vs DB）
+- 分块上传/下载，Semaphore 并发控制 + 带宽限速
+- 配置热更新（无需重启引擎）
+- 同步状态/配置持久化，启动自动恢复
+- 暂停 / 恢复 / 停止 / 强制重新同步 / 重置同步
+- 日志级别热修改（Trace/Debug/Info/Warn/Error）
 
------
+### 🎨 预览模块
 
-### ✅ 预览模块
+| 类型 | 平台 | 说明 |
+|------|------|------|
+| 图片 | 全平台 | photo_view，Ctrl+滚轮缩放（桌面） |
+| PDF | 全平台 | pdfrx，缩放/选中复制 |
+| 音频 | 全平台 | media_kit (mpv)，流式播放、自定义 UI |
+| 视频 | 全平台 | media_kit (mpv)，全屏、倍速、调音量 |
+| 文本/代码 | 全平台 | 189 种语言高亮，SourceCodePro 等宽字体 |
+| Markdown | 全平台 | github 风格，TOC，暗色模式 |
 
-| 功能模块 | 状态 | 说明 |
-|----------|------|------|
-| 图片预览 | ✅ | 全平台支持, win/linux 支持CTRL+鼠标滚轮缩放,双击恢复,平滑动画 |
-| PDF预览 | ✅ | 全平台支持, 支持缩放, 选中文字复制等 |
-| 音频预览 | ✅ | 全平台支持流式播放, 算好看的播放器UI, 进度条, 暂停, 快进/退10秒 |
-| 视频预览 | ✅ | 全平台支持流式播放, 暂停, 调整音量, 全屏, 增加倍速支持 |
-| 文本预览 | ✅ | 全平台支持, 189中语言代码高亮, SourceCodePro等宽字体, 一键复制 |
-| MD预览 | ✅ | 全平台支持, 类github风格, TOC, 暗色模式支持.(dark缺陷) |
+### ⚙️ 设置页面
 
-> 音视频预览库底层是 mpv 提供编解码能力, 理论上 mpv 支持的格式均支持, 具体没有实测;
->
-> (待改进)视频预览进度条内嵌: MaterialVideoControlsTheme ->  MaterialVideoControls
->
-> 文本预览现在是一次性渲染, 大文件会有性能问题, 如果借用listview来优化, 会丢失代码高亮, 暂时保持现阶段的情况, 另外应该也没啥大文本文件预览的场景
-
-### 🚧 开发中
-
-| 功能模块          | 进度 | 说明                          |
-|---------------|------|-----------------------------|
-| ~~文件预览~~      | ✅ | 图片/文档/视频等预览(核心功能基本完成)       |
-| ~~设置页面~~      | ✅ | 用户信息, 2FA等                  |
-| ~~桌面端托盘~~     | ✅ | 桌面端托盘                       |
-| ~~桌面端原生下载~~   | ✅ | 统一为 `background_downloader` |
-| ~~我的页面~~      | ✅ | 我的页面                        |
-| ~~批量C&M~~     | ✅ | 批量移动/复制                     |
-| ~~桌面端支持拖拽上传~~ | ✅ | windows/linux 支持拖拽上传到当前文件夹  |
-
-### 📝 待优化
-
-- [x] SnackBar 样式美化 (`oktoast`)
-- [x] 错误/提示优化 (重构所有SnackBar为okToast)
-- [x] 重构所有开发过程中的`debugPrint`为 `logger` 库
-- [x] Windows/Linux平台使用`background_downloader`替代`flutter_downloader`下载, 增加下载速度显示
-- [x] ListView 似乎还是完整重绘, 上传插值似乎也还是在完整重绘
-
-
-### 🚧 待重构
-| 功能模块                    | 进度 | 说明                                                                        |
-|-------------------------|----|---------------------------------------------------------------------------|
-| UI                      | ✅  | windows/linux/Android phone&pad 完整ui重构                                    |
-| `background_downloader` | ✅  | flutter_downloader ->  background_downloader 全平台统一下载管理, 支持后台, 断点续传, 自动恢复等 |
-| 搜索                      | ✅  | 移除旧搜索, 实现新版本支持实时搜索, 搜索历史, 搜索防抖; 优化搜索结果点击跳转                                |
-| 拖拽上传                    | ✅  | Windows/Linux支持拖拽上传                                                       |
+| 模块 | 说明 |
+|------|------|
+| 个人资料 | 昵称 / 头像 |
+| 安全设置 | 密码 / 2FA |
+| 快捷入口 | 概览页快捷入口自定义 |
+| 文件偏好 | 历史版本、视图同步、分享可见性 |
+| 应用设置 | 深色模式 / 主题 / gravatar 镜像 / 下载设置 / 缓存 / 日志管理 |
+| 同步设置 | 模式 / 冲突策略 / 并发数 / 带宽限制 / 远程目录选择 |
+| 桌面系统设置 | 上传后关机、开机自启动 |
 
 ---
 
@@ -193,9 +205,13 @@ Linux: Debian 12
 
 ### 环境要求
 
-- Flutter SDK >= 3.41.6
-- Dart SDK >= 3.11.4
-- Cloudreve v4 后端服务
+- **Flutter SDK** >= 3.41.9
+- **Dart SDK** >= 3.11.5
+- **Rust** 1.75+ (含 cargo)
+- **Cloudreve v4** 后端服务
+- Windows: Visual Studio 2022 + Windows 10 SDK
+- Linux: Debian13及以上, 必须 `libfuse3-dev`、`libwebkit2gtk-4.1-dev`、`libwpewebkit-2.0-dev`（⚠️ 版本要求极新 >= 2.52.4-1）、`clang`、`cmake`、`ninja-build`、`pkg-config` 等
+- Android: NDK r26+
 
 ### 安装依赖
 
@@ -203,38 +219,90 @@ Linux: Debian 12
 flutter pub get
 ```
 
-### 运行项目
+### 运行
 
 ```bash
-flutter run  # pdf 和 音视频会再构建过程中下载github上的依赖,自行解决网络问题
+flutter run
+# 注意：pdfrx 和 media_kit 首次构建会从 GitHub 下载依赖，自行解决网络问题
+# Rust sync-core 会通过 CMake 自动构建, Android需要手动构建
 ```
 
 ### 构建发布
 
 ```bash
-# Android
-flutter build apk --release
-# Linux
-flutter build -d linux --release
-# windows
-flutter build -d windows --release
+# 一键构建（推荐）
+./build.sh linux    # Linux deb 包
+./build.sh apk      # Android APK（分架构）
+./build.sh rs       # 仅构建 Android sync-core（所有 ABI 的 .so）
+./build.sh all      # 同时构建
+
+# 或手动
+flutter build apk --release --split-per-abi      # Android
+flutter build linux --release                    # Linux
+flutter build windows --release                  # Windows
 ```
+
+### Rust 引擎单独构建验证
+
+```bash
+cd native
+
+# 验证各平台编译
+cargo check -p sync-core                                         # 通用
+cargo check -p sync-core --features windows-cfapi                # Windows
+cargo check -p sync-core --features linux-notify,linux-fuse      # Linux notify, Linux FUSE
+cargo check -p sync-core --features android-media                # Android
+
+# FRB 代码生成（修改 ffi 后）
+flutter_rust_bridge_codegen generate --config-file frb.yaml
+```
+
+---
+
+## 📝 注意事项
+
+- **媒体编解码**：音视频预览依赖 mpv，理论上 mpv 支持的格式均可播放, 但应该做好最基本的流媒体优化, 比如mp4容器的 moov, gop等
+- **分片上传**：服务端要求按顺序上传分片，不支持并发, 性能受限, 服务端不建议超过100MB
+- **Android 权限**：需 `POST_NOTIFICATIONS`（下载通知）+ `manageExternalStorage`（文件存储）
+- **WCF 同步**：Windows 专属，本地零空间，删除模式可配置仅删本地或同步删远程
+- **FUSE 挂载**：Linux 专属，本地写入会自动上传到云端 (需物理磁盘空间缓存)
+- **同步日志**：输出到 `<应用数据目录>/sync_core/logs/` 和 stderr，可通过 UI 热修改级别
+
+---
+
+## 🤝 贡献
+
+欢迎 PR / Issue。请按标准开源协作流程：
+
+1. **Fork** 本仓库到你的账号下
+2. 基于 `main` 创建特性分支：`git checkout -b feat/your-feature`
+3. 开发并本地验证，提交前必须满足：
+   - **Flutter 侧**：`flutter analyze` 输出零 `info` / `warn` / `error`
+   - **Rust 侧**：所有 workspace 在所有 feature 组合下 `cargo clippy` 输出零 `info` / `warn` / `error`，例如：
+   - 跨平台改动需在对应平台本地编译测试通过
+4. 推送到你的 Fork 并发起 **Pull Request**，在 PR 描述中说明动机、改动范围、测试方式
+
+**未通过上述检查的 PR 将被请求修改后再合并**。
 
 ---
 
 ## 📬 联系方式
 
 - 📧 问题反馈：提交 Issue
-- 💬 讨论交流：无
+- 💬 讨论交流：[Telegram 群组](https://t.me/+5WmnI6TkICgwZTc1)
+- 🧩 站长打包器：如果你是站长, 有快捷定制构建需求, 请进入上方群组联系 `@mkw2233`
 
 ---
 
-## 👏 捐赠/赞赏
+## 🌟 特别鸣谢
 
-对于一个完全没有android+flutter任何基础的萌新, 磨难是空前的; 虽然70%的功劳都是ai的, 但是如果这个项目为你带来帮助，请给一个 ⭐️ Star 支持！
+感谢 [**@mkw3627-ui**](https://github.com/mkw3627-ui) 对本项目的重要贡献—大量桌面端 UI 增强、QR 登录、悬浮窗、分享链接检测、Desktop文件管理器布局增强等均源自其 PR。
 
-如果觉得我实在是太肝(各种andorid+跨平台的问题抠脑壳, 实在肝不动了), 晚上两三点还在疯狂调试(第二天还要当牛马), 想要给我加鸡腿; 欢迎扫描下方二维码通过支付宝赞赏，请我喝杯咖啡☕！
+---
 
+## 👏 捐赠 / 赞赏
+
+如果这个项目为你带来帮助，请给一个 ⭐️ Star 支持或者也可以请作者喝杯奶茶！
 
 | 支付宝 | 微信 |
 | :---: | :---: |
@@ -242,16 +310,23 @@ flutter build -d windows --release
 
 ---
 
-## ⚖️ 开源协议 (License)
+## 📜 更新日志
 
-本项目采用 **AGPL-3.0 (GNU Affero General Public License v3.0)** 协议开源。
-
-### 核心约束：
-1. **传染性**：如果你修改了本项目代码并重新发布，你的项目也必须以 AGPL-3.0 协议开源。
-2. **云端公开声明**：如果你在服务器/云真机等上运行本项目并向公众提供网络服务（网盘服务），你必须向用户公开你所使用的源代码（包括任何修改）。
-3. **禁止闭源商业化**：未经授权，禁止将本项目代码闭源后作为商业产品销售。
-
-详情请参阅项目根目录下的 [LICENSE](./LICENSE) 文件。
+- [**v1.4.0**](https://github.com/LimoYuan/cloudreve4_flutter/releases/tag/v1.4.0) - 2026-07-11 - Rust 同步引擎 / WCF / FUSE / QR 登录 / 桌面端增强 / 应用内更新 / 任务持久化 drift
+- v1.3.0 - 移动端核心功能完整
+- v1.2.1 - 早期版本
+- ...
 
 ---
 
+## ⚖️ 开源协议
+
+本项目采用 **AGPL-3.0 (GNU Affero General Public License v3.0)** 协议。
+
+### 核心约束
+
+1. **传染性**：修改并重新发布必须以 AGPL-3.0 协议开源
+2. **云端公开声明**：在服务器上运行并向公众提供网络服务时，必须向用户公开源代码（含修改）
+3. **禁止闭源商业化**：未经授权，禁止将本项目代码闭源后作为商业产品销售, 否则将追究其法律责任
+
+详见 [LICENSE](./LICENSE)。

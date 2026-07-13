@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../services/app_update_service.dart';
 
 class AppUpdateDialog extends StatefulWidget {
@@ -120,6 +121,37 @@ class _AppUpdateDialogState extends State<AppUpdateDialog> {
 
   Future<void> _downloadAndOpen() async {
     if (_downloading) return;
+
+    // GitHub 兜底：downloadUrl 是 release html_url，不能走 downloadPackage
+    // （mkwOnlineUpdateEnabled == false 时第一行就 throw）。
+    // 直接打开浏览器跳转 release 页面，让用户手动下载。
+    if (widget.update.updateSource == AppUpdateSource.github) {
+      setState(() {
+        _downloading = true;
+        _status = '正在打开浏览器...';
+      });
+      try {
+        final uri = Uri.parse(widget.update.downloadUrl);
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+          if (!mounted) return;
+          Navigator.of(context).pop();
+          return;
+        }
+        if (!mounted) return;
+        setState(() {
+          _downloading = false;
+          _status = '打开失败：无法打开下载页面 ${widget.update.downloadUrl}';
+        });
+      } catch (e) {
+        if (!mounted) return;
+        setState(() {
+          _downloading = false;
+          _status = '打开失败：$e';
+        });
+      }
+      return;
+    }
 
     setState(() {
       _downloading = true;
@@ -249,7 +281,15 @@ class _AppUpdateDialogState extends State<AppUpdateDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final changes = widget.update.changelog;
-    final actionText = _isWindows ? '现在更新' : '现在安装';
+    final isGithub = widget.update.updateSource == AppUpdateSource.github;
+    final actionText = isGithub
+        ? '打开浏览器下载'
+        : (_isWindows ? '现在更新' : '现在安装');
+    final downloadButtonText = isGithub
+        ? '打开浏览器下载'
+        : (_localPackagePath == null
+            ? (_isWindows ? '下载更新' : '下载并安装')
+            : actionText);
 
     return PopScope(
       canPop: !widget.update.force,
@@ -367,7 +407,7 @@ class _AppUpdateDialogState extends State<AppUpdateDialog> {
             ),
           FilledButton(
             onPressed: _downloading ? null : (_localPackagePath == null ? _downloadAndOpen : _continueOpen),
-            child: Text(_localPackagePath == null ? (_isWindows ? '下载更新' : '下载并安装') : actionText),
+            child: Text(downloadButtonText),
           ),
         ],
       ),

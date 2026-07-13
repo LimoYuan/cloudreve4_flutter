@@ -271,6 +271,22 @@ class _AppShellState extends State<AppShell> with GestureHandlerMixin, TickerPro
       final update = result.update;
       if (!mounted || update == null) return;
 
+      // GitHub 兜底：downloadUrl 是 release html_url，不能走 downloadPackage
+      // （mkwOnlineUpdateEnabled == false 时第一行就 throw），直接弹对话框
+      // 让用户点"打开浏览器下载"跳转。
+      if (update.updateSource == AppUpdateSource.github) {
+        await DialogQueueService.instance.enqueue<void>(() async {
+          if (!mounted) return;
+          await AppUpdateDialog.show(
+            context,
+            update: update,
+            currentVersion: result.current.version,
+            currentBuild: result.current.buildNumber,
+          );
+        });
+        return;
+      }
+
       // 启动自动检查：先静默下载更新包，下载完成后再弹更新窗口。
       // 这样用户看到“发现新版本”时，更新包已经在本地，不需要再等待下载。
       final packagePath = await AppUpdateService.instance.downloadPackage(update);

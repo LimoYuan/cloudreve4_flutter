@@ -9,7 +9,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 class _QuickFunction {
   final IconData icon;
@@ -120,20 +119,17 @@ class QuickFunctionsSection extends StatelessWidget {
         return;
       }
 
+      // GitHub 兜底：downloadUrl 是 release html_url，不能走 downloadPackage
+      // （mkwOnlineUpdateEnabled == false 时第一行就 throw），直接弹对话框
+      // 让用户点"打开浏览器下载"跳转。
       if (update.updateSource == AppUpdateSource.github) {
         messenger.hideCurrentSnackBar();
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text('发现新版本 ${update.version}，3 秒后打开下载页面...'),
-            duration: const Duration(seconds: 3),
-          ),
+        await AppUpdateDialog.show(
+          context,
+          update: update,
+          currentVersion: result.current.version,
+          currentBuild: result.current.buildNumber,
         );
-        await Future<void>.delayed(const Duration(seconds: 3));
-        if (!context.mounted) return;
-        final uri = Uri.parse(update.downloadUrl);
-        if (await canLaunchUrl(uri)) {
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
-        }
         return;
       }
 

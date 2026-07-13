@@ -491,6 +491,20 @@ class _SettingsPageState extends State<SettingsPage> {
         return;
       }
 
+      // GitHub 兜底：downloadUrl 是 release html_url，不能走 downloadPackage
+      // （mkwOnlineUpdateEnabled == false 时第一行就 throw），直接弹对话框
+      // 让用户点"打开浏览器下载"跳转。
+      if (update.updateSource == AppUpdateSource.github) {
+        messenger.hideCurrentSnackBar();
+        await AppUpdateDialog.show(
+          context,
+          update: update,
+          currentVersion: result.current.version,
+          currentBuild: result.current.buildNumber,
+        );
+        return;
+      }
+
       messenger.hideCurrentSnackBar();
       messenger.showSnackBar(
         const SnackBar(content: Text('发现新版本，正在后台准备更新包...')),

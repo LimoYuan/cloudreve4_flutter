@@ -9,7 +9,10 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../mkw_packager/generated/update_config.dart' as mkw_update;
+import '../config/brand_config.dart';
 import '../core/utils/app_logger.dart';
+
+enum AppUpdateSource { mkw, github }
 
 class AppUpdateInfo {
   final String platform;
@@ -27,6 +30,7 @@ class AppUpdateInfo {
   /// Relative helper executable path from update.json, e.g. updater/update.exe.
   /// This is the code-level contract with the standalone update helper app.
   final String? helper;
+  final AppUpdateSource updateSource;
 
   const AppUpdateInfo({
     required this.platform,
@@ -42,6 +46,7 @@ class AppUpdateInfo {
     this.fileName,
     this.strategy,
     this.helper,
+    this.updateSource = AppUpdateSource.mkw,
   });
 
   String get apkUrl => downloadUrl;
@@ -390,12 +395,85 @@ class AppUpdateService {
     return 'https://你的域名/app/update.json';
   }
 
+  Future<AppUpdateCheckResult> _githubCheckUpdate(PackageInfo current) async {
+    const owner = 'LimoYuan';
+    const repo = 'cloudreve4_flutter';
+    final url = 'https://api.github.com/repos/$owner/$repo/releases/latest';
+
+    try {
+      final response = await _dio.get<dynamic>(
+        url,
+        options: Options(
+          headers: {
+            'Accept': 'application/vnd.github+json',
+            'User-Agent': 'Cloudreve4-Flutter-Client',
+          },
+        ),
+      );
+      final data = _asMap(response.data);
+      if (data == null) {
+        AppLogger.w('GitHub 更新检查：响应不是有效的 JSON');
+        return AppUpdateCheckResult(current: current, update: null);
+      }
+
+      final latestTag = (data['tag_name'] ?? '').toString().trim();
+      if (latestTag.isEmpty) {
+        AppLogger.w('GitHub 更新检查：tag_name 为空');
+        return AppUpdateCheckResult(current: current, update: null);
+      }
+
+      final currentTag = 'v${current.version}+${current.buildNumber}';
+      AppLogger.i('GitHub 更新检查：远端 $latestTag，本地 $currentTag');
+
+      if (latestTag == currentTag) {
+        AppLogger.i('GitHub 更新检查：已是最新版本');
+        return AppUpdateCheckResult(current: current, update: null);
+      }
+
+      final releaseUrl = (data['html_url'] ?? '').toString().trim();
+      final body = (data['body'] ?? '').toString().trim();
+      final changelog = body
+          .split(RegExp(r'\r?\n'))
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+
+      final version = latestTag.startsWith('v') ? latestTag.substring(1) : latestTag;
+
+      AppLogger.i('GitHub 更新检查：发现新版本 $latestTag，发布页 $releaseUrl');
+      return AppUpdateCheckResult(
+        current: current,
+        update: AppUpdateInfo(
+          platform: platformKey,
+          version: version,
+          build: 0,
+          downloadUrl: releaseUrl,
+          title: '发现新版本 $latestTag',
+          changelog: changelog,
+          updateSource: AppUpdateSource.github,
+        ),
+      );
+    } on DioException catch (e) {
+      AppLogger.w('GitHub 更新检查失败：${e.message}');
+      return AppUpdateCheckResult(current: current, update: null);
+    } catch (e) {
+      AppLogger.w('GitHub 更新检查失败：$e');
+      return AppUpdateCheckResult(current: current, update: null);
+    }
+  }
+
   Future<AppUpdateCheckResult> check({bool force = false}) async {
     final current = await PackageInfo.fromPlatform();
 
     if (!mkw_update.mkwOnlineUpdateEnabled) {
-      AppLogger.i('在线更新未启用，跳过检查');
-      return AppUpdateCheckResult(current: current, update: null);
+      // 打包器未开启自动更新检查, 且包名为默认官方包名，使用 GitHub 兜底检查
+      if (BrandConfig.packageName == 'com.limo.cloudreve4_flutter') {
+        AppLogger.i('在线更新未启用，使用 GitHub 兜底检查');
+        return _githubCheckUpdate(current);
+      } else {
+        AppLogger.i('在线更新未启用，跳过检查');
+        return AppUpdateCheckResult(current: current, update: null);
+      }
     }
 
     if (!isSupportedPlatform) {

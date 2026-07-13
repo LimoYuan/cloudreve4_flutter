@@ -1,3 +1,4 @@
+import 'package:cloudreve4_flutter/config/brand_config.dart';
 import 'package:cloudreve4_flutter/mkw_packager/generated/qr_login_config.dart';
 import 'package:cloudreve4_flutter/mkw_packager/generated/update_config.dart' as mkw_update;
 import 'package:cloudreve4_flutter/presentation/providers/navigation_provider.dart';
@@ -8,6 +9,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class _QuickFunction {
   final IconData icon;
@@ -90,7 +92,10 @@ class QuickFunctionsSection extends StatelessWidget {
   static const double _minItemWidth = 120;
 
   static Future<void> _checkUpdate(BuildContext context) async {
-    if (!mkw_update.mkwManualUpdateEnabled || !mkw_update.mkwOnlineUpdateEnabled) {
+    final isDefaultPackage = BrandConfig.packageName == 'com.limo.cloudreve4_flutter';
+    final canCheck = (mkw_update.mkwOnlineUpdateEnabled && mkw_update.mkwManualUpdateEnabled)
+        || (!mkw_update.mkwOnlineUpdateEnabled && isDefaultPackage);
+    if (!canCheck) {
       return;
     }
 
@@ -112,6 +117,18 @@ class QuickFunctionsSection extends StatelessWidget {
             content: Text('已是最新版本：${result.current.version} (${result.current.buildNumber})'),
           ),
         );
+        return;
+      }
+
+      if (update.updateSource == AppUpdateSource.github) {
+        messenger.hideCurrentSnackBar();
+        messenger.showSnackBar(
+          SnackBar(content: Text('发现新版本 ${update.version}，即将打开下载页面...')),
+        );
+        final uri = Uri.parse(update.downloadUrl);
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        }
         return;
       }
 

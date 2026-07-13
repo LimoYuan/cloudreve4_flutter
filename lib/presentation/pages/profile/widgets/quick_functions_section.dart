@@ -123,8 +123,13 @@ class QuickFunctionsSection extends StatelessWidget {
       if (update.updateSource == AppUpdateSource.github) {
         messenger.hideCurrentSnackBar();
         messenger.showSnackBar(
-          SnackBar(content: Text('发现新版本 ${update.version}，即将打开下载页面...')),
+          SnackBar(
+            content: Text('发现新版本 ${update.version}，3 秒后打开下载页面...'),
+            duration: const Duration(seconds: 3),
+          ),
         );
+        await Future<void>.delayed(const Duration(seconds: 3));
+        if (!context.mounted) return;
         final uri = Uri.parse(update.downloadUrl);
         if (await canLaunchUrl(uri)) {
           await launchUrl(uri, mode: LaunchMode.externalApplication);

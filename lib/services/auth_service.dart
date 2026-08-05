@@ -246,17 +246,23 @@ class AuthService {
       ...ticket != null ? {'ticket': ticket} : {},
     };
 
+    // 历史实现是因为邮箱验证, 测试站点code恒定为 203, 而没有考虑非强制邮箱验证的场景, 导致注册实际成功, 但ui显示注册失败。
+    // fixed: 使用 isNoData: true 拿到完整的原始响应 {code, data, msg}，
+    // 因为 _parseResponse 在 code == 0 时会解包返回 data 字段内容，
+    // 导致这里取不到 code/msg（注册成功反而报"注册失败: null -> null"）。
+    // 这与 sendResetPasswordEmail 的处理方式一致。
     final response = await ApiService.instance.post<Map<String, dynamic>>(
       '/user',
       data: data,
       noAuth: true,
+      isNoData: true,
     );
 
     final code = response['code'] as int?;
     final msg = response['msg'] as String?;
 
     if (code != 0 && code != 203) {
-      throw Exception('注册失败: $msg');
+      throw Exception('注册失败, code: $code -> msg: $msg');
     }
 
     return SignUpResponse(

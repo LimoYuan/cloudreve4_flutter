@@ -64,7 +64,27 @@ class AuthProvider extends ChangeNotifier {
         // 有保存的用户信息，检查 token 是否过期
         if (!server.user!.token!.isRefreshTokenExpired) {
           // Refresh token 未过期，设置用户信息
-          setUser(server.user);
+          var user = server.user!;
+          setUser(user);
+          // access token 已过期但 refresh token 未过期时，先静默刷新，
+          // 避免后续请求（如概览页 loadCapacity）带着过期 token 触发 401 而首发失败。
+          // 这里直接调 AuthService 而非 refreshToken()，避免在启动阶段弹 toast。
+          if (user.token!.isAccessTokenExpired) {
+            try {
+              final newToken = await AuthService.instance.refreshToken(
+                user.token!.refreshToken,
+              );
+              user = user.copyWith(token: newToken);
+              await ServerService.instance.updateCurrentServerLogin(user: user);
+              setUser(user);
+            } catch (e) {
+              AppLogger.d('启动刷新 access token 失败: $e');
+              await ServerService.instance.clearCurrentServerLogin();
+              _user = null;
+              setState(AuthState.unauthenticated);
+              return;
+            }
+          }
           setState(AuthState.authenticated);
           return;
         } else {

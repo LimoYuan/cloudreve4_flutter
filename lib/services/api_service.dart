@@ -147,7 +147,7 @@ class ApiService {
   /// 响应拦截器
   Interceptor _responseInterceptor() {
     return InterceptorsWrapper(
-      onResponse: (response, handler) {
+      onResponse: (response, handler) async {
         AppLogger.d(
           'API Response: ${response.statusCode} - ${response.requestOptions.uri}',
         );
@@ -158,15 +158,24 @@ class ApiService {
           final code = data['code'] as int?;
           AppLogger.d('_responseInterceptor -> JSON code: $code');
           if (code == 401) {
-            // HTTP 200 但 JSON code 是 401，需要处理未授权
-            final isNoAuth =
-                response.requestOptions.extra['noAuth'] as bool? ?? false;
-            AppLogger.d('_responseInterceptor -> isNoAuth: $isNoAuth');
-            if (!isNoAuth) {
-              // 直接在响应拦截器中处理 401
-              AppLogger.d('_responseInterceptor -> 触发 401 处理');
-              // 异步处理，不阻塞响应
-              _handle401InResponse(response.requestOptions);
+            // HTTP 200 但 JSON code 是 401，刷新 token 并重试原始请求。
+            // 旧实现只异步刷新不重试，导致首发请求（如概览页 loadCapacity）
+            // 在 token 过期时直接失败，即使 token 刷新成功也不会重新加载。
+            final options = response.requestOptions;
+            final isNoAuth = options.extra['noAuth'] as bool? ?? false;
+            final isRefreshPath =
+                options.path.contains('/session/token/refresh');
+            final alreadyRetried =
+                options.extra['_retried401'] as bool? ?? false;
+            AppLogger.d(
+                '_responseInterceptor -> 401 isNoAuth=$isNoAuth isRefreshPath=$isRefreshPath alreadyRetried=$alreadyRetried');
+            if (!isNoAuth && !isRefreshPath && !alreadyRetried) {
+              // 标记已重试，防止重试响应再次 401 时无限循环
+              options.extra['_retried401'] = true;
+              final retried = await _refreshAndRetry(options);
+              if (retried != null) {
+                return handler.resolve(retried);
+              }
             }
           } else if (code == 40020) {
             // Invalid Credentials — refreshToken 也失效，凭证过期
@@ -179,31 +188,55 @@ class ApiService {
     );
   }
 
-  /// 在响应拦截器中处理 401 错误
-  Future<void> _handle401InResponse(RequestOptions requestOptions) async {
-    final path = requestOptions.path;
-    if (path.contains('/session/token/refresh')) {
-      return;
-    }
-
+  /// 刷新 token 并重试原始请求（用于 HTTP 200 + code 401 的情况）。
+  /// 返回重试响应；刷新失败或重试失败时返回 null，由调用方放行原 401 响应。
+  /// 与 _handle401Error（HTTP 401 路径）共用 _isRefreshing/_refreshSubscribers，
+  /// 保证并发请求只刷新一次。
+  Future<Response?> _refreshAndRetry(RequestOptions requestOptions) async {
     if (_isRefreshing) {
-      return;
+      // 已有刷新在进行，等待完成后重试
+      final completer = Completer<void>();
+      _refreshSubscribers.add(completer);
+      try {
+        await completer.future;
+      } catch (_) {
+        return null;
+      }
+    } else {
+      _isRefreshing = true;
+      try {
+        AppLogger.d('_refreshAndRetry -> 开始刷新 token');
+        if (refreshTokenCallback != null) {
+          await refreshTokenCallback!();
+        }
+        AppLogger.d('_refreshAndRetry -> token 刷新完成');
+      } catch (e) {
+        AppLogger.d('_refreshAndRetry -> 刷新失败: $e');
+        _isRefreshing = false;
+        if (clearAuthCallback != null) {
+          await clearAuthCallback!();
+        }
+        // 通知等待的请求刷新已失败
+        for (final subscriber in _refreshSubscribers) {
+          if (!subscriber.isCompleted) subscriber.completeError(e);
+        }
+        _refreshSubscribers.clear();
+        return null;
+      }
+      _isRefreshing = false;
+      for (final subscriber in _refreshSubscribers) {
+        if (!subscriber.isCompleted) subscriber.complete();
+      }
+      _refreshSubscribers.clear();
     }
 
-    _isRefreshing = true;
+    // 刷新成功，移除旧 Authorization header，让请求拦截器重新添加新 token
+    requestOptions.headers.remove('Authorization');
     try {
-      AppLogger.d('_handle401InResponse -> 开始刷新 token');
-      if (refreshTokenCallback != null) {
-        await refreshTokenCallback!();
-      }
-      AppLogger.d('_handle401InResponse -> token 刷新完成');
+      return await _dio.fetch(requestOptions);
     } catch (e) {
-      AppLogger.d('_handle401InResponse -> 刷新失败: $e');
-      if (clearAuthCallback != null) {
-        await clearAuthCallback!();
-      }
-    } finally {
-      _isRefreshing = false;
+      AppLogger.d('_refreshAndRetry -> 重试请求失败: $e');
+      return null;
     }
   }
 

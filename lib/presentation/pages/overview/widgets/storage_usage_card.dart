@@ -15,7 +15,7 @@ class _StorageUsageCardState extends State<StorageUsageCard>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late Animation<double> _progressAnimation;
-  double _targetProgress = 0;
+  double _targetProgress = -1; // -1 哨兵表示从未动画过，避免小百分比被误判为“目标未变化”
   bool _hasRealData = false;
 
   @override
@@ -44,7 +44,9 @@ class _StorageUsageCardState extends State<StorageUsageCard>
     if (hasCapacity) _hasRealData = true;
 
     final nextTarget = (percentage / 100).clamp(0.0, 1.0).toDouble();
-    if ((nextTarget - _targetProgress).abs() < 0.001 && _hasRealData) return;
+    // 仅当已有真实数据、已设置过目标、且目标确实未变化时跳过，避免重复动画。
+    // _targetProgress >= 0 保证首次即使 nextTarget 很小（容量使用率低）也能触发动画。
+    if (_hasRealData && _targetProgress >= 0 && (nextTarget - _targetProgress).abs() < 0.001) return;
 
     final begin = _progressAnimation.value.clamp(0.0, 1.0).toDouble();
     _targetProgress = nextTarget;
@@ -75,9 +77,9 @@ class _StorageUsageCardState extends State<StorageUsageCard>
         _animateTo(percentage, capacity != null);
 
         final animatedProgress = _animatedProgress;
-        final displayUsed = total > 0
-            ? (total * animatedProgress).round()
-            : (_hasRealData ? used : 0);
+        // 直接用真实 used，不靠 total * animatedProgress 反推，
+        // 避免动画进度为 0（容量使用率很低时 _animateTo 未触发）导致显示 0 B。
+        final displayUsed = _hasRealData ? used : 0;
 
         return Card(
           child: Padding(
@@ -129,7 +131,7 @@ class _StorageUsageCardState extends State<StorageUsageCard>
                 const SizedBox(height: 4),
                 Center(
                   child: Text(
-                    '已使用 ${(animatedProgress * 100).toStringAsFixed(1)}%',
+                    '已使用 ${percentage.toStringAsFixed(1)}%',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.hintColor,
                     ),

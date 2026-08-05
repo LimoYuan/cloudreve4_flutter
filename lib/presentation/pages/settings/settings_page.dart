@@ -485,7 +485,7 @@ class _SettingsPageState extends State<SettingsPage> {
         messenger.hideCurrentSnackBar();
         messenger.showSnackBar(
           SnackBar(
-            content: Text('已是最新版本：${result.current.version} (${result.current.buildNumber})'),
+            content: Text('已是最新版本：${result.currentVersion} (${result.currentBuild})'),
           ),
         );
         return;
@@ -499,8 +499,8 @@ class _SettingsPageState extends State<SettingsPage> {
         await AppUpdateDialog.show(
           context,
           update: update,
-          currentVersion: result.current.version,
-          currentBuild: result.current.buildNumber,
+          currentVersion: result.currentVersion,
+          currentBuild: result.currentBuild,
         );
         return;
       }
@@ -517,8 +517,8 @@ class _SettingsPageState extends State<SettingsPage> {
       await AppUpdateDialog.show(
         context,
         update: update,
-        currentVersion: result.current.version,
-        currentBuild: result.current.buildNumber,
+        currentVersion: result.currentVersion,
+        currentBuild: result.currentBuild,
         preDownloadedPath: packagePath,
       );
     } catch (e) {

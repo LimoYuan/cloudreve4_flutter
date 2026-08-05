@@ -280,8 +280,8 @@ class _AppShellState extends State<AppShell> with GestureHandlerMixin, TickerPro
           await AppUpdateDialog.show(
             context,
             update: update,
-            currentVersion: result.current.version,
-            currentBuild: result.current.buildNumber,
+            currentVersion: result.currentVersion,
+            currentBuild: result.currentBuild,
           );
         });
         return;
@@ -298,8 +298,8 @@ class _AppShellState extends State<AppShell> with GestureHandlerMixin, TickerPro
         await AppUpdateDialog.show(
           context,
           update: update,
-          currentVersion: result.current.version,
-          currentBuild: result.current.buildNumber,
+          currentVersion: result.currentVersion,
+          currentBuild: result.currentBuild,
           preDownloadedPath: packagePath,
         );
 

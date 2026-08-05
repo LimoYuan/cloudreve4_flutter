@@ -288,10 +288,17 @@ class AppUpdateInfo {
 class AppUpdateCheckResult {
   final PackageInfo current;
   final AppUpdateInfo? update;
+  /// 归一化后的当前版本号（优先用打包配置 mkwUpdateVersion，规避
+  /// Windows PackageInfo.version 平台差异，例如 1.4.0+1 在 Windows 上被读成 1.4.0.1）。
+  final String currentVersion;
+  /// 归一化后的当前 build 号（优先用打包配置 mkwUpdateBuild）。
+  final String currentBuild;
 
   const AppUpdateCheckResult({
     required this.current,
     required this.update,
+    required this.currentVersion,
+    required this.currentBuild,
   });
 
   bool get hasUpdate => update != null;
@@ -413,21 +420,33 @@ class AppUpdateService {
       final data = _asMap(response.data);
       if (data == null) {
         AppLogger.w('GitHub 更新检查：响应不是有效的 JSON');
-        return AppUpdateCheckResult(current: current, update: null);
+        return _result(current, null);
       }
 
       final latestTag = (data['tag_name'] ?? '').toString().trim();
       if (latestTag.isEmpty) {
         AppLogger.w('GitHub 更新检查：tag_name 为空');
-        return AppUpdateCheckResult(current: current, update: null);
+        return _result(current, null);
       }
 
-      final currentTag = 'v${current.version}+${current.buildNumber}';
-      AppLogger.i('GitHub 更新检查：远端 $latestTag，本地 $currentTag');
+      final remoteParsed = _parseGitHubTag(latestTag);
+      final localVersion = _effectiveCurrentVersion(current);
+      final localBuild = _effectiveCurrentBuild(current);
+      AppLogger.i(
+        'GitHub 更新检查：远端 $latestTag (version=${remoteParsed.version}, build=${remoteParsed.build})，'
+        '本地 $localVersion($localBuild)',
+      );
 
-      if (latestTag == currentTag) {
+      // 语义比较：远端 version 严格更高，或 version 相同但 build 严格更高才算有更新。
+      // 不再用字符串严格相等比较 tag，避免 Windows PackageInfo 平台差异
+      // （1.4.0+1 被读成 1.4.0.1 / buildNumber 为空）导致每次都误报有更新。
+      final versionCmp = _compareVersion(remoteParsed.version, localVersion);
+      final hasUpdate =
+          versionCmp > 0 || (versionCmp == 0 && remoteParsed.build > localBuild);
+
+      if (!hasUpdate) {
         AppLogger.i('GitHub 更新检查：已是最新版本');
-        return AppUpdateCheckResult(current: current, update: null);
+        return _result(current, null);
       }
 
       final releaseUrl = (data['html_url'] ?? '').toString().trim();
@@ -438,15 +457,13 @@ class AppUpdateService {
           .where((e) => e.isNotEmpty)
           .toList();
 
-      final version = latestTag.startsWith('v') ? latestTag.substring(1) : latestTag;
-
       AppLogger.i('GitHub 更新检查：发现新版本 $latestTag，发布页 $releaseUrl');
-      return AppUpdateCheckResult(
-        current: current,
-        update: AppUpdateInfo(
+      return _result(
+        current,
+        AppUpdateInfo(
           platform: platformKey,
-          version: version,
-          build: 0,
+          version: remoteParsed.version,
+          build: remoteParsed.build,
           downloadUrl: releaseUrl,
           title: '发现新版本 $latestTag',
           changelog: changelog,
@@ -455,10 +472,10 @@ class AppUpdateService {
       );
     } on DioException catch (e) {
       AppLogger.w('GitHub 更新检查失败：${e.message}');
-      return AppUpdateCheckResult(current: current, update: null);
+      return _result(current, null);
     } catch (e) {
       AppLogger.w('GitHub 更新检查失败：$e');
-      return AppUpdateCheckResult(current: current, update: null);
+      return _result(current, null);
     }
   }
 
@@ -472,16 +489,16 @@ class AppUpdateService {
         return _githubCheckUpdate(current);
       } else {
         AppLogger.i('在线更新未启用，跳过检查');
-        return AppUpdateCheckResult(current: current, update: null);
+        return _result(current, null);
       }
     }
 
     if (!isSupportedPlatform) {
-      return AppUpdateCheckResult(current: current, update: null);
+      return _result(current, null);
     }
 
     if (_checking && !force) {
-      return AppUpdateCheckResult(current: current, update: null);
+      return _result(current, null);
     }
 
     _checking = true;
@@ -511,7 +528,7 @@ class AppUpdateService {
 
         AppLogger.w(message);
         if (force) throw Exception(message);
-        return AppUpdateCheckResult(current: current, update: null);
+        return _result(current, null);
       }
 
       final info = AppUpdateInfo.fromJson(data);
@@ -527,7 +544,7 @@ class AppUpdateService {
         final message = '当前平台[$platformKey]没有配置对应更新包地址';
         AppLogger.w(message);
         if (force) throw Exception(message);
-        return AppUpdateCheckResult(current: current, update: null);
+        return _result(current, null);
       }
 
       _validateSelectedPlatformPackage(info);
@@ -552,20 +569,17 @@ class AppUpdateService {
         );
       }
 
-      return AppUpdateCheckResult(
-        current: current,
-        update: hasUpdate ? info : null,
-      );
+      return _result(current, hasUpdate ? info : null);
     } on DioException catch (e) {
       final message = _friendlyDioUpdateError(e);
       AppLogger.e('在线更新检查失败[$platformName/$platformKey]: $message');
       if (force) throw Exception(message);
-      return AppUpdateCheckResult(current: current, update: null);
+      return _result(current, null);
     } catch (e) {
       final message = '在线更新检查失败：$e';
       AppLogger.e('在线更新检查失败[$platformName/$platformKey]: $message');
       if (force) throw Exception(message);
-      return AppUpdateCheckResult(current: current, update: null);
+      return _result(current, null);
     } finally {
       _checking = false;
     }
@@ -581,6 +595,33 @@ class AppUpdateService {
     final generated = mkw_update.mkwUpdateBuild;
     if (generated > 0) return generated;
     return int.tryParse(current.buildNumber) ?? 0;
+  }
+
+  /// 统一构造 AppUpdateCheckResult，并把归一化后的当前版本/build 填进去，
+  /// 调用方不再直接用 current.version/current.buildNumber（Windows 上是 1.4.0.1 / 空）。
+  AppUpdateCheckResult _result(PackageInfo current, AppUpdateInfo? update) {
+    return AppUpdateCheckResult(
+      current: current,
+      update: update,
+      currentVersion: _effectiveCurrentVersion(current),
+      currentBuild: _effectiveCurrentBuild(current).toString(),
+    );
+  }
+
+  /// 解析 GitHub release tag 为 version 和 build。
+  /// 'v1.4.0+1' -> (version: '1.4.0', build: 1)
+  /// 'v1.4.0'   -> (version: '1.4.0', build: 0)
+  /// '1.4.0+1'  -> (version: '1.4.0', build: 1)
+  ({String version, int build}) _parseGitHubTag(String tag) {
+    var t = tag.trim();
+    if (t.startsWith('v') || t.startsWith('V')) t = t.substring(1);
+    final plusIdx = t.indexOf('+');
+    if (plusIdx < 0) {
+      return (version: t, build: 0);
+    }
+    final version = t.substring(0, plusIdx);
+    final build = int.tryParse(t.substring(plusIdx + 1)) ?? 0;
+    return (version: version, build: build);
   }
 
   bool _isRemoteVersionStrictlyNewer(AppUpdateInfo info, PackageInfo current) {
